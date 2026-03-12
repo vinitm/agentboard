@@ -15,8 +15,10 @@ import {
   listProjects,
   listGitRefsByTask,
 } from '../db/queries.js';
-import { createWorktree, cleanupWorktree } from './git.js';
+import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
 import { runPlanning } from './stages/planner.js';
+import { runImplementation } from './stages/implementer.js';
+import { runChecks } from './stages/checks.js';
 
 const POLL_INTERVAL_MS = 5_000;
 const WORKER_ID = `worker-${process.pid}`;
@@ -86,6 +88,157 @@ export function createWorkerLoop(
     } finally {
       tickInProgress = false;
     }
+  }
+
+  /**
+   * Run the implementation → checks loop for a task.
+   * Attempts implementation up to maxAttemptsPerTask times.
+   */
+  async function runImplementationLoop(
+    task: Task,
+    worktreePath: string,
+    config: AgentboardConfig,
+    io: Server,
+    db: Database.Database
+  ): Promise<void> {
+    // Move to implementing
+    updateTask(db, task.id, { status: 'implementing' });
+    createEvent(db, {
+      taskId: task.id,
+      type: 'status_changed',
+      payload: JSON.stringify({ from: 'planning', to: 'implementing' }),
+    });
+    broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
+
+    for (let attempt = 1; attempt <= config.maxAttemptsPerTask; attempt++) {
+      // Run implementer stage
+      const implResult = await runImplementation(
+        db,
+        task,
+        worktreePath,
+        config,
+        attempt
+      );
+
+      // If needs user input → block the task
+      if (implResult.needsUserInput && implResult.needsUserInput.length > 0) {
+        updateTask(db, task.id, {
+          status: 'blocked',
+          blockedReason: `Implementation needs input:\n${implResult.needsUserInput.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
+        });
+        unclaimTask(db, task.id);
+        createEvent(db, {
+          taskId: task.id,
+          type: 'status_changed',
+          payload: JSON.stringify({
+            from: 'implementing',
+            to: 'blocked',
+            reason: 'needs_user_input',
+            questions: implResult.needsUserInput,
+          }),
+        });
+        broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
+        return;
+      }
+
+      // If implementation failed, record and try again
+      if (!implResult.success) {
+        createEvent(db, {
+          taskId: task.id,
+          type: 'implementation_failed',
+          payload: JSON.stringify({
+            attempt,
+            output: implResult.output.slice(0, 2000),
+          }),
+        });
+
+        if (attempt >= config.maxAttemptsPerTask) {
+          break; // Will fall through to failed state
+        }
+        continue;
+      }
+
+      // Implementation succeeded — run checks
+      updateTask(db, task.id, { status: 'checks' });
+      createEvent(db, {
+        taskId: task.id,
+        type: 'status_changed',
+        payload: JSON.stringify({ from: 'implementing', to: 'checks' }),
+      });
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
+
+      const checksResult = await runChecks(db, task, worktreePath, config);
+
+      if (checksResult.passed) {
+        // Commit the implementation
+        const slug = task.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 50);
+        await commitChanges(
+          worktreePath,
+          `feat: implement ${slug}`
+        );
+
+        // Move to review_spec (next stages in Task 7)
+        updateTask(db, task.id, { status: 'review_spec' });
+        unclaimTask(db, task.id);
+        createEvent(db, {
+          taskId: task.id,
+          type: 'status_changed',
+          payload: JSON.stringify({ from: 'checks', to: 'review_spec' }),
+        });
+        broadcast(io, 'task:updated', {
+          taskId: task.id,
+          status: 'review_spec',
+        });
+        return;
+      }
+
+      // Checks failed — record failure summary and retry
+      createEvent(db, {
+        taskId: task.id,
+        type: 'checks_failed',
+        payload: JSON.stringify({
+          attempt,
+          results: checksResult.results.map((r) => ({
+            name: r.name,
+            passed: r.passed,
+            output: r.output.slice(0, 1000),
+          })),
+          formattingFixed: checksResult.formattingFixed,
+        }),
+      });
+
+      // Move back to implementing for next attempt
+      if (attempt < config.maxAttemptsPerTask) {
+        updateTask(db, task.id, { status: 'implementing' });
+        createEvent(db, {
+          taskId: task.id,
+          type: 'status_changed',
+          payload: JSON.stringify({ from: 'checks', to: 'implementing' }),
+        });
+        broadcast(io, 'task:updated', {
+          taskId: task.id,
+          status: 'implementing',
+        });
+      }
+    }
+
+    // All attempts exhausted → failed
+    updateTask(db, task.id, { status: 'failed' });
+    unclaimTask(db, task.id);
+    createEvent(db, {
+      taskId: task.id,
+      type: 'status_changed',
+      payload: JSON.stringify({
+        from: task.status,
+        to: 'failed',
+        reason: 'max_attempts_exhausted',
+      }),
+    });
+    broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
   }
 
   /**
@@ -241,21 +394,8 @@ export function createWorkerLoop(
         return;
       }
 
-      // No questions, no subtasks — ready for implementation
-      updateTask(db, task.id, { status: 'implementing' });
-      unclaimTask(db, task.id);
-      createEvent(db, {
-        taskId: task.id,
-        type: 'status_changed',
-        payload: JSON.stringify({
-          from: 'planning',
-          to: 'implementing',
-        }),
-      });
-      broadcast(io, 'task:updated', {
-        taskId: task.id,
-        status: 'implementing',
-      });
+      // No questions, no subtasks — proceed to implementation
+      await runImplementationLoop(task, worktreePath, config, io, db);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
