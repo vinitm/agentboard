@@ -61,13 +61,12 @@ export async function createPR(
     const prBody = buildPRBody(db, task);
 
     // Create PR via gh CLI
-    const labels = `agentboard,risk:${task.riskLevel}`;
-
     const ghArgs = [
       'pr', 'create',
       '--title', `${task.title}`,
       '--body', prBody,
-      '--label', labels,
+      '--label', 'agentboard',
+      '--label', `risk:${task.riskLevel}`,
       '--head', gitRef.branch,
     ];
     if (config.prDraft) {
