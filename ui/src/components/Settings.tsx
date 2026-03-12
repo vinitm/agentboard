@@ -15,6 +15,14 @@ interface Notifications {
   terminal: boolean;
 }
 
+interface ModelDefaults {
+  planning: string;
+  implementation: string;
+  reviewSpec: string;
+  reviewCode: string;
+  security: string;
+}
+
 interface Config {
   port: number;
   host: string;
@@ -23,12 +31,17 @@ interface Config {
   maxReviewCycles: number;
   maxSubcardDepth: number;
   prDraft: boolean;
+  autoMerge: boolean;
+  prMethod: string;
   securityMode: string;
   branchPrefix: string;
   baseBranch: string;
   githubRemote: string;
+  commitPolicy: string;
+  formatPolicy: string;
   commands: Commands;
   notifications: Notifications;
+  modelDefaults: ModelDefaults;
 }
 
 interface Props {
@@ -168,8 +181,8 @@ export const Settings: React.FC<Props> = ({ onClose }) => {
           </Field>
         </Section>
 
-        {/* Branch Rules */}
-        <Section title="Branch Rules">
+        {/* Branch & PR */}
+        <Section title="Branch & PR">
           <Field label="branchPrefix">
             <input
               type="text"
@@ -194,10 +207,15 @@ export const Settings: React.FC<Props> = ({ onClose }) => {
               style={inputStyle}
             />
           </Field>
-        </Section>
-
-        {/* PR Draft */}
-        <Section title="Pull Requests">
+          <Field label="prMethod">
+            <input
+              type="text"
+              value={config.prMethod}
+              onChange={(e) => setConfig({ ...config, prMethod: e.target.value })}
+              placeholder="e.g. gh-cli"
+              style={inputStyle}
+            />
+          </Field>
           <Field label="prDraft">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
@@ -208,6 +226,58 @@ export const Settings: React.FC<Props> = ({ onClose }) => {
               Create PRs as drafts
             </label>
           </Field>
+          <Field label="autoMerge">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={config.autoMerge}
+                onChange={(e) => setConfig({ ...config, autoMerge: e.target.checked })}
+              />
+              Auto-merge PRs when checks pass
+            </label>
+          </Field>
+        </Section>
+
+        {/* Policies */}
+        <Section title="Policies">
+          <Field label="commitPolicy">
+            <select
+              value={config.commitPolicy}
+              onChange={(e) => setConfig({ ...config, commitPolicy: e.target.value })}
+              style={inputStyle}
+            >
+              <option value="after-checks-pass">after-checks-pass</option>
+            </select>
+          </Field>
+          <Field label="formatPolicy">
+            <select
+              value={config.formatPolicy}
+              onChange={(e) => setConfig({ ...config, formatPolicy: e.target.value })}
+              style={inputStyle}
+            >
+              <option value="auto-fix-separate-commit">auto-fix-separate-commit</option>
+            </select>
+          </Field>
+        </Section>
+
+        {/* Model Defaults */}
+        <Section title="Model Defaults">
+          {(['planning', 'implementation', 'reviewSpec', 'reviewCode', 'security'] as const).map((key) => (
+            <Field key={key} label={key}>
+              <input
+                type="text"
+                value={config.modelDefaults[key]}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    modelDefaults: { ...config.modelDefaults, [key]: e.target.value },
+                  })
+                }
+                placeholder={`Model for ${key}`}
+                style={inputStyle}
+              />
+            </Field>
+          ))}
         </Section>
 
         {/* Notifications */}
