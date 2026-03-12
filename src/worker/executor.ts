@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 export interface ExecuteOptions {
   prompt: string;
@@ -25,36 +25,13 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
   const startTime = Date.now();
 
   return new Promise<ExecuteResult>((resolve) => {
-    const args = ['--print', '--model', model, '-p', prompt];
+    const args = ['--print', '--model', model];
 
-    const child = execFile(
-      'claude',
-      args,
-      {
-        cwd: worktreePath,
-        timeout,
-        maxBuffer: 10 * 1024 * 1024, // 10MB
-        env: { ...process.env },
-      },
-      (error, stdout, stderr) => {
-        const duration = Date.now() - startTime;
-        const output = stdout + (stderr ? `\n[stderr]\n${stderr}` : '');
-        const rawCode = error
-          ? (error as NodeJS.ErrnoException & { code?: string | number }).code
-          : 0;
-        const exitCode = typeof rawCode === 'number' ? rawCode : 1;
-
-        // Try to parse token usage from output
-        const tokensUsed = parseTokenUsage(output);
-
-        resolve({
-          output,
-          exitCode,
-          tokensUsed,
-          duration,
-        });
-      }
-    );
+    const child = spawn('claude', args, {
+      cwd: worktreePath,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
 
     // Safety: if child process is somehow null
     if (!child) {
@@ -64,7 +41,44 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
         tokensUsed: 0,
         duration: Date.now() - startTime,
       });
+      return;
     }
+
+    // Write the prompt to stdin, then close it
+    child.stdin.write(prompt);
+    child.stdin.end();
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    const timer = setTimeout(() => {
+      child.kill();
+    }, timeout);
+
+    child.on('close', (code: number | null) => {
+      clearTimeout(timer);
+      const duration = Date.now() - startTime;
+      const output = stdout + (stderr ? `\n[stderr]\n${stderr}` : '');
+      const exitCode = code ?? 1;
+
+      // Try to parse token usage from output
+      const tokensUsed = parseTokenUsage(output);
+
+      resolve({
+        output,
+        exitCode,
+        tokensUsed,
+        duration,
+      });
+    });
   });
 }
 
