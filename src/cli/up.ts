@@ -34,7 +34,10 @@ export default async function up(opts: {
   const dbPath = path.join(cwd, '.agentboard', 'agentboard.db');
   const db = createDatabase(dbPath);
 
-  // 3. Watch for shutdown file
+  // 3. Start server
+  const server = createServer(db, config);
+
+  // 4. Watch for shutdown file
   const shutdownPath = path.join(cwd, '.agentboard', 'shutdown');
   const shutdownInterval = setInterval(() => {
     if (fs.existsSync(shutdownPath)) {
@@ -46,9 +49,6 @@ export default async function up(opts: {
       process.exit(0);
     }
   }, 1000);
-
-  // 4. Start server
-  const server = createServer(db, config);
 
   console.log(
     chalk.green.bold(

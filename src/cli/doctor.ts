@@ -46,23 +46,23 @@ export default async function doctor(): Promise<void> {
     },
     {
       label: 'Current directory is a git repo',
-      critical: true,
+      critical: false,
       test: () => fs.existsSync(path.join(cwd, '.git')),
     },
     {
       label: '.agentboard/ directory exists',
-      critical: true,
+      critical: false,
       test: () => fs.existsSync(path.join(cwd, '.agentboard')),
     },
     {
       label: '.agentboard/config.json exists',
-      critical: true,
+      critical: false,
       test: () =>
         fs.existsSync(path.join(cwd, '.agentboard', 'config.json')),
     },
     {
       label: '.agentboard/agentboard.db exists',
-      critical: true,
+      critical: false,
       test: () =>
         fs.existsSync(path.join(cwd, '.agentboard', 'agentboard.db')),
     },
