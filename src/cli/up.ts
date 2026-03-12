@@ -43,7 +43,7 @@ export default async function up(opts: {
   const db = createDatabase(dbPath);
 
   // 3. Start server
-  const server = createServer(db, config);
+  const server = createServer(db, config, { configPath });
   server.listen(config.port, config.host);
 
   // 4. Watch for shutdown file

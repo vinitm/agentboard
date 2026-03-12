@@ -75,12 +75,12 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       res.status(404).json({ error: 'Task not found' });
       return;
     }
-    const { title, description, status, riskLevel, priority, columnPosition, spec, blockedReason, parentTaskId } =
-      req.body as queries.UpdateTaskData;
+    // Strip `status` — all status changes must go through POST /:id/move
+    const { title, description, riskLevel, priority, columnPosition, spec, blockedReason, parentTaskId } =
+      req.body as Omit<queries.UpdateTaskData, 'status'>;
     const task = queries.updateTask(db, req.params.id, {
       title,
       description,
-      status,
       riskLevel,
       priority,
       columnPosition,
@@ -162,7 +162,19 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       return;
     }
 
-    // done, needs_human_review, blocked, and failed are agent-controlled — no manual moves allowed
+    // Can move to done from needs_human_review (after human reviews the PR)
+    if (column === 'done') {
+      if (task.status !== 'needs_human_review') {
+        res.status(400).json({ error: 'Can only move to done from needs_human_review' });
+        return;
+      }
+      const updated = queries.moveToColumn(db, req.params.id, column, 0);
+      broadcast(io, 'task:moved', updated);
+      res.json(updated);
+      return;
+    }
+
+    // blocked, and failed are agent-controlled — no manual moves allowed
     res.status(400).json({ error: `Cannot manually move task to column: ${column}` });
   });
 
@@ -189,7 +201,11 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       payload: JSON.stringify({ answers }),
     });
 
-    // Move the task back to ready and clear the blocked reason
+    // Move the task back to ready and clear the blocked reason.
+    // TODO(worker): The worker should check event history to determine which
+    // stage the task was blocked at and resume from that exact stage instead
+    // of starting over from 'ready'. For now we set 'ready' as a pragmatic
+    // fallback — the M2 worker loop will implement exact resumption logic.
     const updated = queries.updateTask(db, req.params.id, {
       blockedReason: null,
       status: 'ready',

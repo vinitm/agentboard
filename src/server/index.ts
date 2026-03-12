@@ -17,7 +17,8 @@ import { createEventRoutes } from './routes/events.js';
  */
 export function createServer(
   db: Database.Database,
-  config: AgentboardConfig
+  config: AgentboardConfig,
+  options?: { configPath?: string }
 ): http.Server {
   const app = express();
 
@@ -53,7 +54,7 @@ export function createServer(
   setupWebSocket(io);
 
   // ── Config path (for config route) ─────────────────────────────────
-  const configPath = path.resolve('.agentboard', 'config.json');
+  const configPath = options?.configPath ?? path.resolve('.agentboard', 'config.json');
 
   // ── Health check ───────────────────────────────────────────────────
   app.get('/api/health', (_req, res) => {
