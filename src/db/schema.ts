@@ -1,0 +1,89 @@
+import type Database from 'better-sqlite3';
+
+const DDL = `
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  path TEXT NOT NULL,
+  config_path TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'backlog',
+  risk_level TEXT NOT NULL DEFAULT 'low',
+  priority INTEGER NOT NULL DEFAULT 0,
+  column_position INTEGER NOT NULL DEFAULT 0,
+  spec TEXT,
+  blocked_reason TEXT,
+  claimed_at TEXT,
+  claimed_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  stage TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  attempt INTEGER NOT NULL DEFAULT 1,
+  tokens_used INTEGER,
+  model_used TEXT,
+  input TEXT,
+  output TEXT,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS git_refs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  branch TEXT NOT NULL,
+  worktree_path TEXT,
+  status TEXT NOT NULL DEFAULT 'local',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_runs_task_id ON runs(task_id);
+CREATE INDEX IF NOT EXISTS idx_runs_task_stage ON runs(task_id, stage);
+CREATE INDEX IF NOT EXISTS idx_artifacts_run_id ON artifacts(run_id);
+CREATE INDEX IF NOT EXISTS idx_git_refs_task_id ON git_refs(task_id);
+CREATE INDEX IF NOT EXISTS idx_events_task_id ON events(task_id);
+CREATE INDEX IF NOT EXISTS idx_events_run_id ON events(run_id);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+`;
+
+export function initSchema(db: Database.Database): void {
+  db.exec('PRAGMA foreign_keys = ON;');
+  db.exec(DDL);
+}
