@@ -12,6 +12,11 @@ import { createArtifactRoutes } from './routes/artifacts.js';
 import { createConfigRoutes } from './routes/config.js';
 import { createEventRoutes } from './routes/events.js';
 
+export interface ServerResult {
+  server: http.Server;
+  io: SocketIOServer;
+}
+
 /**
  * Create and return an HTTP server with the full Express app and WebSocket support.
  */
@@ -19,7 +24,7 @@ export function createServer(
   db: Database.Database,
   config: AgentboardConfig,
   options?: { configPath?: string }
-): http.Server {
+): ServerResult {
   const app = express();
 
   // ── Middleware ──────────────────────────────────────────────────────
@@ -82,5 +87,5 @@ export function createServer(
     }
   );
 
-  return server;
+  return { server, io };
 }
