@@ -19,6 +19,9 @@ import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
 import { runPlanning } from './stages/planner.js';
 import { runImplementation } from './stages/implementer.js';
 import { runChecks } from './stages/checks.js';
+import { runSpecReview } from './stages/review-spec.js';
+import { runCodeReview } from './stages/review-code.js';
+import { createPR } from './stages/pr-creator.js';
 
 const POLL_INTERVAL_MS = 5_000;
 const WORKER_ID = `worker-${process.pid}`;
@@ -176,18 +179,8 @@ export function createWorkerLoop(
           `feat: implement ${task.title}`
         );
 
-        // Move to review_spec (next stages in Task 7)
-        updateTask(db, task.id, { status: 'review_spec' });
-        unclaimTask(db, task.id);
-        createEvent(db, {
-          taskId: task.id,
-          type: 'status_changed',
-          payload: JSON.stringify({ from: 'checks', to: 'review_spec' }),
-        });
-        broadcast(io, 'task:updated', {
-          taskId: task.id,
-          status: 'review_spec',
-        });
+        // Run review cycle and PR creation
+        await runReviewAndPR(task, worktreePath, config, io, db);
         return;
       }
 
@@ -234,6 +227,201 @@ export function createWorkerLoop(
       }),
     });
     broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
+  }
+
+  /**
+   * Run the review stages (spec + code) and PR creation.
+   * If a review fails, cycle back to implementing (up to maxReviewCycles).
+   * If cycles are exhausted, create the PR anyway with a note.
+   */
+  async function runReviewAndPR(
+    task: Task,
+    worktreePath: string,
+    config: AgentboardConfig,
+    io: Server,
+    db: Database.Database
+  ): Promise<void> {
+    let reviewCycle = 0;
+
+    while (reviewCycle < config.maxReviewCycles) {
+      reviewCycle++;
+
+      // ── Spec review ──────────────────────────────────────────────────
+      updateTask(db, task.id, { status: 'review_spec' });
+      createEvent(db, {
+        taskId: task.id,
+        type: 'status_changed',
+        payload: JSON.stringify({ from: task.status, to: 'review_spec', reviewCycle }),
+      });
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'review_spec' });
+
+      const specResult = await runSpecReview(db, task, worktreePath, config);
+
+      if (!specResult.passed) {
+        createEvent(db, {
+          taskId: task.id,
+          type: 'review_spec_failed',
+          payload: JSON.stringify({
+            reviewCycle,
+            feedback: specResult.feedback,
+            issues: specResult.issues,
+          }),
+        });
+
+        if (reviewCycle >= config.maxReviewCycles) {
+          // Exhausted review cycles — proceed to PR with note
+          break;
+        }
+
+        // Cycle back to implementing with review feedback
+        updateTask(db, task.id, { status: 'implementing' });
+        createEvent(db, {
+          taskId: task.id,
+          type: 'status_changed',
+          payload: JSON.stringify({
+            from: 'review_spec',
+            to: 'implementing',
+            reason: 'spec_review_failed',
+            reviewCycle,
+          }),
+        });
+        broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
+
+        // Re-run implementation with feedback
+        const implResult = await runImplementation(db, task, worktreePath, config, reviewCycle + 1);
+        if (!implResult.success) {
+          break; // Will fall through to PR creation with note
+        }
+
+        // Re-run checks
+        updateTask(db, task.id, { status: 'checks' });
+        createEvent(db, {
+          taskId: task.id,
+          type: 'status_changed',
+          payload: JSON.stringify({ from: 'implementing', to: 'checks' }),
+        });
+        broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
+
+        const checksResult = await runChecks(db, task, worktreePath, config);
+        if (!checksResult.passed) {
+          break; // Will fall through to PR creation with note
+        }
+
+        await commitChanges(worktreePath, `feat: address spec review feedback (cycle ${reviewCycle})`);
+        continue; // Go back to spec review
+      }
+
+      // ── Code review ──────────────────────────────────────────────────
+      updateTask(db, task.id, { status: 'review_code' });
+      createEvent(db, {
+        taskId: task.id,
+        type: 'status_changed',
+        payload: JSON.stringify({ from: 'review_spec', to: 'review_code', reviewCycle }),
+      });
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'review_code' });
+
+      const codeResult = await runCodeReview(db, task, worktreePath, config);
+
+      if (!codeResult.passed) {
+        createEvent(db, {
+          taskId: task.id,
+          type: 'review_code_failed',
+          payload: JSON.stringify({
+            reviewCycle,
+            feedback: codeResult.feedback,
+            issues: codeResult.issues,
+          }),
+        });
+
+        if (reviewCycle >= config.maxReviewCycles) {
+          // Exhausted review cycles — proceed to PR with note
+          break;
+        }
+
+        // Cycle back to implementing with review feedback
+        updateTask(db, task.id, { status: 'implementing' });
+        createEvent(db, {
+          taskId: task.id,
+          type: 'status_changed',
+          payload: JSON.stringify({
+            from: 'review_code',
+            to: 'implementing',
+            reason: 'code_review_failed',
+            reviewCycle,
+          }),
+        });
+        broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
+
+        // Re-run implementation with feedback
+        const implResult = await runImplementation(db, task, worktreePath, config, reviewCycle + 1);
+        if (!implResult.success) {
+          break; // Will fall through to PR creation with note
+        }
+
+        // Re-run checks
+        updateTask(db, task.id, { status: 'checks' });
+        createEvent(db, {
+          taskId: task.id,
+          type: 'status_changed',
+          payload: JSON.stringify({ from: 'implementing', to: 'checks' }),
+        });
+        broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
+
+        const checksResult = await runChecks(db, task, worktreePath, config);
+        if (!checksResult.passed) {
+          break; // Will fall through to PR creation with note
+        }
+
+        await commitChanges(worktreePath, `feat: address code review feedback (cycle ${reviewCycle})`);
+        continue; // Go back to spec review
+      }
+
+      // Both reviews passed — proceed to PR creation
+      break;
+    }
+
+    // ── PR creation ──────────────────────────────────────────────────────
+    try {
+      const prResult = await createPR(db, task, worktreePath, config);
+
+      createEvent(db, {
+        taskId: task.id,
+        type: 'pr_created',
+        payload: JSON.stringify({
+          prUrl: prResult.prUrl,
+          prNumber: prResult.prNumber,
+          reviewCycles: reviewCycle,
+        }),
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      createEvent(db, {
+        taskId: task.id,
+        type: 'pr_creation_failed',
+        payload: JSON.stringify({ error: errorMessage }),
+      });
+      // Even if PR creation fails, move to needs_human_review
+      // so a human can manually create the PR
+    }
+
+    // Move to needs_human_review
+    updateTask(db, task.id, { status: 'needs_human_review' });
+    unclaimTask(db, task.id);
+    createEvent(db, {
+      taskId: task.id,
+      type: 'status_changed',
+      payload: JSON.stringify({
+        from: task.status,
+        to: 'needs_human_review',
+        reviewCycles: reviewCycle,
+      }),
+    });
+    broadcast(io, 'task:updated', {
+      taskId: task.id,
+      status: 'needs_human_review',
+    });
   }
 
   /**
