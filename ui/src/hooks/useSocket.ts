@@ -1,18 +1,18 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 export function useSocket(): Socket | null {
-  const socketRef = useRef<Socket | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
-    const socket = io({ transports: ['websocket', 'polling'] });
-    socketRef.current = socket;
+    const s = io({ transports: ['websocket', 'polling'] });
+    setSocket(s);
 
     return () => {
-      socket.disconnect();
-      socketRef.current = null;
+      s.disconnect();
+      setSocket(null);
     };
   }, []);
 
-  return socketRef.current;
+  return socket;
 }

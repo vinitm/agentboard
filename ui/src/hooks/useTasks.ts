@@ -63,6 +63,7 @@ export function useTasks(projectId: string) {
       priority?: number;
     }) => {
       const task = await api.post<Task>('/api/tasks', { ...data, projectId });
+      setTasks((prev) => [...prev, task]);
       return task;
     },
     [projectId],
@@ -73,25 +74,34 @@ export function useTasks(projectId: string) {
       id: string,
       data: Partial<Pick<Task, 'title' | 'description' | 'spec' | 'riskLevel' | 'priority' | 'columnPosition'>>,
     ) => {
-      return api.put<Task>(`/api/tasks/${id}`, data);
+      const updated = await api.put<Task>(`/api/tasks/${id}`, data);
+      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      return updated;
     },
     [],
   );
 
   const moveTask = useCallback(async (id: string, column: TaskStatus) => {
-    return api.post<Task>(`/api/tasks/${id}/move`, { column });
+    const moved = await api.post<Task>(`/api/tasks/${id}/move`, { column });
+    setTasks((prev) => prev.map((t) => (t.id === id ? moved : t)));
+    return moved;
   }, []);
 
   const deleteTask = useCallback(async (id: string) => {
-    return api.del(`/api/tasks/${id}`);
+    await api.del(`/api/tasks/${id}`);
+    setTasks((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const answerTask = useCallback(async (id: string, answers: string) => {
-    return api.post<Task>(`/api/tasks/${id}/answer`, { answers });
+    const answered = await api.post<Task>(`/api/tasks/${id}/answer`, { answers });
+    setTasks((prev) => prev.map((t) => (t.id === id ? answered : t)));
+    return answered;
   }, []);
 
   const retryTask = useCallback(async (id: string) => {
-    return api.post<Task>(`/api/tasks/${id}/retry`);
+    const retried = await api.post<Task>(`/api/tasks/${id}/retry`);
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...retried, status: retried.status ?? 'ready' } : t)));
+    return retried;
   }, []);
 
   return {

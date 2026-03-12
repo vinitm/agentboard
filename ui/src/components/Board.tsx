@@ -18,7 +18,7 @@ const MAIN_COLUMNS: TaskStatus[] = [
   'done',
 ];
 
-const EXTRA_COLUMNS: TaskStatus[] = ['blocked', 'failed'];
+const EXTRA_COLUMNS: TaskStatus[] = ['blocked', 'failed', 'cancelled'];
 
 interface Props {
   tasks: Task[];
@@ -47,13 +47,15 @@ export const Board: React.FC<Props> = ({
   answerTask,
   retryTask,
 }) => {
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null | undefined>(undefined); // undefined = closed, null = new
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
+
+  const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
   const tasksByStatus = (status: TaskStatus) =>
     tasks.filter((t) => t.status === status);
@@ -69,7 +71,10 @@ export const Board: React.FC<Props> = ({
     if (!over) return;
 
     const taskId = active.id as string;
-    const targetColumn = over.id as TaskStatus;
+    const overId = over.id as string;
+    const isValidColumn = (MAIN_COLUMNS as string[]).includes(overId) || (EXTRA_COLUMNS as string[]).includes(overId);
+    const targetColumn = isValidColumn ? (overId as TaskStatus) : tasks.find((t) => t.id === overId)?.status;
+    if (!targetColumn) return;
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === targetColumn) return;
 
@@ -137,7 +142,7 @@ export const Board: React.FC<Props> = ({
               key={status}
               status={status}
               tasks={tasksByStatus(status)}
-              onTaskClick={setSelectedTask}
+              onTaskClick={(t) => setSelectedTaskId(t.id)}
             />
           ))}
         </div>
@@ -152,7 +157,7 @@ export const Board: React.FC<Props> = ({
                 key={status}
                 status={status}
                 tasks={colTasks}
-                onTaskClick={setSelectedTask}
+                onTaskClick={(t) => setSelectedTaskId(t.id)}
               />
             );
           })}
@@ -172,13 +177,13 @@ export const Board: React.FC<Props> = ({
       {selectedTask && (
         <TaskDetail
           task={selectedTask}
-          onClose={() => setSelectedTask(null)}
+          onClose={() => setSelectedTaskId(null)}
           onUpdate={updateTask}
           onAnswer={answerTask}
           onRetry={retryTask}
           onDelete={deleteTask}
           onEdit={(t) => {
-            setSelectedTask(null);
+            setSelectedTaskId(null);
             setEditingTask(t);
           }}
         />
