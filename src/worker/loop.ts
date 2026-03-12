@@ -171,14 +171,9 @@ export function createWorkerLoop(
 
       if (checksResult.passed) {
         // Commit the implementation
-        const slug = task.title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '')
-          .slice(0, 50);
         await commitChanges(
           worktreePath,
-          `feat: implement ${slug}`
+          `feat: implement ${task.title}`
         );
 
         // Move to review_spec (next stages in Task 7)

@@ -231,7 +231,7 @@ async function scanForSecrets(worktreePath: string): Promise<CheckResult> {
     try {
       const { stdout } = await execFileAsync(
         'git',
-        ['diff', 'HEAD'],
+        ['diff', '--cached'],
         { cwd: worktreePath, maxBuffer: 10 * 1024 * 1024 }
       );
       diff = stdout;
@@ -255,7 +255,7 @@ async function scanForSecrets(worktreePath: string): Promise<CheckResult> {
     try {
       const { stdout } = await execFileAsync(
         'git',
-        ['diff', '--name-only', 'HEAD'],
+        ['diff', '--name-only', '--cached'],
         { cwd: worktreePath }
       );
       stagedFiles = stdout;
@@ -282,7 +282,7 @@ async function scanForSecrets(worktreePath: string): Promise<CheckResult> {
     if (detectedSecrets.length > 0) {
       return {
         name: 'secret-detection',
-        command: 'git diff --name-only HEAD + pattern matching',
+        command: 'git diff --name-only --cached + pattern matching',
         passed: false,
         output: `Potential secrets detected:\n${detectedSecrets.map((s) => `  - ${s}`).join('\n')}`,
       };
@@ -290,7 +290,7 @@ async function scanForSecrets(worktreePath: string): Promise<CheckResult> {
 
     return {
       name: 'secret-detection',
-      command: 'git diff --name-only HEAD + pattern matching',
+      command: 'git diff --name-only --cached + pattern matching',
       passed: true,
       output: 'No secrets detected.',
     };

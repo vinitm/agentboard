@@ -133,6 +133,7 @@ export async function runImplementation(
     updateRun(db, run.id, {
       status: 'failed',
       output: errorMessage,
+      tokensUsed: 0,
       finishedAt: new Date().toISOString(),
     });
 
