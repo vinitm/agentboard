@@ -38,7 +38,8 @@ export async function runImplementation(
   task: Task,
   worktreePath: string,
   config: AgentboardConfig,
-  attempt: number
+  attempt: number,
+  onOutput?: (chunk: string) => void
 ): Promise<ImplementationResult> {
   // Always use Opus for implementation
   const model = 'opus';
@@ -76,6 +77,7 @@ export async function runImplementation(
       prompt,
       worktreePath,
       model,
+      onOutput,
     });
 
     // Check for needs_user_input in output

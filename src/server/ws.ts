@@ -8,6 +8,16 @@ export function broadcast(io: Server, event: string, data: unknown): void {
 }
 
 /**
+ * Broadcast a run:log event for real-time log streaming.
+ */
+export function broadcastLog(
+  io: Server,
+  data: { taskId: string; runId: string; chunk: string; timestamp: string }
+): void {
+  io.emit('run:log', data);
+}
+
+/**
  * Set up WebSocket connection handling.
  */
 export function setupWebSocket(io: Server): void {

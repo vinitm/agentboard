@@ -5,6 +5,8 @@ export interface ExecuteOptions {
   worktreePath: string;
   model: string;
   timeout?: number;
+  /** Optional callback invoked with each chunk of stdout/stderr as it arrives. */
+  onOutput?: (chunk: string) => void;
 }
 
 export interface ExecuteResult {
@@ -21,7 +23,7 @@ export interface ExecuteResult {
  * piping the prompt to stdin.
  */
 export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResult> {
-  const { prompt, worktreePath, model, timeout = 300_000 } = options;
+  const { prompt, worktreePath, model, timeout = 300_000, onOutput } = options;
   const startTime = Date.now();
 
   return new Promise<ExecuteResult>((resolve) => {
@@ -55,11 +57,15 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
     child.stdin.end();
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      if (onOutput) onOutput(text);
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      if (onOutput) onOutput(text);
     });
 
     child.on('close', (code: number | null) => {
