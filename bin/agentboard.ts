@@ -12,30 +12,34 @@ program
 program
   .command('init')
   .description('Initialize a new agentboard project in the current directory')
-  .action(() => {
-    console.log('init: stub — not yet implemented');
+  .action(async () => {
+    const { default: init } = await import('../src/cli/init.js');
+    await init();
   });
 
 program
   .command('up')
   .description('Start the agentboard server')
   .option('-p, --port <port>', 'Port to listen on', '4200')
-  .action((_opts) => {
-    console.log('up: stub — not yet implemented');
+  .action(async (opts: { port?: string }) => {
+    const { default: up } = await import('../src/cli/up.js');
+    await up(opts);
   });
 
 program
   .command('down')
   .description('Stop the agentboard server')
-  .action(() => {
-    console.log('down: stub — not yet implemented');
+  .action(async () => {
+    const { default: down } = await import('../src/cli/down.js');
+    await down();
   });
 
 program
   .command('doctor')
   .description('Check environment and configuration')
-  .action(() => {
-    console.log('doctor: stub — not yet implemented');
+  .action(async () => {
+    const { default: doctor } = await import('../src/cli/doctor.js');
+    await doctor();
   });
 
 program.parse();
