@@ -132,7 +132,7 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       return;
     }
 
-    // Can move to ready from backlog (requires spec)
+    // Can move to ready from backlog (requires spec), failed, or blocked
     if (column === 'ready') {
       if (task.status !== 'backlog' && task.status !== 'failed' && task.status !== 'blocked') {
         res.status(400).json({
@@ -150,31 +150,20 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       return;
     }
 
-    // Can move to done or needs_human_review
-    if (column === 'done' || column === 'needs_human_review') {
-      const updated = queries.moveToColumn(db, req.params.id, column, 0);
-      broadcast(io, 'task:moved', updated);
-      res.json(updated);
-      return;
-    }
-
-    // Can move to backlog
+    // Can move to backlog from ready only
     if (column === 'backlog') {
+      if (task.status !== 'ready') {
+        res.status(400).json({ error: 'Can only move to backlog from ready' });
+        return;
+      }
       const updated = queries.moveToColumn(db, req.params.id, column, 0);
       broadcast(io, 'task:moved', updated);
       res.json(updated);
       return;
     }
 
-    // For blocked/failed — these are set by the system but allow manual move
-    if (column === 'blocked' || column === 'failed') {
-      const updated = queries.moveToColumn(db, req.params.id, column, 0);
-      broadcast(io, 'task:moved', updated);
-      res.json(updated);
-      return;
-    }
-
-    res.status(400).json({ error: `Invalid target column: ${column}` });
+    // done, needs_human_review, blocked, and failed are agent-controlled — no manual moves allowed
+    res.status(400).json({ error: `Cannot manually move task to column: ${column}` });
   });
 
   // POST /api/tasks/:id/answer — provide answers to blocked task
@@ -193,7 +182,14 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       res.status(400).json({ error: 'answers is required' });
       return;
     }
-    // Store the answer and move back to ready
+    // Record the answers as an event
+    queries.createEvent(db, {
+      taskId: req.params.id,
+      type: 'answer_provided',
+      payload: JSON.stringify({ answers }),
+    });
+
+    // Move the task back to ready and clear the blocked reason
     const updated = queries.updateTask(db, req.params.id, {
       blockedReason: null,
       status: 'ready',

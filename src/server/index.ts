@@ -81,6 +81,5 @@ export function createServer(
     }
   );
 
-  server.listen(config.port, config.host);
   return server;
 }

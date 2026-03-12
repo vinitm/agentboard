@@ -2,6 +2,8 @@ import { Router } from 'express';
 import type Database from 'better-sqlite3';
 import * as queries from '../../db/queries.js';
 
+// NOTE: Run lifecycle events (run:started, run:updated, run:completed) are
+// emitted by the worker process, not by these read-only API routes.
 export function createRunRoutes(db: Database.Database): Router {
   const router = Router();
 

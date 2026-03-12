@@ -44,6 +44,7 @@ export default async function up(opts: {
 
   // 3. Start server
   const server = createServer(db, config);
+  server.listen(config.port, config.host);
 
   // 4. Watch for shutdown file
   const shutdownPath = path.join(cwd, '.agentboard', 'shutdown');
