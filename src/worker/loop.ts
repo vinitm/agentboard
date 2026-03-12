@@ -13,6 +13,7 @@ import {
   createGitRef,
   getTaskById,
   listProjects,
+  listGitRefsByTask,
 } from '../db/queries.js';
 import { createWorktree, cleanupWorktree } from './git.js';
 import { runPlanning } from './stages/planner.js';
@@ -38,45 +39,53 @@ export function createWorkerLoop(
   let running = false;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let activeTasks = 0;
+  let tickInProgress = false;
   const emitter = new EventEmitter();
 
   /**
    * Try to pick up and process a ready task.
    */
   async function tick(): Promise<void> {
-    if (!running) return;
-    if (activeTasks >= config.maxConcurrentTasks) return;
+    if (tickInProgress) return;
+    tickInProgress = true;
+    try {
+      if (!running) return;
+      if (activeTasks >= config.maxConcurrentTasks) return;
 
-    // Get all projects to find ready tasks across them
-    const projects = listProjects(db);
-    let readyTask: Task | undefined;
+      // Get all projects to find ready tasks across them
+      const projects = listProjects(db);
+      const allReadyTasks: Task[] = [];
 
-    for (const project of projects) {
-      const readyTasks = listTasksByStatus(db, project.id, 'ready');
-      if (readyTasks.length > 0) {
-        readyTask = readyTasks[0];
-        break;
+      for (const project of projects) {
+        const readyTasks = listTasksByStatus(db, project.id, 'ready');
+        allReadyTasks.push(...readyTasks);
       }
+
+      // Loop through ready tasks trying to claim one
+      for (const readyTask of allReadyTasks) {
+        if (!running) return;
+        if (activeTasks >= config.maxConcurrentTasks) return;
+
+        // Atomic claim
+        const claimed = claimTask(db, readyTask.id, WORKER_ID);
+        if (!claimed) continue;
+
+        activeTasks++;
+        // Re-fetch task after claim
+        const task = getTaskById(db, readyTask.id);
+        if (!task) {
+          activeTasks--;
+          continue;
+        }
+
+        // Process in background (don't block the tick)
+        processTask(task).finally(() => {
+          activeTasks--;
+        });
+      }
+    } finally {
+      tickInProgress = false;
     }
-
-    if (!readyTask) return;
-
-    // Atomic claim
-    const claimed = claimTask(db, readyTask.id, WORKER_ID);
-    if (!claimed) return;
-
-    activeTasks++;
-    // Re-fetch task after claim
-    const task = getTaskById(db, readyTask.id);
-    if (!task) {
-      activeTasks--;
-      return;
-    }
-
-    // Process in background (don't block the tick)
-    processTask(task).finally(() => {
-      activeTasks--;
-    });
   }
 
   /**
@@ -84,6 +93,8 @@ export function createWorkerLoop(
    */
   async function processTask(task: Task): Promise<void> {
     let worktreePath: string | undefined;
+    let isSubtask = false;
+    let repoPath: string | undefined;
 
     try {
       // Find the project to get the repo path
@@ -91,6 +102,33 @@ export function createWorkerLoop(
       const project = projects.find((p) => p.id === task.projectId);
       if (!project) {
         throw new Error(`Project not found for task ${task.id}`);
+      }
+      repoPath = project.path;
+
+      // Check if this is a subtask that should reuse parent's worktree
+      if (task.parentTaskId) {
+        isSubtask = true;
+        const parentGitRefs = listGitRefsByTask(db, task.parentTaskId);
+        if (parentGitRefs.length > 0 && parentGitRefs[0].worktreePath) {
+          worktreePath = parentGitRefs[0].worktreePath;
+
+          // Skip planning for subtasks — go directly to implementing
+          updateTask(db, task.id, { status: 'implementing' });
+          unclaimTask(db, task.id);
+          createEvent(db, {
+            taskId: task.id,
+            type: 'status_changed',
+            payload: JSON.stringify({
+              from: 'ready',
+              to: 'implementing',
+            }),
+          });
+          broadcast(io, 'task:updated', {
+            taskId: task.id,
+            status: 'implementing',
+          });
+          return;
+        }
       }
 
       // Create a slug from the task title
@@ -182,13 +220,21 @@ export function createWorkerLoop(
           broadcast(io, 'task:created', { task: childTask });
         }
 
-        // Parent stays in planning until children complete
+        // Move parent to blocked until subtasks complete
+        updateTask(db, task.id, {
+          status: 'blocked',
+          blockedReason: 'Waiting for subtasks to complete',
+        });
         createEvent(db, {
           taskId: task.id,
           type: 'subtasks_created',
           payload: JSON.stringify({
             count: planResult.subtasks.length,
           }),
+        });
+        broadcast(io, 'task:updated', {
+          taskId: task.id,
+          status: 'blocked',
         });
         // Unclaim the parent — children will be picked up individually
         unclaimTask(db, task.id);
@@ -228,10 +274,10 @@ export function createWorkerLoop(
       });
       broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
 
-      // Attempt worktree cleanup on failure
-      if (worktreePath) {
+      // Attempt worktree cleanup on failure (skip for subtasks reusing parent worktree)
+      if (worktreePath && !isSubtask && repoPath) {
         try {
-          await cleanupWorktree(worktreePath);
+          await cleanupWorktree(repoPath, worktreePath);
         } catch {
           // Best effort cleanup
         }
@@ -246,7 +292,13 @@ export function createWorkerLoop(
     if (!running) return;
     pollTimer = setTimeout(async () => {
       try {
-        await tick();
+        // Call tick() in a loop to fill all concurrent slots quickly
+        let hadWork = true;
+        while (hadWork && running && activeTasks < config.maxConcurrentTasks) {
+          const before = activeTasks;
+          await tick();
+          hadWork = activeTasks > before;
+        }
       } catch (error) {
         console.error('[worker] Tick error:', error);
       }

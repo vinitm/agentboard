@@ -33,23 +33,26 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
       env: { ...process.env },
     });
 
-    // Safety: if child process is somehow null
-    if (!child) {
+    let stdout = '';
+    let stderr = '';
+
+    const timer = setTimeout(() => {
+      child.kill();
+    }, timeout);
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
       resolve({
-        output: 'Failed to spawn claude process',
+        output: `Failed to spawn claude process: ${err.message}`,
         exitCode: 1,
         tokensUsed: 0,
         duration: Date.now() - startTime,
       });
-      return;
-    }
+    });
 
     // Write the prompt to stdin, then close it
     child.stdin.write(prompt);
     child.stdin.end();
-
-    let stdout = '';
-    let stderr = '';
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -58,10 +61,6 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-
-    const timer = setTimeout(() => {
-      child.kill();
-    }, timeout);
 
     child.on('close', (code: number | null) => {
       clearTimeout(timer);

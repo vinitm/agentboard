@@ -45,7 +45,7 @@ export async function runPlanning(
 
   // Build the prompt
   const template = loadPlannerTemplate();
-  const prompt = template.replace('{taskSpec}', taskPacket);
+  const prompt = template.replace('{taskSpec}', () => taskPacket);
 
   // Create a run record
   const run = createRun(db, {
@@ -61,6 +61,13 @@ export async function runPlanning(
       worktreePath,
       model,
     });
+
+    // Check exit code before parsing output
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Claude Code exited with code ${result.exitCode}: ${result.output}`
+      );
+    }
 
     // Parse the JSON response from the output
     const planningResult = parseJsonFromOutput(result.output);

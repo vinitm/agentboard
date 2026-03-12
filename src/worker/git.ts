@@ -41,10 +41,8 @@ export async function createWorktree(
 /**
  * Remove a git worktree.
  */
-export async function cleanupWorktree(worktreePath: string): Promise<void> {
-  // Find the main repo from worktree metadata
-  // git worktree remove expects to be run from the main repo or can take the path
-  await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath]);
+export async function cleanupWorktree(repoPath: string, worktreePath: string): Promise<void> {
+  await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoPath });
 }
 
 /**
