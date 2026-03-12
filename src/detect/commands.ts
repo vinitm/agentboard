@@ -1,6 +1,19 @@
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Commands } from '../types/index.js';
+
+/**
+ * Check whether a CLI command exists on PATH.
+ */
+function commandExists(cmd: string): boolean {
+  try {
+    execSync(`which ${cmd}`, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Read package.json scripts (if any) and return the scripts object.
@@ -67,15 +80,17 @@ export function detectCommands(
       ? 'npm run format'
       : 'npx prettier -w .';
 
-    // Typecheck
-    cmds.typecheck = hasScript(scripts, 'typecheck')
-      ? 'npm run typecheck'
-      : 'npx tsc --noEmit';
+    // Typecheck (only for TypeScript projects)
+    if (isTS) {
+      cmds.typecheck = hasScript(scripts, 'typecheck')
+        ? 'npm run typecheck'
+        : 'npx tsc --noEmit';
+    }
 
-    // Security
+    // Security — npm audit is always available with npm
     cmds.security = hasScript(scripts, 'audit')
       ? 'npm audit --json'
-      : null;
+      : 'npm audit --json';
   }
 
   if (languages.includes('python')) {
@@ -91,6 +106,11 @@ export function detectCommands(
     cmds.lint = cmds.lint ?? 'golangci-lint run';
     cmds.formatFix = cmds.formatFix ?? 'gofmt -w .';
     cmds.security = cmds.security ?? 'gosec ./...';
+  }
+
+  if (languages.includes('shell')) {
+    cmds.lint = cmds.lint ?? (commandExists('shellcheck') ? 'shellcheck' : null);
+    cmds.formatFix = cmds.formatFix ?? (commandExists('shfmt') ? 'shfmt' : null);
   }
 
   return cmds;

@@ -9,7 +9,15 @@ export default async function up(opts: {
   port?: string;
 }): Promise<void> {
   const cwd = process.cwd();
-  const configPath = path.join(cwd, '.agentboard', 'config.json');
+  const abDir = path.join(cwd, '.agentboard');
+
+  // Clean up stale shutdown file from a previous crash
+  const staleShutdown = path.join(abDir, 'shutdown');
+  if (fs.existsSync(staleShutdown)) {
+    fs.unlinkSync(staleShutdown);
+  }
+
+  const configPath = path.join(abDir, 'config.json');
 
   if (!fs.existsSync(configPath)) {
     console.error(
@@ -49,6 +57,18 @@ export default async function up(opts: {
       process.exit(0);
     }
   }, 1000);
+
+  // Signal handlers for graceful shutdown
+  const gracefulShutdown = (signal: string): void => {
+    console.log(chalk.yellow(`\n${signal} received. Shutting down…`));
+    server.close();
+    db.close();
+    clearInterval(shutdownInterval);
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
   console.log(
     chalk.green.bold(

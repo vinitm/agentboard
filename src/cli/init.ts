@@ -39,24 +39,24 @@ export default async function init(): Promise<void> {
     port: 4200,
     host: 'localhost',
     maxConcurrentTasks: 2,
-    maxAttemptsPerTask: 3,
-    maxReviewCycles: 2,
-    maxSubcardDepth: 1,
+    maxAttemptsPerTask: 10,
+    maxReviewCycles: 3,
+    maxSubcardDepth: 2,
     prDraft: true,
     autoMerge: false,
-    securityMode: 'audit',
-    commitPolicy: 'squash',
-    formatPolicy: 'auto',
-    branchPrefix: 'agentboard/',
+    securityMode: 'lightweight',
+    commitPolicy: 'after-checks-pass',
+    formatPolicy: 'auto-fix-separate-commit',
+    branchPrefix: 'agent/',
     baseBranch: 'main',
     githubRemote: 'origin',
-    prMethod: 'gh',
+    prMethod: 'gh-cli',
     modelDefaults: {
-      planning: 'claude-sonnet-4-20250514',
-      implementation: 'claude-sonnet-4-20250514',
-      reviewSpec: 'claude-sonnet-4-20250514',
-      reviewCode: 'claude-sonnet-4-20250514',
-      security: 'claude-sonnet-4-20250514',
+      planning: 'sonnet',
+      implementation: 'opus',
+      reviewSpec: 'sonnet',
+      reviewCode: 'sonnet',
+      security: 'haiku',
     },
     commands,
     notifications: {
@@ -78,7 +78,21 @@ export default async function init(): Promise<void> {
   createDatabase(dbPath);
   console.log(chalk.green('Created database'), dbPath);
 
-  // 8. Done
+  // 8. Ensure .agentboard/ is in .gitignore
+  const gitignorePath = path.join(cwd, '.gitignore');
+  const gitignoreEntry = '.agentboard/';
+  if (fs.existsSync(gitignorePath)) {
+    const content = fs.readFileSync(gitignorePath, 'utf-8');
+    if (!content.split('\n').some((line) => line.trim() === gitignoreEntry)) {
+      fs.appendFileSync(gitignorePath, `\n${gitignoreEntry}\n`);
+      console.log(chalk.green('Added'), gitignoreEntry, 'to .gitignore');
+    }
+  } else {
+    fs.writeFileSync(gitignorePath, `${gitignoreEntry}\n`);
+    console.log(chalk.green('Created .gitignore with'), gitignoreEntry);
+  }
+
+  // 9. Done
   console.log(
     chalk.green.bold('\nAgentboard initialized successfully!')
   );
