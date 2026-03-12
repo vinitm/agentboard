@@ -260,21 +260,8 @@ export function createWorkerLoop(
         if (parentGitRefs.length > 0 && parentGitRefs[0].worktreePath) {
           worktreePath = parentGitRefs[0].worktreePath;
 
-          // Skip planning for subtasks — go directly to implementing
-          updateTask(db, task.id, { status: 'implementing' });
-          unclaimTask(db, task.id);
-          createEvent(db, {
-            taskId: task.id,
-            type: 'status_changed',
-            payload: JSON.stringify({
-              from: 'ready',
-              to: 'implementing',
-            }),
-          });
-          broadcast(io, 'task:updated', {
-            taskId: task.id,
-            status: 'implementing',
-          });
+          // Skip planning for subtasks — go directly to implementation loop
+          await runImplementationLoop(task, worktreePath, config, io, db);
           return;
         }
       }

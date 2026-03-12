@@ -3,7 +3,8 @@ import { promisify } from 'node:util';
 import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig } from '../../types/index.js';
 import { createRun, updateRun } from '../../db/queries.js';
-import { commitChanges } from '../git.js';
+// Note: we intentionally do NOT import commitChanges from git.ts for format fixes.
+// commitFormattingFix below stages only tracked-file modifications (git add -u).
 
 const execFileAsync = promisify(execFile);
 
@@ -113,8 +114,8 @@ export async function runChecks(
           results.push(fixResult);
 
           if (fixResult.passed) {
-            // Commit the format fix separately
-            await commitChanges(worktreePath, 'style: auto-format');
+            // Commit only the formatting changes (tracked files modified by formatter)
+            await commitFormattingFix(worktreePath);
             formattingFixed = true;
 
             // Re-run format check to verify
@@ -225,83 +226,79 @@ async function runCommand(
  * then checks for secret patterns.
  */
 async function scanForSecrets(worktreePath: string): Promise<CheckResult> {
+  // Stage all changes so the scan covers implementation changes
+  await execFileAsync('git', ['add', '-A'], { cwd: worktreePath });
+
+  // Get the staged diff content
+  let diff = '';
   try {
-    // Get the diff of all uncommitted changes
-    let diff = '';
-    try {
-      const { stdout } = await execFileAsync(
-        'git',
-        ['diff', '--cached'],
-        { cwd: worktreePath, maxBuffer: 10 * 1024 * 1024 }
-      );
-      diff = stdout;
-    } catch {
-      // If HEAD doesn't exist (initial commit), get all staged files
-      try {
-        const { stdout } = await execFileAsync(
-          'git',
-          ['diff', '--cached'],
-          { cwd: worktreePath, maxBuffer: 10 * 1024 * 1024 }
-        );
-        diff = stdout;
-      } catch {
-        // No staged changes — nothing to scan
-        diff = '';
-      }
-    }
+    const { stdout } = await execFileAsync(
+      'git',
+      ['diff', '--cached'],
+      { cwd: worktreePath, maxBuffer: 10 * 1024 * 1024 }
+    );
+    diff = stdout;
+  } catch {
+    diff = '';
+  }
 
-    // Also check for added .env files and credential files
-    let stagedFiles = '';
-    try {
-      const { stdout } = await execFileAsync(
-        'git',
-        ['diff', '--name-only', '--cached'],
-        { cwd: worktreePath }
-      );
-      stagedFiles = stdout;
-    } catch {
-      // Ignore errors
-    }
+  // Get staged file names
+  let stagedFiles = '';
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['diff', '--cached', '--name-only'],
+      { cwd: worktreePath }
+    );
+    stagedFiles = stdout;
+  } catch {
+    stagedFiles = '';
+  }
 
-    const detectedSecrets: string[] = [];
+  const detectedSecrets: string[] = [];
 
-    // Check diff content for secret patterns
-    for (const { name, pattern } of SECRET_PATTERNS) {
-      if (pattern.test(diff) || pattern.test(stagedFiles)) {
-        detectedSecrets.push(name);
-      }
+  // Check diff content for secret patterns
+  for (const { name, pattern } of SECRET_PATTERNS) {
+    if (pattern.test(diff) || pattern.test(stagedFiles)) {
+      detectedSecrets.push(name);
     }
+  }
 
-    // Check for .env files in changed files
-    if (/\.env(?:\.|$)/m.test(stagedFiles)) {
-      if (!detectedSecrets.includes('.env file')) {
-        detectedSecrets.push('.env file detected in changed files');
-      }
+  // Check for .env files in changed files
+  if (/\.env(?:\.|$)/m.test(stagedFiles)) {
+    if (!detectedSecrets.includes('.env file')) {
+      detectedSecrets.push('.env file detected in changed files');
     }
+  }
 
-    if (detectedSecrets.length > 0) {
-      return {
-        name: 'secret-detection',
-        command: 'git diff --name-only --cached + pattern matching',
-        passed: false,
-        output: `Potential secrets detected:\n${detectedSecrets.map((s) => `  - ${s}`).join('\n')}`,
-      };
-    }
+  if (detectedSecrets.length > 0) {
+    // Unstage so secrets aren't accidentally committed
+    await execFileAsync('git', ['reset', 'HEAD'], { cwd: worktreePath }).catch(() => {});
 
     return {
       name: 'secret-detection',
       command: 'git diff --name-only --cached + pattern matching',
-      passed: true,
-      output: 'No secrets detected.',
-    };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
-    return {
-      name: 'secret-detection',
-      command: 'pattern matching on diff',
       passed: false,
-      output: `Secret scan error: ${errorMessage}`,
+      output: `Potential secrets detected:\n${detectedSecrets.map((s) => `  - ${s}`).join('\n')}`,
     };
   }
+
+  return {
+    name: 'secret-detection',
+    command: 'git diff --name-only --cached + pattern matching',
+    passed: true,
+    output: 'No secrets detected.',
+  };
+}
+
+/**
+ * Stage only modified tracked files and commit formatting changes.
+ * Uses `git add -u` (not `git add -A`) so only files already tracked
+ * that were modified by the formatter get staged and committed.
+ */
+async function commitFormattingFix(worktreePath: string): Promise<void> {
+  await execFileAsync('git', ['add', '-u'], { cwd: worktreePath });
+  await execFileAsync('git', ['commit', '-m', 'style: auto-format', '--allow-empty'], {
+    cwd: worktreePath,
+  });
 }

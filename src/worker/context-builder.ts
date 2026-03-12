@@ -69,7 +69,7 @@ export function buildTaskPacket(
   // ── Failure summary from previous failed run ───────────────────────
   if (options?.includeFailures !== false) {
     const runs = listRunsByTask(db, task.id);
-    const failedRun = runs.find((r) => r.status === 'failed');
+    const failedRun = runs.slice().reverse().find((r) => r.status === 'failed');
     if (failedRun?.output) {
       sections.push('## Previous Failure');
       // Truncate to keep context lean
