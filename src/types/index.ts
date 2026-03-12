@@ -103,25 +103,50 @@ export interface Event {
 
 // ── Config interface ─────────────────────────────────────────────────
 
+export interface ModelDefaults {
+  planning: string;
+  implementation: string;
+  reviewSpec: string;
+  reviewCode: string;
+  security: string;
+}
+
+export interface Commands {
+  test: string | null;
+  lint: string | null;
+  format: string | null;
+  formatFix: string | null;
+  typecheck: string | null;
+  security: string | null;
+}
+
+export interface Notifications {
+  desktop: boolean;
+  terminal: boolean;
+}
+
+export interface RufloConfig {
+  enabled: boolean;
+}
+
 export interface AgentboardConfig {
-  projectName: string;
-  repoPath: string;
-  dbPath: string;
-  server: {
-    port: number;
-    host: string;
-  };
-  worker: {
-    maxConcurrency: number;
-    maxRetries: number;
-    retryDelayMs: number;
-  };
-  git: {
-    branchPrefix: string;
-    useWorktrees: boolean;
-  };
-  review: {
-    autoApproveRiskLevels: RiskLevel[];
-    requireHumanReview: boolean;
-  };
+  port: number;
+  host: string;
+  maxConcurrentTasks: number;
+  maxAttemptsPerTask: number;
+  maxReviewCycles: number;
+  maxSubcardDepth: number;
+  prDraft: boolean;
+  autoMerge: boolean;
+  securityMode: string;
+  commitPolicy: string;
+  formatPolicy: string;
+  branchPrefix: string;
+  baseBranch: string;
+  githubRemote: string;
+  prMethod: string;
+  modelDefaults: ModelDefaults;
+  commands: Commands;
+  notifications: Notifications;
+  ruflo: RufloConfig;
 }

@@ -140,7 +140,9 @@ export function updateProject(
 
   if (fields.length === 0) return getProjectById(db, id);
 
-  fields.push("updated_at = datetime('now')");
+  const now = new Date().toISOString();
+  fields.push('updated_at = ?');
+  values.push(now);
   values.push(id);
 
   db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...values);
@@ -255,7 +257,9 @@ export function updateTask(
 
   if (fields.length === 0) return getTaskById(db, id);
 
-  fields.push("updated_at = datetime('now')");
+  const now = new Date().toISOString();
+  fields.push('updated_at = ?');
+  values.push(now);
   values.push(id);
 
   db.prepare(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`).run(...values);
@@ -268,9 +272,10 @@ export function moveToColumn(
   status: TaskStatus,
   columnPosition: number
 ): Task | undefined {
+  const now = new Date().toISOString();
   db.prepare(
-    `UPDATE tasks SET status = ?, column_position = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(status, columnPosition, id);
+    `UPDATE tasks SET status = ?, column_position = ?, updated_at = ? WHERE id = ?`
+  ).run(status, columnPosition, now, id);
   return getTaskById(db, id);
 }
 
@@ -278,21 +283,22 @@ export function claimTask(
   db: Database.Database,
   id: string,
   claimedBy: string
-): Task | undefined {
+): boolean {
   const now = new Date().toISOString();
-  db.prepare(
-    `UPDATE tasks SET claimed_at = ?, claimed_by = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(now, claimedBy, id);
-  return getTaskById(db, id);
+  const result = db.prepare(
+    `UPDATE tasks SET claimed_at = ?, claimed_by = ?, updated_at = ? WHERE id = ? AND claimed_by IS NULL`
+  ).run(now, claimedBy, now, id);
+  return result.changes === 1;
 }
 
 export function unclaimTask(
   db: Database.Database,
   id: string
 ): Task | undefined {
+  const now = new Date().toISOString();
   db.prepare(
-    `UPDATE tasks SET claimed_at = NULL, claimed_by = NULL, updated_at = datetime('now') WHERE id = ?`
-  ).run(id);
+    `UPDATE tasks SET claimed_at = NULL, claimed_by = NULL, updated_at = ? WHERE id = ?`
+  ).run(now, id);
   return getTaskById(db, id);
 }
 

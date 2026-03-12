@@ -34,3 +34,13 @@ export function getDatabase(): Database.Database {
   }
   return _db;
 }
+
+/**
+ * Close the database connection and reset the singleton.
+ */
+export function closeDatabase(): void {
+  if (_db) {
+    _db.close();
+    _db = null;
+  }
+}
