@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Board } from './components/Board';
+import { Settings } from './components/Settings';
 import { useTasks } from './hooks/useTasks';
 import { api } from './api/client';
 import type { Project } from './types';
@@ -8,6 +9,7 @@ export const App: React.FC = () => {
   const [projectId, setProjectId] = useState<string>('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [initError, setInitError] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   const { tasks, loading, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask } =
     useTasks(projectId);
@@ -51,24 +53,40 @@ export const App: React.FC = () => {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#111827' }}>
           Agentboard
         </h1>
-        {projects.length > 1 && (
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {projects.length > 1 && (
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              style={{
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                padding: '6px 10px',
+                fontSize: 14,
+              }}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => setShowSettings(true)}
             style={{
-              borderRadius: 6,
               border: '1px solid #d1d5db',
-              padding: '6px 10px',
+              borderRadius: 6,
+              padding: '6px 12px',
+              background: '#fff',
               fontSize: 14,
+              cursor: 'pointer',
+              color: '#374151',
             }}
           >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        )}
+            Settings
+          </button>
+        </div>
       </header>
 
       {/* Content */}
@@ -93,6 +111,9 @@ export const App: React.FC = () => {
           retryTask={retryTask}
         />
       )}
+
+      {/* Settings modal */}
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
     </div>
   );
 };

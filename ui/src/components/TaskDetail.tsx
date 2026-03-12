@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
-import type { Task, Run, SpecTemplate } from '../types';
+import { LogViewer } from './LogViewer';
+import { BlockedPanel } from './BlockedPanel';
+import { PRPanel } from './PRPanel';
+import { RunHistory } from './RunHistory';
+import type { Task, TaskStatus, Run, SpecTemplate } from '../types';
 
 interface Props {
   task: Task;
@@ -10,6 +14,7 @@ interface Props {
   onRetry: (id: string) => Promise<Task>;
   onDelete: (id: string) => Promise<void>;
   onEdit: (task: Task) => void;
+  onMove: (id: string, column: TaskStatus) => Promise<Task>;
 }
 
 export const TaskDetail: React.FC<Props> = ({
@@ -20,9 +25,9 @@ export const TaskDetail: React.FC<Props> = ({
   onRetry,
   onDelete,
   onEdit,
+  onMove,
 }) => {
   const [runs, setRuns] = useState<Run[]>([]);
-  const [answerText, setAnswerText] = useState('');
 
   useEffect(() => {
     api
@@ -40,11 +45,7 @@ export const TaskDetail: React.FC<Props> = ({
     }
   }
 
-  const handleAnswer = async () => {
-    if (!answerText.trim()) return;
-    await onAnswer(task.id, answerText);
-    setAnswerText('');
-  };
+  const isAgentActive = ['planning', 'implementing', 'checks', 'review_spec', 'review_code'].includes(task.status);
 
   return (
     <div
@@ -65,7 +66,7 @@ export const TaskDetail: React.FC<Props> = ({
           background: '#fff',
           borderRadius: 12,
           padding: 24,
-          maxWidth: 640,
+          maxWidth: 700,
           width: '90%',
           maxHeight: '80vh',
           overflowY: 'auto',
@@ -115,30 +116,17 @@ export const TaskDetail: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Blocked */}
+        {/* Status-specific panels */}
         {task.status === 'blocked' && task.blockedReason && (
-          <div
-            style={{
-              background: '#fffbeb',
-              border: '1px solid #f59e0b',
-              borderRadius: 8,
-              padding: 12,
-              marginBottom: 16,
-            }}
-          >
-            <h4 style={{ ...sectionTitle, color: '#b45309' }}>Blocked</h4>
-            <p style={{ margin: '0 0 8px', fontSize: 14 }}>{task.blockedReason}</p>
-            <textarea
-              value={answerText}
-              onChange={(e) => setAnswerText(e.target.value)}
-              placeholder="Provide answer..."
-              rows={3}
-              style={textareaStyle}
-            />
-            <button onClick={handleAnswer} style={{ ...btnStyle, background: '#f59e0b', marginTop: 8 }}>
-              Submit Answer
-            </button>
-          </div>
+          <BlockedPanel
+            taskId={task.id}
+            blockedReason={task.blockedReason}
+            onAnswer={onAnswer}
+          />
+        )}
+
+        {task.status === 'needs_human_review' && (
+          <PRPanel task={task} onMove={onMove} />
         )}
 
         {/* Failed */}
@@ -150,31 +138,19 @@ export const TaskDetail: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Runs */}
-        {runs.length > 0 && (
+        {/* Live logs when agent is active */}
+        {isAgentActive && (
           <div style={{ marginBottom: 16 }}>
-            <h4 style={sectionTitle}>Runs ({runs.length})</h4>
-            {runs.map((run) => (
-              <div
-                key={run.id}
-                style={{
-                  background: '#f9fafb',
-                  borderRadius: 6,
-                  padding: 8,
-                  marginBottom: 6,
-                  fontSize: 13,
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>{run.stage}</span>
-                <span style={{ marginLeft: 8, color: runStatusColor(run.status) }}>{run.status}</span>
-                <span style={{ marginLeft: 8, color: '#9ca3af' }}>attempt #{run.attempt}</span>
-                {run.modelUsed && (
-                  <span style={{ marginLeft: 8, color: '#9ca3af' }}>{run.modelUsed}</span>
-                )}
-              </div>
-            ))}
+            <h4 style={sectionTitle}>Live Logs</h4>
+            <LogViewer taskId={task.id} />
           </div>
         )}
+
+        {/* Run history */}
+        <div style={{ marginBottom: 16 }}>
+          <h4 style={sectionTitle}>Runs ({runs.length})</h4>
+          <RunHistory runs={runs} />
+        </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 8, borderTop: '1px solid #e5e7eb', paddingTop: 16 }}>
@@ -237,10 +213,6 @@ function riskColor(r: string): string {
   return r === 'high' ? '#ef4444' : r === 'medium' ? '#f59e0b' : '#22c55e';
 }
 
-function runStatusColor(s: string): string {
-  return s === 'running' ? '#3b82f6' : s === 'success' ? '#22c55e' : s === 'failed' ? '#ef4444' : '#6b7280';
-}
-
 const sectionTitle: React.CSSProperties = {
   margin: '0 0 6px',
   fontSize: 13,
@@ -267,14 +239,4 @@ const closeBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
   color: '#9ca3af',
   lineHeight: 1,
-};
-
-const textareaStyle: React.CSSProperties = {
-  width: '100%',
-  borderRadius: 6,
-  border: '1px solid #d1d5db',
-  padding: 8,
-  fontSize: 14,
-  resize: 'vertical',
-  boxSizing: 'border-box',
 };

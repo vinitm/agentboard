@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cd ui && npm run build",
+    "build:server": "tsc",
+    "build:ui": "cd ui && npm run build",
     "dev": "tsx watch bin/agentboard.ts",
     "start": "node dist/bin/agentboard.js"
   },

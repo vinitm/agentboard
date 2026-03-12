@@ -4,6 +4,7 @@ import type { Server } from 'socket.io';
 import type { TaskStatus } from '../../types/index.js';
 import * as queries from '../../db/queries.js';
 import { broadcast } from '../ws.js';
+import { cleanupWorktree } from '../../worker/git.js';
 
 const AGENT_CONTROLLED_COLUMNS: TaskStatus[] = [
   'planning',
@@ -126,8 +127,12 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
 
     // Can move to cancelled from any state
     if (column === 'cancelled') {
+      // Unclaim if claimed
+      queries.unclaimTask(db, req.params.id);
       const updated = queries.moveToColumn(db, req.params.id, column, 0);
       broadcast(io, 'task:moved', updated);
+      // Best-effort worktree cleanup in background
+      cleanupTaskWorktree(db, req.params.id).catch(() => {});
       res.json(updated);
       return;
     }
@@ -170,6 +175,8 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       }
       const updated = queries.moveToColumn(db, req.params.id, column, 0);
       broadcast(io, 'task:moved', updated);
+      // Best-effort worktree cleanup in background
+      cleanupTaskWorktree(db, req.params.id).catch(() => {});
       res.json(updated);
       return;
     }
@@ -231,6 +238,32 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
     broadcast(io, 'task:updated', updated);
     res.json(updated);
   });
+
+  /**
+   * Best-effort cleanup of a task's git worktree and update git ref status.
+   */
+  async function cleanupTaskWorktree(database: Database.Database, taskId: string): Promise<void> {
+    const gitRefs = queries.listGitRefsByTask(database, taskId);
+    if (gitRefs.length === 0) return;
+
+    const ref = gitRefs[0];
+    if (!ref.worktreePath) return;
+
+    // Find the project to get the repo path
+    const task = queries.getTaskById(database, taskId);
+    if (!task) return;
+
+    const projects = queries.listProjects(database);
+    const project = projects.find((p) => p.id === task.projectId);
+    if (!project) return;
+
+    try {
+      await cleanupWorktree(project.path, ref.worktreePath);
+      queries.updateGitRef(database, ref.id, { worktreePath: null });
+    } catch {
+      // Best effort — worktree may already be gone
+    }
+  }
 
   return router;
 }

@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import { createDatabase } from '../db/index.js';
 import { createServer } from '../server/index.js';
 import { createWorkerLoop } from '../worker/loop.js';
+import { recoverStaleTasks } from '../worker/recovery.js';
 import type { AgentboardConfig } from '../types/index.js';
 
 export default async function up(opts: {
@@ -47,11 +48,17 @@ export default async function up(opts: {
   const { server, io } = createServer(db, config, { configPath });
   server.listen(config.port, config.host);
 
-  // 4. Start worker loop
+  // 4. Crash recovery: recover stale tasks
+  const recovered = recoverStaleTasks(db);
+  if (recovered > 0) {
+    console.log(chalk.yellow(`Recovered ${recovered} stale task(s) from previous crash`));
+  }
+
+  // 5. Start worker loop
   const worker = createWorkerLoop(db, config, io);
   worker.start();
 
-  // 5. Watch for shutdown file
+  // 6. Watch for shutdown file
   const shutdownPath = path.join(cwd, '.agentboard', 'shutdown');
   const shutdownInterval = setInterval(() => {
     if (fs.existsSync(shutdownPath)) {

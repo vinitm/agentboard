@@ -30,9 +30,11 @@ interface Props {
   status: TaskStatus;
   tasks: Task[];
   onTaskClick: (task: Task) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (taskId: string, event: React.MouseEvent) => void;
 }
 
-export const Column: React.FC<Props> = ({ status, tasks, onTaskClick }) => {
+export const Column: React.FC<Props> = ({ status, tasks, onTaskClick, selectedIds, onToggleSelect }) => {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const isAgent = AGENT_COLUMNS.includes(status);
 
@@ -80,7 +82,29 @@ export const Column: React.FC<Props> = ({ status, tasks, onTaskClick }) => {
         {tasks
           .sort((a, b) => a.columnPosition - b.columnPosition || b.priority - a.priority)
           .map((task) => (
-            <TaskCard key={task.id} task={task} onClick={() => onTaskClick(task)} />
+            <div key={task.id} style={{ position: 'relative' }}>
+              {selectedIds && onToggleSelect && (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(task.id)}
+                  onClick={(e) => onToggleSelect(task.id, e)}
+                  onChange={() => {}}
+                  style={{
+                    position: 'absolute',
+                    top: 6,
+                    right: 6,
+                    zIndex: 10,
+                    cursor: 'pointer',
+                    accentColor: '#3b82f6',
+                  }}
+                />
+              )}
+              <TaskCard
+                task={task}
+                onClick={() => onTaskClick(task)}
+                selected={selectedIds?.has(task.id)}
+              />
+            </div>
           ))}
       </div>
     </div>

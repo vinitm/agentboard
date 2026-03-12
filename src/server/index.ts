@@ -1,6 +1,8 @@
 import express from 'express';
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Server as SocketIOServer } from 'socket.io';
 import type Database from 'better-sqlite3';
 import type { AgentboardConfig } from '../types/index.js';
@@ -73,6 +75,21 @@ export function createServer(
   app.use('/api/artifacts', createArtifactRoutes(db));
   app.use('/api/config', createConfigRoutes(config, configPath));
   app.use('/api/events', createEventRoutes(db));
+
+  // ── Serve static UI files in production ───────────────────────────
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const uiDistPath = path.resolve(currentDir, '..', '..', 'ui', 'dist');
+  if (fs.existsSync(uiDistPath)) {
+    app.use(express.static(uiDistPath));
+    // SPA fallback: serve index.html for non-API routes
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(uiDistPath, 'index.html'));
+    });
+  }
 
   // ── Error handling middleware ──────────────────────────────────────
   app.use(

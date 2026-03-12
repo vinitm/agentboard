@@ -20,6 +20,8 @@ const MAIN_COLUMNS: TaskStatus[] = [
 
 const EXTRA_COLUMNS: TaskStatus[] = ['blocked', 'failed', 'cancelled'];
 
+const MOVABLE_COLUMNS: TaskStatus[] = ['backlog', 'ready', 'cancelled', 'done'];
+
 interface Props {
   tasks: Task[];
   loading: boolean;
@@ -50,6 +52,7 @@ export const Board: React.FC<Props> = ({
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null | undefined>(undefined); // undefined = closed, null = new
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -99,6 +102,45 @@ export const Board: React.FC<Props> = ({
     setEditingTask(undefined);
   };
 
+  // -- Bulk operations --
+  const toggleSelect = (taskId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
+
+  const bulkMove = async (column: TaskStatus) => {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      try {
+        await moveTask(id, column);
+      } catch (err) {
+        console.error(`Bulk move failed for ${id}:`, err);
+      }
+    }
+    setSelectedIds(new Set());
+  };
+
+  const bulkDelete = async () => {
+    if (!confirm(`Delete ${selectedIds.size} selected tasks?`)) return;
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      try {
+        await deleteTask(id);
+      } catch (err) {
+        console.error(`Bulk delete failed for ${id}:`, err);
+      }
+    }
+    setSelectedIds(new Set());
+  };
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: 40, color: '#9ca3af' }}>
@@ -110,7 +152,7 @@ export const Board: React.FC<Props> = ({
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div style={{ padding: '0 16px 16px' }}>
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             onClick={() => setEditingTask(null)}
             style={{
@@ -126,6 +168,88 @@ export const Board: React.FC<Props> = ({
           >
             + New Task
           </button>
+
+          {/* Bulk action bar */}
+          {selectedIds.size > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+                background: '#eff6ff',
+                borderRadius: 6,
+                padding: '6px 12px',
+                fontSize: 13,
+              }}
+            >
+              <span style={{ fontWeight: 600, color: '#3b82f6' }}>
+                {selectedIds.size} selected
+              </span>
+              <select
+                onChange={(e) => {
+                  if (e.target.value) {
+                    bulkMove(e.target.value as TaskStatus);
+                    e.target.value = '';
+                  }
+                }}
+                style={{
+                  borderRadius: 4,
+                  border: '1px solid #d1d5db',
+                  padding: '4px 8px',
+                  fontSize: 12,
+                }}
+                defaultValue=""
+              >
+                <option value="" disabled>Move to...</option>
+                {MOVABLE_COLUMNS.map((col) => (
+                  <option key={col} value={col}>{col}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => bulkMove('cancelled')}
+                style={{
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '4px 10px',
+                  background: '#f59e0b',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={bulkDelete}
+                style={{
+                  border: 'none',
+                  borderRadius: 4,
+                  padding: '4px 10px',
+                  background: '#ef4444',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                style={{
+                  border: '1px solid #d1d5db',
+                  borderRadius: 4,
+                  padding: '4px 10px',
+                  background: '#fff',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Main columns */}
@@ -143,11 +267,13 @@ export const Board: React.FC<Props> = ({
               status={status}
               tasks={tasksByStatus(status)}
               onTaskClick={(t) => setSelectedTaskId(t.id)}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
             />
           ))}
         </div>
 
-        {/* Extra columns (blocked/failed) */}
+        {/* Extra columns (blocked/failed/cancelled) */}
         <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
           {EXTRA_COLUMNS.map((status) => {
             const colTasks = tasksByStatus(status);
@@ -158,6 +284,8 @@ export const Board: React.FC<Props> = ({
                 status={status}
                 tasks={colTasks}
                 onTaskClick={(t) => setSelectedTaskId(t.id)}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
               />
             );
           })}
@@ -182,6 +310,7 @@ export const Board: React.FC<Props> = ({
           onAnswer={answerTask}
           onRetry={retryTask}
           onDelete={deleteTask}
+          onMove={moveTask}
           onEdit={(t) => {
             setSelectedTaskId(null);
             setEditingTask(t);

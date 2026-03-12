@@ -5,6 +5,7 @@ import type { Task } from '../types';
 interface Props {
   task: Task;
   onClick: () => void;
+  selected?: boolean;
 }
 
 const riskColors: Record<string, string> = {
@@ -13,14 +14,14 @@ const riskColors: Record<string, string> = {
   high: '#ef4444',
 };
 
-export const TaskCard: React.FC<Props> = ({ task, onClick }) => {
+export const TaskCard: React.FC<Props> = ({ task, onClick, selected }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { task },
   });
 
   const style: React.CSSProperties = {
-    background: '#fff',
+    background: selected ? '#dbeafe' : '#fff',
     borderRadius: 8,
     padding: '10px 12px',
     marginBottom: 8,
