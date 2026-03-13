@@ -18,8 +18,12 @@ const __dirname = path.dirname(__filename);
  * Load the code review prompt template from prompts/review-code.md
  */
 function loadCodeReviewTemplate(): string {
-  const promptPath = path.resolve(__dirname, '../../../prompts/review-code.md');
-  return fs.readFileSync(promptPath, 'utf-8');
+  const promptPath = path.resolve(__dirname, '../../../../prompts/review-code.md');
+  try {
+    return fs.readFileSync(promptPath, 'utf-8');
+  } catch {
+    throw new Error(`Code review prompt template not found at ${promptPath}. Ensure the prompts/ directory exists in the agentboard root.`);
+  }
 }
 
 /**
@@ -34,7 +38,8 @@ export async function runCodeReview(
   db: Database.Database,
   task: Task,
   worktreePath: string,
-  config: AgentboardConfig
+  config: AgentboardConfig,
+  onOutput?: (chunk: string) => void
 ): Promise<ReviewResult> {
   const model = selectModel('review_code', task.riskLevel, config);
   const taskPacket = buildTaskPacket(db, task);
@@ -56,6 +61,7 @@ export async function runCodeReview(
       prompt,
       worktreePath,
       model,
+      onOutput,
     });
 
     if (result.exitCode !== 0) {

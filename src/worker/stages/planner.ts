@@ -22,8 +22,12 @@ const __dirname = path.dirname(__filename);
  * Load the planner prompt template from prompts/planner.md
  */
 function loadPlannerTemplate(): string {
-  const promptPath = path.resolve(__dirname, '../../../prompts/planner.md');
-  return fs.readFileSync(promptPath, 'utf-8');
+  const promptPath = path.resolve(__dirname, '../../../../prompts/planner.md');
+  try {
+    return fs.readFileSync(promptPath, 'utf-8');
+  } catch {
+    throw new Error(`Planner prompt template not found at ${promptPath}. Ensure the prompts/ directory exists in the agentboard root.`);
+  }
 }
 
 /**
@@ -38,7 +42,8 @@ export async function runPlanning(
   db: Database.Database,
   task: Task,
   worktreePath: string,
-  config: AgentboardConfig
+  config: AgentboardConfig,
+  onOutput?: (chunk: string) => void
 ): Promise<PlanningResult> {
   const model = selectModel('planning', task.riskLevel, config);
   const taskPacket = buildTaskPacket(db, task);
@@ -60,6 +65,7 @@ export async function runPlanning(
       prompt,
       worktreePath,
       model,
+      onOutput,
     });
 
     // Check exit code before parsing output

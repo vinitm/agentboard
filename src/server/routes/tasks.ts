@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { spawn } from 'node:child_process';
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
 import type { TaskStatus } from '../../types/index.js';
@@ -33,6 +34,86 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
     }
   });
 
+  // POST /api/tasks/parse — parse a short description into structured task fields using AI
+  router.post('/parse', (req, res) => {
+    const { description } = req.body as { description?: string };
+    if (!description?.trim()) {
+      res.status(400).json({ error: 'description is required' });
+      return;
+    }
+
+    const prompt = `You are a task parser. Given a short task description, extract structured fields for a software engineering task. Return ONLY valid JSON with no markdown fences or extra text.
+
+The JSON must have this exact shape:
+{
+  "title": "short imperative title (max 80 chars)",
+  "description": "1-2 sentence expanded description",
+  "riskLevel": "low" | "medium" | "high",
+  "priority": 0-10 (0=lowest, 10=highest),
+  "spec": {
+    "context": "what is the context/background for this task",
+    "acceptanceCriteria": "when is this task considered done",
+    "constraints": "technical constraints or limitations",
+    "verification": "how to verify this task is correct",
+    "infrastructureAllowed": "what infrastructure changes are allowed"
+  }
+}
+
+Guidelines for field inference:
+- riskLevel: "high" for DB migrations, auth changes, infra; "medium" for API changes, refactors; "low" for UI tweaks, docs, tests
+- priority: higher for bugs, security fixes, blockers; lower for nice-to-haves, cleanup
+- Leave spec fields as empty strings if not inferable from the description
+
+Task description: ${description.trim()}`;
+
+    const child = spawn('claude', ['--print'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, CLAUDECODE: undefined },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    const timer = setTimeout(() => {
+      child.kill();
+    }, 30_000);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        res.status(500).json({ error: `AI parsing failed: ${stderr || 'unknown error'}` });
+        return;
+      }
+      // Extract JSON from the response (handle possible markdown fences)
+      let jsonStr = stdout.trim();
+      const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch) {
+        jsonStr = fenceMatch[1].trim();
+      }
+      try {
+        const parsed = JSON.parse(jsonStr);
+        res.json(parsed);
+      } catch {
+        res.status(500).json({ error: 'Failed to parse AI response as JSON', raw: stdout });
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      res.status(500).json({ error: `Failed to spawn claude: ${err.message}` });
+    });
+
+    child.stdin.write(prompt);
+    child.stdin.end();
+  });
+
   // POST /api/tasks — create task
   router.post('/', (req, res) => {
     const { projectId, title, description, spec, riskLevel, priority } = req.body as {
@@ -47,6 +128,8 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       res.status(400).json({ error: 'projectId and title are required' });
       return;
     }
+    // If a spec is provided, task is ready to be picked up by the worker
+    const initialStatus = spec ? 'ready' : 'backlog';
     const task = queries.createTask(db, {
       projectId,
       title,
@@ -54,6 +137,7 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       spec: spec ?? null,
       riskLevel: (riskLevel as queries.CreateTaskData['riskLevel']) ?? 'low',
       priority: priority ?? 0,
+      status: initialStatus,
     });
     broadcast(io, 'task:created', task);
     res.status(201).json(task);
@@ -94,12 +178,16 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
   });
 
   // DELETE /api/tasks/:id — delete task
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', async (req, res) => {
     const existing = queries.getTaskById(db, req.params.id);
     if (!existing) {
       res.status(404).json({ error: 'Task not found' });
       return;
     }
+    // Unclaim if currently claimed
+    queries.unclaimTask(db, req.params.id);
+    // Best-effort worktree cleanup before deleting DB records (cascade)
+    await cleanupTaskWorktree(db, req.params.id).catch(() => {});
     queries.deleteTask(db, req.params.id);
     broadcast(io, 'task:deleted', { id: req.params.id });
     res.json({ ok: true });
@@ -222,7 +310,7 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
   });
 
   // POST /api/tasks/:id/retry — retry failed task
-  router.post('/:id/retry', (req, res) => {
+  router.post('/:id/retry', async (req, res) => {
     const task = queries.getTaskById(db, req.params.id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
@@ -231,6 +319,12 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
     if (task.status !== 'failed') {
       res.status(400).json({ error: 'Task is not in failed state' });
       return;
+    }
+    // Clean up old worktree and git refs before retrying
+    await cleanupTaskWorktree(db, req.params.id);
+    const oldRefs = queries.listGitRefsByTask(db, req.params.id);
+    for (const ref of oldRefs) {
+      queries.deleteGitRef(db, ref.id);
     }
     const updated = queries.updateTask(db, req.params.id, {
       status: 'ready',

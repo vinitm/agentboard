@@ -83,6 +83,21 @@ export function createWorkerLoop(
   }
 
   /**
+   * Create an event in the DB and immediately broadcast it to WebSocket clients.
+   * Always broadcasts the returned event object (which includes the DB-assigned id)
+   * so the EventsTimeline component can deduplicate correctly.
+   */
+  function createAndBroadcastEvent(
+    taskId: string,
+    type: string,
+    payload: string,
+    runId?: string
+  ): void {
+    const event = createEvent(db, { taskId, type, payload, runId });
+    broadcast(io, 'task:event', event);
+  }
+
+  /**
    * Try to pick up and process a ready task.
    */
   async function tick(): Promise<void> {
@@ -141,11 +156,11 @@ export function createWorkerLoop(
   ): Promise<void> {
     // Move to implementing
     updateTask(db, task.id, { status: 'implementing' });
-    createEvent(db, {
-      taskId: task.id,
-      type: 'status_changed',
-      payload: JSON.stringify({ from: 'planning', to: 'implementing' }),
-    });
+    createAndBroadcastEvent(
+      task.id,
+      'status_changed',
+      JSON.stringify({ from: 'planning', to: 'implementing' })
+    );
     broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
     for (let attempt = 1; attempt <= config.maxAttemptsPerTask; attempt++) {
@@ -168,16 +183,16 @@ export function createWorkerLoop(
           blockedReason: `Implementation needs input:\n${implResult.needsUserInput.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
         });
         unclaimTask(db, task.id);
-        createEvent(db, {
-          taskId: task.id,
-          type: 'status_changed',
-          payload: JSON.stringify({
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({
             from: 'implementing',
             to: 'blocked',
             reason: 'needs_user_input',
             questions: implResult.needsUserInput,
-          }),
-        });
+          })
+        );
         broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
         notify('Task Blocked', `"${task.title}" needs human input`, config);
         return;
@@ -185,14 +200,14 @@ export function createWorkerLoop(
 
       // If implementation failed, record and try again
       if (!implResult.success) {
-        createEvent(db, {
-          taskId: task.id,
-          type: 'implementation_failed',
-          payload: JSON.stringify({
+        createAndBroadcastEvent(
+          task.id,
+          'implementation_failed',
+          JSON.stringify({
             attempt,
             output: implResult.output.slice(0, 2000),
-          }),
-        });
+          })
+        );
 
         if (attempt >= config.maxAttemptsPerTask) {
           break; // Will fall through to failed state
@@ -202,15 +217,15 @@ export function createWorkerLoop(
 
       // Implementation succeeded — run checks
       updateTask(db, task.id, { status: 'checks' });
-      createEvent(db, {
-        taskId: task.id,
-        type: 'status_changed',
-        payload: JSON.stringify({ from: 'implementing', to: 'checks' }),
-      });
+      createAndBroadcastEvent(
+        task.id,
+        'status_changed',
+        JSON.stringify({ from: 'implementing', to: 'checks' })
+      );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
 
       await runHook(hooks, 'beforeStage', makeHookContext(task, 'checks', worktreePath));
-      const checksResult = await runChecks(db, task, worktreePath, config);
+      const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-${task.id}`));
       await runHook(hooks, 'afterStage', makeHookContext(task, 'checks', worktreePath));
 
       if (checksResult.passed) {
@@ -232,10 +247,10 @@ export function createWorkerLoop(
       }
       saveMemory(configDir, memory);
 
-      createEvent(db, {
-        taskId: task.id,
-        type: 'checks_failed',
-        payload: JSON.stringify({
+      createAndBroadcastEvent(
+        task.id,
+        'checks_failed',
+        JSON.stringify({
           attempt,
           results: checksResult.results.map((r) => ({
             name: r.name,
@@ -243,17 +258,17 @@ export function createWorkerLoop(
             output: r.output.slice(0, 1000),
           })),
           formattingFixed: checksResult.formattingFixed,
-        }),
-      });
+        })
+      );
 
       // Move back to implementing for next attempt
       if (attempt < config.maxAttemptsPerTask) {
         updateTask(db, task.id, { status: 'implementing' });
-        createEvent(db, {
-          taskId: task.id,
-          type: 'status_changed',
-          payload: JSON.stringify({ from: 'checks', to: 'implementing' }),
-        });
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({ from: 'checks', to: 'implementing' })
+        );
         broadcast(io, 'task:updated', {
           taskId: task.id,
           status: 'implementing',
@@ -264,15 +279,15 @@ export function createWorkerLoop(
     // All attempts exhausted → failed
     updateTask(db, task.id, { status: 'failed' });
     unclaimTask(db, task.id);
-    createEvent(db, {
-      taskId: task.id,
-      type: 'status_changed',
-      payload: JSON.stringify({
+    createAndBroadcastEvent(
+      task.id,
+      'status_changed',
+      JSON.stringify({
         from: task.status,
         to: 'failed',
         reason: 'max_attempts_exhausted',
-      }),
-    });
+      })
+    );
     broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
     notify('Task Failed', `"${task.title}" failed after ${config.maxAttemptsPerTask} attempts`, config);
     await runHook(hooks, 'onError', makeHookContext(task, 'implementing', worktreePath));
@@ -291,33 +306,35 @@ export function createWorkerLoop(
     db: Database.Database
   ): Promise<void> {
     let reviewCycle = 0;
+    let specPassed = false;
+    let codePassed = false;
 
     while (reviewCycle < config.maxReviewCycles) {
       reviewCycle++;
 
       // ── Spec review ──────────────────────────────────────────────────
       updateTask(db, task.id, { status: 'review_spec' });
-      createEvent(db, {
-        taskId: task.id,
-        type: 'status_changed',
-        payload: JSON.stringify({ from: task.status, to: 'review_spec', reviewCycle }),
-      });
+      createAndBroadcastEvent(
+        task.id,
+        'status_changed',
+        JSON.stringify({ from: task.status, to: 'review_spec', reviewCycle })
+      );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'review_spec' });
 
       await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_spec', worktreePath));
-      const specResult = await runSpecReview(db, task, worktreePath, config);
+      const specResult = await runSpecReview(db, task, worktreePath, config, createLogStreamer(task.id, `review-spec-${task.id}`));
       await runHook(hooks, 'afterStage', makeHookContext(task, 'review_spec', worktreePath));
 
       if (!specResult.passed) {
-        createEvent(db, {
-          taskId: task.id,
-          type: 'review_spec_failed',
-          payload: JSON.stringify({
+        createAndBroadcastEvent(
+          task.id,
+          'review_spec_failed',
+          JSON.stringify({
             reviewCycle,
             feedback: specResult.feedback,
             issues: specResult.issues,
-          }),
-        });
+          })
+        );
 
         if (reviewCycle >= config.maxReviewCycles) {
           // Exhausted review cycles — proceed to PR with note
@@ -326,16 +343,16 @@ export function createWorkerLoop(
 
         // Cycle back to implementing with review feedback
         updateTask(db, task.id, { status: 'implementing' });
-        createEvent(db, {
-          taskId: task.id,
-          type: 'status_changed',
-          payload: JSON.stringify({
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({
             from: 'review_spec',
             to: 'implementing',
             reason: 'spec_review_failed',
             reviewCycle,
-          }),
-        });
+          })
+        );
         broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
         // Re-run implementation with feedback
@@ -346,14 +363,14 @@ export function createWorkerLoop(
 
         // Re-run checks
         updateTask(db, task.id, { status: 'checks' });
-        createEvent(db, {
-          taskId: task.id,
-          type: 'status_changed',
-          payload: JSON.stringify({ from: 'implementing', to: 'checks' }),
-        });
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({ from: 'implementing', to: 'checks' })
+        );
         broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
 
-        const checksResult = await runChecks(db, task, worktreePath, config);
+        const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-review-${task.id}`));
         if (!checksResult.passed) {
           break; // Will fall through to PR creation with note
         }
@@ -362,29 +379,31 @@ export function createWorkerLoop(
         continue; // Go back to spec review
       }
 
+      specPassed = true;
+
       // ── Code review ──────────────────────────────────────────────────
       updateTask(db, task.id, { status: 'review_code' });
-      createEvent(db, {
-        taskId: task.id,
-        type: 'status_changed',
-        payload: JSON.stringify({ from: 'review_spec', to: 'review_code', reviewCycle }),
-      });
+      createAndBroadcastEvent(
+        task.id,
+        'status_changed',
+        JSON.stringify({ from: 'review_spec', to: 'review_code', reviewCycle })
+      );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'review_code' });
 
       await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_code', worktreePath));
-      const codeResult = await runCodeReview(db, task, worktreePath, config);
+      const codeResult = await runCodeReview(db, task, worktreePath, config, createLogStreamer(task.id, `review-code-${task.id}`));
       await runHook(hooks, 'afterStage', makeHookContext(task, 'review_code', worktreePath));
 
       if (!codeResult.passed) {
-        createEvent(db, {
-          taskId: task.id,
-          type: 'review_code_failed',
-          payload: JSON.stringify({
+        createAndBroadcastEvent(
+          task.id,
+          'review_code_failed',
+          JSON.stringify({
             reviewCycle,
             feedback: codeResult.feedback,
             issues: codeResult.issues,
-          }),
-        });
+          })
+        );
 
         if (reviewCycle >= config.maxReviewCycles) {
           // Exhausted review cycles — proceed to PR with note
@@ -393,16 +412,16 @@ export function createWorkerLoop(
 
         // Cycle back to implementing with review feedback
         updateTask(db, task.id, { status: 'implementing' });
-        createEvent(db, {
-          taskId: task.id,
-          type: 'status_changed',
-          payload: JSON.stringify({
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({
             from: 'review_code',
             to: 'implementing',
             reason: 'code_review_failed',
             reviewCycle,
-          }),
-        });
+          })
+        );
         broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
         // Re-run implementation with feedback
@@ -413,14 +432,14 @@ export function createWorkerLoop(
 
         // Re-run checks
         updateTask(db, task.id, { status: 'checks' });
-        createEvent(db, {
-          taskId: task.id,
-          type: 'status_changed',
-          payload: JSON.stringify({ from: 'implementing', to: 'checks' }),
-        });
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({ from: 'implementing', to: 'checks' })
+        );
         broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
 
-        const checksResult = await runChecks(db, task, worktreePath, config);
+        const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-review-${task.id}`));
         if (!checksResult.passed) {
           break; // Will fall through to PR creation with note
         }
@@ -430,24 +449,44 @@ export function createWorkerLoop(
       }
 
       // Both reviews passed — proceed to PR creation
+      specPassed = true;
+      codePassed = true;
       break;
+    }
+
+    // If reviews didn't pass, fail the task instead of creating a broken PR
+    if (!specPassed || !codePassed) {
+      updateTask(db, task.id, { status: 'failed' });
+      unclaimTask(db, task.id);
+      createAndBroadcastEvent(
+        task.id,
+        'status_changed',
+        JSON.stringify({
+          from: task.status,
+          to: 'failed',
+          reason: 'review_cycles_exhausted',
+        })
+      );
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
+      notify('Task Failed', `"${task.title}" failed: review cycles exhausted`, config);
+      return;
     }
 
     // ── PR creation ──────────────────────────────────────────────────────
     try {
       await runHook(hooks, 'beforeStage', makeHookContext(task, 'pr_creation', worktreePath));
-      const prResult = await createPR(db, task, worktreePath, config);
+      const prResult = await createPR(db, task, worktreePath, config, createLogStreamer(task.id, `pr-${task.id}`));
       await runHook(hooks, 'afterStage', makeHookContext(task, 'pr_creation', worktreePath));
 
-      createEvent(db, {
-        taskId: task.id,
-        type: 'pr_created',
-        payload: JSON.stringify({
+      createAndBroadcastEvent(
+        task.id,
+        'pr_created',
+        JSON.stringify({
           prUrl: prResult.prUrl,
           prNumber: prResult.prNumber,
           reviewCycles: reviewCycle,
-        }),
-      });
+        })
+      );
       notify('PR Created', `PR for "${task.title}" is ready for review`, config);
 
       // Record any conventions learned from successful PR creation
@@ -457,11 +496,11 @@ export function createWorkerLoop(
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      createEvent(db, {
-        taskId: task.id,
-        type: 'pr_creation_failed',
-        payload: JSON.stringify({ error: errorMessage }),
-      });
+      createAndBroadcastEvent(
+        task.id,
+        'pr_creation_failed',
+        JSON.stringify({ error: errorMessage })
+      );
       // Even if PR creation fails, move to needs_human_review
       // so a human can manually create the PR
     }
@@ -469,15 +508,15 @@ export function createWorkerLoop(
     // Move to needs_human_review
     updateTask(db, task.id, { status: 'needs_human_review' });
     unclaimTask(db, task.id);
-    createEvent(db, {
-      taskId: task.id,
-      type: 'status_changed',
-      payload: JSON.stringify({
+    createAndBroadcastEvent(
+      task.id,
+      'status_changed',
+      JSON.stringify({
         from: task.status,
         to: 'needs_human_review',
         reviewCycles: reviewCycle,
-      }),
-    });
+      })
+    );
     broadcast(io, 'task:updated', {
       taskId: task.id,
       status: 'needs_human_review',
@@ -543,19 +582,19 @@ export function createWorkerLoop(
 
       // Move to planning
       updateTask(db, task.id, { status: 'planning' });
-      createEvent(db, {
-        taskId: task.id,
-        type: 'status_changed',
-        payload: JSON.stringify({
+      createAndBroadcastEvent(
+        task.id,
+        'status_changed',
+        JSON.stringify({
           from: 'ready',
           to: 'planning',
-        }),
-      });
+        })
+      );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'planning' });
 
       // Run planning stage
       await runHook(hooks, 'beforeStage', makeHookContext(task, 'planning', worktreePath));
-      const planResult = await runPlanning(db, task, worktreePath, config);
+      const planResult = await runPlanning(db, task, worktreePath, config, createLogStreamer(task.id, `planning-${task.id}`));
       await runHook(hooks, 'afterStage', makeHookContext(task, 'planning', worktreePath));
 
       // Handle planning result
@@ -566,16 +605,16 @@ export function createWorkerLoop(
           blockedReason: `Planning has questions:\n${planResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
         });
         unclaimTask(db, task.id);
-        createEvent(db, {
-          taskId: task.id,
-          type: 'status_changed',
-          payload: JSON.stringify({
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({
             from: 'planning',
             to: 'blocked',
             reason: 'questions',
             questions: planResult.questions,
-          }),
-        });
+          })
+        );
         broadcast(io, 'task:updated', {
           taskId: task.id,
           status: 'blocked',
@@ -585,6 +624,14 @@ export function createWorkerLoop(
       }
 
       if (planResult.subtasks.length > 0) {
+        const MAX_SUBTASKS = 10;
+        if (planResult.subtasks.length > MAX_SUBTASKS) {
+          console.warn(
+            `[worker] Planner returned ${planResult.subtasks.length} subtasks for task ${task.id}, capping at ${MAX_SUBTASKS}`
+          );
+          planResult.subtasks = planResult.subtasks.slice(0, MAX_SUBTASKS);
+        }
+
         // Create child tasks
         for (let i = 0; i < planResult.subtasks.length; i++) {
           const subtask = planResult.subtasks[i];
@@ -597,14 +644,14 @@ export function createWorkerLoop(
             priority: task.priority,
             riskLevel: task.riskLevel,
           });
-          createEvent(db, {
-            taskId: childTask.id,
-            type: 'task_created',
-            payload: JSON.stringify({
+          createAndBroadcastEvent(
+            childTask.id,
+            'task_created',
+            JSON.stringify({
               parentTaskId: task.id,
               index: i,
-            }),
-          });
+            })
+          );
           broadcast(io, 'task:created', { task: childTask });
         }
 
@@ -613,13 +660,13 @@ export function createWorkerLoop(
           status: 'blocked',
           blockedReason: 'Waiting for subtasks to complete',
         });
-        createEvent(db, {
-          taskId: task.id,
-          type: 'subtasks_created',
-          payload: JSON.stringify({
+        createAndBroadcastEvent(
+          task.id,
+          'subtasks_created',
+          JSON.stringify({
             count: planResult.subtasks.length,
-          }),
-        });
+          })
+        );
         broadcast(io, 'task:updated', {
           taskId: task.id,
           status: 'blocked',
@@ -636,18 +683,47 @@ export function createWorkerLoop(
         error instanceof Error ? error.message : String(error);
       console.error(`[worker] Task ${task.id} failed:`, errorMessage);
 
-      updateTask(db, task.id, { status: 'failed' });
-      unclaimTask(db, task.id);
-      createEvent(db, {
-        taskId: task.id,
-        type: 'status_changed',
-        payload: JSON.stringify({
-          from: task.status,
-          to: 'failed',
-          error: errorMessage,
-        }),
-      });
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
+      // Wrap all error-handling DB/IO ops so a secondary failure
+      // doesn't leave the task permanently claimed
+      try {
+        updateTask(db, task.id, { status: 'failed' });
+      } catch (e) {
+        console.error(`[worker] Failed to update task ${task.id} status:`, e);
+      }
+      try {
+        unclaimTask(db, task.id);
+      } catch (e) {
+        console.error(`[worker] Failed to unclaim task ${task.id}:`, e);
+      }
+
+      // Broadcast error to live logs
+      try {
+        broadcastLog(io, {
+          taskId: task.id,
+          runId: task.id,
+          chunk: `[error] Task failed: ${errorMessage}\n`,
+          timestamp: new Date().toISOString(),
+        });
+
+        createAndBroadcastEvent(
+          task.id,
+          'task_error',
+          JSON.stringify({ error: errorMessage })
+        );
+
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({
+            from: task.status,
+            to: 'failed',
+            error: errorMessage,
+          })
+        );
+        broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
+      } catch (e) {
+        console.error(`[worker] Failed to broadcast error for task ${task.id}:`, e);
+      }
 
       // Attempt worktree cleanup on failure (skip for subtasks reusing parent worktree)
       if (worktreePath && !isSubtask && repoPath) {

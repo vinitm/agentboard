@@ -1,5 +1,4 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig } from '../../types/index.js';
 import { pushBranch } from '../git.js';
@@ -12,8 +11,6 @@ import {
   getLatestRunByTaskAndStage,
   listArtifactsByRun,
 } from '../../db/queries.js';
-
-const execFileAsync = promisify(execFile);
 
 export interface PRResult {
   prUrl: string;
@@ -33,7 +30,8 @@ export async function createPR(
   db: Database.Database,
   task: Task,
   worktreePath: string,
-  config: AgentboardConfig
+  config: AgentboardConfig,
+  onOutput?: (chunk: string) => void
 ): Promise<PRResult> {
   // Create a run record for PR creation
   const run = createRun(db, {
@@ -51,8 +49,23 @@ export async function createPR(
     }
     const gitRef = gitRefs[0];
 
+    // Verify gh CLI is available before pushing (pushing is irreversible)
+    const ghCheck = await new Promise<boolean>((resolve) => {
+      const child = spawn('gh', ['auth', 'status'], { stdio: 'pipe' });
+      child.on('close', (code) => resolve(code === 0));
+      child.on('error', () => resolve(false));
+    });
+    if (!ghCheck) {
+      throw new Error(
+        'GitHub CLI (gh) is not installed or not authenticated. ' +
+        'Install from https://cli.github.com and run `gh auth login`.'
+      );
+    }
+
     // Push the branch to remote
+    onOutput?.(`[pr] Pushing branch ${gitRef.branch} to ${config.githubRemote}...\n`);
     await pushBranch(worktreePath, gitRef.branch, config.githubRemote);
+    onOutput?.(`[pr] Branch pushed successfully\n`);
 
     // Update git ref status to 'pushed'
     updateGitRef(db, gitRef.id, { status: 'pushed' });
@@ -73,13 +86,50 @@ export async function createPR(
       ghArgs.push('--draft');
     }
 
-    const { stdout } = await execFileAsync('gh', ghArgs, {
-      cwd: worktreePath,
-      timeout: 60_000,
+    onOutput?.(`[pr] Creating pull request...\n`);
+    const ghOutput = await new Promise<string>((resolve, reject) => {
+      const child = spawn('gh', ghArgs, {
+        cwd: worktreePath,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error('gh pr create timed out after 60s'));
+      }, 60_000);
+
+      child.stdout.on('data', (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdout += text;
+        onOutput?.(`[pr] ${text}`);
+      });
+
+      child.stderr.on('data', (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderr += text;
+        onOutput?.(`[pr] ${text}`);
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`gh pr create failed (code ${code}): ${stderr}`));
+        } else {
+          resolve(stdout.trim());
+        }
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     });
 
     // Parse PR URL from gh output
-    const prUrl = stdout.trim();
+    const prUrl = ghOutput;
     const prNumberMatch = prUrl.match(/\/pull\/(\d+)/);
     const prNumber = prNumberMatch ? parseInt(prNumberMatch[1], 10) : 0;
 
