@@ -322,6 +322,18 @@ export function getSubtasksByParentId(
   return rows.map(rowToTask);
 }
 
+export function getNextBacklogSubtask(
+  db: Database.Database,
+  parentTaskId: string
+): Task | undefined {
+  const row = db
+    .prepare(
+      'SELECT * FROM tasks WHERE parent_task_id = ? AND status = ? ORDER BY created_at ASC, rowid ASC LIMIT 1'
+    )
+    .get(parentTaskId, 'backlog') as Record<string, unknown> | undefined;
+  return row ? rowToTask(row) : undefined;
+}
+
 export function deleteTask(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
 }

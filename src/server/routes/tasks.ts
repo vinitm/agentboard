@@ -18,6 +18,40 @@ const AGENT_CONTROLLED_COLUMNS: TaskStatus[] = [
 export function createTaskRoutes(db: Database.Database, io: Server): Router {
   const router = Router();
 
+  /**
+   * After a subtask reaches a terminal state via the API, promote next sibling
+   * or update parent. Mirrors the worker loop's checkAndUpdateParentStatus.
+   */
+  function handleSubtaskTerminal(task: { parentTaskId: string | null; status: TaskStatus }): void {
+    if (!task.parentTaskId) return;
+
+    const parent = queries.getTaskById(db, task.parentTaskId);
+    const terminalStatuses: TaskStatus[] = ['needs_human_review', 'done', 'failed', 'cancelled'];
+    const successStatuses: TaskStatus[] = ['needs_human_review', 'done'];
+
+    if (!parent || terminalStatuses.includes(parent.status)) return;
+
+    // If succeeded, promote next backlog sibling
+    if (successStatuses.includes(task.status)) {
+      const nextSubtask = queries.getNextBacklogSubtask(db, task.parentTaskId);
+      if (nextSubtask) {
+        queries.updateTask(db, nextSubtask.id, { status: 'ready' });
+        broadcast(io, 'task:updated', { taskId: nextSubtask.id, status: 'ready' });
+        return;
+      }
+    }
+
+    // Check if all siblings are terminal
+    const siblings = queries.getSubtasksByParentId(db, task.parentTaskId);
+    const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
+    if (!allTerminal) return;
+
+    const anyFailed = siblings.some(s => s.status === 'failed');
+    const newStatus: TaskStatus = anyFailed ? 'failed' : 'needs_human_review';
+    queries.updateTask(db, task.parentTaskId, { status: newStatus, blockedReason: null });
+    broadcast(io, 'task:updated', { taskId: task.parentTaskId, status: newStatus });
+  }
+
   // GET /api/tasks — list tasks (query params: projectId, status)
   router.get('/', (req, res) => {
     const { projectId, status } = req.query as { projectId?: string; status?: string };
@@ -221,21 +255,8 @@ Task description: ${description.trim()}`;
       broadcast(io, 'task:moved', updated);
       // Best-effort worktree cleanup in background
       cleanupTaskWorktree(db, req.params.id).catch(() => {});
-      // Check if parent should be updated — see also: done handler
-      if (task.parentTaskId) {
-        const parent = queries.getTaskById(db, task.parentTaskId);
-        const terminalStatuses = ['needs_human_review', 'done', 'failed', 'cancelled'];
-        if (parent && !terminalStatuses.includes(parent.status)) {
-          const siblings = queries.getSubtasksByParentId(db, task.parentTaskId);
-          const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
-          if (allTerminal) {
-            const anyFailed = siblings.some(s => s.status === 'failed');
-            const newStatus = anyFailed ? 'failed' : 'needs_human_review';
-            queries.updateTask(db, task.parentTaskId, { status: newStatus, blockedReason: null });
-            broadcast(io, 'task:updated', { taskId: task.parentTaskId, status: newStatus });
-          }
-        }
-      }
+      // Promote next sibling or update parent
+      handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'cancelled' });
       res.json(updated);
       return;
     }
@@ -280,21 +301,8 @@ Task description: ${description.trim()}`;
       broadcast(io, 'task:moved', updated);
       // Best-effort worktree cleanup in background
       cleanupTaskWorktree(db, req.params.id).catch(() => {});
-      // Check if parent should be updated — see also: cancelled handler
-      if (task.parentTaskId) {
-        const parent = queries.getTaskById(db, task.parentTaskId);
-        const terminalStatuses = ['needs_human_review', 'done', 'failed', 'cancelled'];
-        if (parent && !terminalStatuses.includes(parent.status)) {
-          const siblings = queries.getSubtasksByParentId(db, task.parentTaskId);
-          const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
-          if (allTerminal) {
-            const anyFailed = siblings.some(s => s.status === 'failed');
-            const newStatus = anyFailed ? 'failed' : 'needs_human_review';
-            queries.updateTask(db, task.parentTaskId, { status: newStatus, blockedReason: null });
-            broadcast(io, 'task:updated', { taskId: task.parentTaskId, status: newStatus });
-          }
-        }
-      }
+      // Promote next sibling or update parent
+      handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'done' });
       res.json(updated);
       return;
     }

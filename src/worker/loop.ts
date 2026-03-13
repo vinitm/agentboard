@@ -18,6 +18,7 @@ import {
   listProjects,
   listGitRefsByTask,
   getSubtasksByParentId,
+  getNextBacklogSubtask,
 } from '../db/queries.js';
 import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
 import { runPlanning } from './stages/planner.js';
@@ -60,15 +61,38 @@ export function createWorkerLoop(
   const hooks = createHooks();
   loadRufloHooks(hooks, config);
 
-  /** After a subtask reaches a terminal state, check if all siblings are done and update parent. */
+  /** After a subtask reaches a terminal state, promote next sibling or update parent. */
   function checkAndUpdateParentStatus(task: Task): void {
     if (!task.parentTaskId) return;
 
     const parent = getTaskById(db, task.parentTaskId);
     const terminalStatuses: TaskStatus[] = ['needs_human_review', 'done', 'failed', 'cancelled'];
+    const successStatuses: TaskStatus[] = ['needs_human_review', 'done'];
 
     // Skip if parent is already terminal (e.g., manually cancelled)
     if (!parent || terminalStatuses.includes(parent.status)) return;
+
+    // If this subtask succeeded, promote the next backlog sibling to ready
+    if (successStatuses.includes(task.status)) {
+      const nextSubtask = getNextBacklogSubtask(db, task.parentTaskId);
+      if (nextSubtask) {
+        updateTask(db, nextSubtask.id, { status: 'ready' });
+        createAndBroadcastEvent(
+          nextSubtask.id,
+          'status_changed',
+          JSON.stringify({
+            from: 'backlog',
+            to: 'ready',
+            reason: 'previous_subtask_completed',
+          })
+        );
+        broadcast(io, 'task:updated', { taskId: nextSubtask.id, status: 'ready' });
+        // Wake up the worker loop immediately
+        emitter.emit('task:ready');
+        return; // Not all siblings are done yet — don't update parent
+      }
+    }
+    // If subtask failed/cancelled, do NOT promote — fall through to check if all are terminal
 
     const siblings = getSubtasksByParentId(db, task.parentTaskId);
     const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
@@ -690,7 +714,7 @@ export function createWorkerLoop(
           planResult.subtasks = planResult.subtasks.slice(0, MAX_SUBTASKS);
         }
 
-        // Create child tasks
+        // Create child tasks — first is ready, rest are backlog (serial execution)
         for (let i = 0; i < planResult.subtasks.length; i++) {
           const subtask = planResult.subtasks[i];
           const childTask = createTask(db, {
@@ -698,7 +722,7 @@ export function createWorkerLoop(
             parentTaskId: task.id,
             title: subtask.title,
             description: subtask.description,
-            status: 'ready',
+            status: i === 0 ? 'ready' : 'backlog',
             priority: task.priority,
             riskLevel: task.riskLevel,
           });
