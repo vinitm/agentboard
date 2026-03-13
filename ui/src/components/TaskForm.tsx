@@ -1,36 +1,30 @@
 import React, { useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { api } from '../api/client';
 import type { Task, RiskLevel, SpecTemplate } from '../types';
 
 interface Props {
   initial?: Task | null;
-  onSubmit: (data: {
-    title: string;
-    description: string;
-    spec: string;
-    riskLevel: RiskLevel;
-    priority: number;
-  }) => Promise<void>;
+  onSubmit: (data: { title: string; description: string; spec: string; riskLevel: RiskLevel; priority: number }) => Promise<void>;
   onCancel: () => void;
 }
 
 function parseSpec(spec: string | null): SpecTemplate {
-  const empty: SpecTemplate = {
-    context: '',
-    acceptanceCriteria: '',
-    constraints: '',
-    verification: '',
-    riskLevel: 'low',
-    infrastructureAllowed: '',
-  };
+  const empty: SpecTemplate = { context: '', acceptanceCriteria: '', constraints: '', verification: '', riskLevel: 'low', infrastructureAllowed: '' };
   if (!spec) return empty;
-  try {
-    return { ...empty, ...(JSON.parse(spec) as Partial<SpecTemplate>) };
-  } catch {
-    return empty;
-  }
+  try { return { ...empty, ...(JSON.parse(spec) as Partial<SpecTemplate>) }; } catch { return empty; }
 }
 
+type Phase = 'describe' | 'preview';
+
+const inputClasses = 'w-full rounded-md bg-bg-tertiary border border-border-default px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-transparent resize-y';
+const btnClasses = 'px-4 py-2 rounded-md text-sm font-semibold transition-colors duration-150 cursor-pointer';
+
 export const TaskForm: React.FC<Props> = ({ initial, onSubmit, onCancel }) => {
+  const isEditing = !!initial;
+  const [phase, setPhase] = useState<Phase>(isEditing ? 'preview' : 'describe');
+  const [shortDescription, setShortDescription] = useState('');
+  const [parsing, setParsing] = useState(false);
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [riskLevel, setRiskLevel] = useState<RiskLevel>(initial?.riskLevel ?? 'low');
@@ -39,205 +33,99 @@ export const TaskForm: React.FC<Props> = ({ initial, onSubmit, onCancel }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (!title.trim()) {
-      setError('Title is required');
-      return;
-    }
-    setSubmitting(true);
+  const handleParse = async () => {
+    if (!shortDescription.trim()) { setError('Please describe the task'); return; }
+    setError(''); setParsing(true);
     try {
-      await onSubmit({
-        title: title.trim(),
-        description: description.trim(),
-        spec: JSON.stringify({ ...spec, riskLevel }),
-        riskLevel,
-        priority,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
-    } finally {
-      setSubmitting(false);
-    }
+      const parsed = await api.post<{ title: string; description: string; riskLevel: RiskLevel; priority: number; spec: { context: string; acceptanceCriteria: string; constraints: string; verification: string; infrastructureAllowed: string } }>('/api/tasks/parse', { description: shortDescription.trim() });
+      setTitle(parsed.title || ''); setDescription(parsed.description || '');
+      setRiskLevel(parsed.riskLevel || 'low'); setPriority(parsed.priority || 0);
+      if (parsed.spec) setSpec({ context: parsed.spec.context || '', acceptanceCriteria: parsed.spec.acceptanceCriteria || '', constraints: parsed.spec.constraints || '', verification: parsed.spec.verification || '', riskLevel: parsed.riskLevel || 'low', infrastructureAllowed: parsed.spec.infrastructureAllowed || '' });
+      setPhase('preview');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to parse task'); } finally { setParsing(false); }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); setError('');
+    if (!title.trim()) { setError('Title is required'); return; }
+    setSubmitting(true);
+    try { await onSubmit({ title: title.trim(), description: description.trim(), spec: JSON.stringify({ ...spec, riskLevel }), riskLevel, priority }); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Failed to save'); }
+    finally { setSubmitting(false); }
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        paddingTop: 60,
-        zIndex: 1000,
-      }}
-      onClick={onCancel}
-    >
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          background: '#fff',
-          borderRadius: 12,
-          padding: 24,
-          maxWidth: 600,
-          width: '90%',
-          maxHeight: '80vh',
-          overflowY: 'auto',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.2)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 style={{ margin: '0 0 16px' }}>{initial ? 'Edit Task' : 'New Task'}</h2>
+    <Dialog.Root open onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[1000]" />
+        <Dialog.Content className="fixed top-[10vh] left-1/2 -translate-x-1/2 bg-bg-elevated rounded-xl p-6 w-[90%] max-w-[600px] max-h-[80vh] overflow-y-auto z-[1001] shadow-2xl border border-border-default">
+          {phase === 'describe' && (
+            <>
+              <Dialog.Title className="text-lg font-semibold text-white mb-1">New Task</Dialog.Title>
+              <p className="text-xs text-text-secondary mb-3">Describe what you need done. Fields will be auto-filled.</p>
+              {error && <div className="text-accent-red text-sm mb-3">{error}</div>}
+              <textarea
+                value={shortDescription} onChange={(e) => setShortDescription(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleParse(); } }}
+                className={`${inputClasses} min-h-[80px]`}
+                placeholder='e.g. "Add rate limiting to the /api/upload endpoint, max 10 req/min per user"'
+                autoFocus disabled={parsing}
+              />
+              <div className="flex gap-2 mt-4">
+                <button onClick={handleParse} disabled={parsing} className={`${btnClasses} bg-accent-blue text-white ${parsing ? 'opacity-60' : 'hover:bg-blue-600'}`}>
+                  {parsing ? 'Parsing...' : 'Auto-fill'}
+                </button>
+                <button onClick={() => setPhase('preview')} className={`${btnClasses} text-text-secondary border border-border-default hover:bg-bg-tertiary`}>Fill manually</button>
+                <button onClick={onCancel} className={`${btnClasses} bg-text-tertiary text-white hover:bg-gray-600`}>Cancel</button>
+              </div>
+            </>
+          )}
 
-        {error && (
-          <div style={{ color: '#ef4444', marginBottom: 12, fontSize: 14 }}>{error}</div>
-        )}
+          {phase === 'preview' && (
+            <form onSubmit={handleSubmit}>
+              <div className="flex items-center justify-between mb-4">
+                <Dialog.Title className="text-lg font-semibold text-white">{isEditing ? 'Edit Task' : 'Review & Create'}</Dialog.Title>
+                {!isEditing && <button type="button" onClick={() => setPhase('describe')} className="text-xs text-accent-blue hover:underline">← Back</button>}
+              </div>
+              {error && <div className="text-accent-red text-sm mb-3">{error}</div>}
 
-        <Field label="Title">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            style={inputStyle}
-            placeholder="Task title"
-          />
-        </Field>
+              <label className="block text-[11px] font-semibold text-text-tertiary uppercase tracking-wide mb-1">Title</label>
+              <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClasses} placeholder="Task title" />
 
-        <Field label="Description">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            style={{ ...inputStyle, minHeight: 60 }}
-            placeholder="Brief description"
-          />
-        </Field>
+              <label className="block text-[11px] font-semibold text-text-tertiary uppercase tracking-wide mb-1 mt-3">Description</label>
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} className={`${inputClasses} min-h-[60px]`} placeholder="Brief description" />
 
-        <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-          <Field label="Risk Level" flex>
-            <select
-              value={riskLevel}
-              onChange={(e) => setRiskLevel(e.target.value as RiskLevel)}
-              style={inputStyle}
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-          </Field>
-          <Field label="Priority" flex>
-            <input
-              type="number"
-              value={priority}
-              onChange={(e) => setPriority(parseInt(e.target.value) || 0)}
-              style={inputStyle}
-              min={0}
-            />
-          </Field>
-        </div>
+              <div className="flex gap-3 mt-3">
+                <div className="flex-1">
+                  <label className="block text-[11px] font-semibold text-text-tertiary uppercase tracking-wide mb-1">Risk Level</label>
+                  <select value={riskLevel} onChange={(e) => setRiskLevel(e.target.value as RiskLevel)} className={inputClasses}>
+                    <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[11px] font-semibold text-text-tertiary uppercase tracking-wide mb-1">Priority</label>
+                  <input type="number" value={priority} onChange={(e) => setPriority(parseInt(e.target.value) || 0)} className={inputClasses} min={0} />
+                </div>
+              </div>
 
-        <h3 style={{ fontSize: 14, color: '#6b7280', margin: '16px 0 8px', textTransform: 'uppercase' }}>
-          Spec Template
-        </h3>
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-tertiary mt-5 mb-2">Spec Template</h3>
+              {(['context', 'acceptanceCriteria', 'constraints', 'verification', 'infrastructureAllowed'] as const).map((field) => (
+                <div key={field} className="mb-3">
+                  <label className="block text-[11px] font-semibold text-text-tertiary capitalize mb-1">{field.replace(/([A-Z])/g, ' $1')}</label>
+                  <textarea value={spec[field]} onChange={(e) => setSpec({ ...spec, [field]: e.target.value })} className={`${inputClasses} min-h-[60px]`} />
+                </div>
+              ))}
 
-        <Field label="Context">
-          <textarea
-            value={spec.context}
-            onChange={(e) => setSpec({ ...spec, context: e.target.value })}
-            style={{ ...inputStyle, minHeight: 60 }}
-            placeholder="What is the context of this task?"
-          />
-        </Field>
-
-        <Field label="Acceptance Criteria">
-          <textarea
-            value={spec.acceptanceCriteria}
-            onChange={(e) => setSpec({ ...spec, acceptanceCriteria: e.target.value })}
-            style={{ ...inputStyle, minHeight: 60 }}
-            placeholder="When is this task considered done?"
-          />
-        </Field>
-
-        <Field label="Constraints">
-          <textarea
-            value={spec.constraints}
-            onChange={(e) => setSpec({ ...spec, constraints: e.target.value })}
-            style={{ ...inputStyle, minHeight: 60 }}
-            placeholder="Technical constraints or limitations"
-          />
-        </Field>
-
-        <Field label="Verification">
-          <textarea
-            value={spec.verification}
-            onChange={(e) => setSpec({ ...spec, verification: e.target.value })}
-            style={{ ...inputStyle, minHeight: 60 }}
-            placeholder="How to verify this task is correct"
-          />
-        </Field>
-
-        <Field label="Infrastructure Allowed">
-          <textarea
-            value={spec.infrastructureAllowed}
-            onChange={(e) => setSpec({ ...spec, infrastructureAllowed: e.target.value })}
-            style={{ ...inputStyle, minHeight: 40 }}
-            placeholder="What infrastructure changes are allowed?"
-          />
-        </Field>
-
-        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              ...btnStyle,
-              background: '#3b82f6',
-              opacity: submitting ? 0.6 : 1,
-            }}
-          >
-            {submitting ? 'Saving...' : initial ? 'Update' : 'Create'}
-          </button>
-          <button type="button" onClick={onCancel} style={{ ...btnStyle, background: '#6b7280' }}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
+              <div className="flex gap-2 mt-4">
+                <button type="submit" disabled={submitting} className={`${btnClasses} bg-accent-blue text-white ${submitting ? 'opacity-60' : 'hover:bg-blue-600'}`}>
+                  {submitting ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+                </button>
+                <button type="button" onClick={onCancel} className={`${btnClasses} bg-text-tertiary text-white hover:bg-gray-600`}>Cancel</button>
+              </div>
+            </form>
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
-};
-
-// -- Helpers --
-
-const Field: React.FC<{ label: string; flex?: boolean; children: React.ReactNode }> = ({
-  label,
-  flex,
-  children,
-}) => (
-  <div style={{ marginBottom: 12, flex: flex ? 1 : undefined }}>
-    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>
-      {label}
-    </label>
-    {children}
-  </div>
-);
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  borderRadius: 6,
-  border: '1px solid #d1d5db',
-  padding: '8px 10px',
-  fontSize: 14,
-  boxSizing: 'border-box',
-  resize: 'vertical',
-};
-
-const btnStyle: React.CSSProperties = {
-  border: 'none',
-  borderRadius: 6,
-  padding: '8px 20px',
-  color: '#fff',
-  fontWeight: 600,
-  fontSize: 14,
-  cursor: 'pointer',
 };
