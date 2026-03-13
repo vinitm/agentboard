@@ -25,7 +25,9 @@ export function useTasks(projectId: string) {
 
     const onCreated = (task: Task) => {
       if (task.projectId === projectId) {
-        setTasks((prev) => [...prev, task]);
+        setTasks((prev) =>
+          prev.some((t) => t.id === task.id) ? prev : [...prev, task],
+        );
       }
     };
 
@@ -63,7 +65,9 @@ export function useTasks(projectId: string) {
       priority?: number;
     }) => {
       const task = await api.post<Task>('/api/tasks', { ...data, projectId });
-      setTasks((prev) => [...prev, task]);
+      setTasks((prev) =>
+        prev.some((t) => t.id === task.id) ? prev : [...prev, task],
+      );
       return task;
     },
     [projectId],
