@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { CopyButton } from './CopyButton';
 import { LogViewer } from './LogViewer';
 import { RunHistory } from './RunHistory';
 import { EventsTimeline } from './EventsTimeline';
+import { SubtaskMiniCard } from './SubtaskMiniCard';
 import type { Task, Run, TaskStatus } from '../types';
 
 type Tab = 'logs' | 'events' | 'runs';
@@ -31,6 +33,8 @@ interface EventRecord { id: string; taskId: string; runId: string | null; type: 
 export const TaskPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [task, setTask] = useState<Task | null>(null);
+  const [parentTask, setParentTask] = useState<Task | null>(null);
+  const [subtasks, setSubtasks] = useState<Task[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [tab, setTab] = useState<Tab>(getInitialTab);
@@ -40,8 +44,20 @@ export const TaskPage: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setParentTask(null);
+    setSubtasks([]);
     Promise.all([api.get<Task>(`/api/tasks/${id}`), api.get<Run[]>(`/api/runs?taskId=${id}`), api.get<EventRecord[]>(`/api/events?taskId=${id}`)])
-      .then(([t, r, e]) => { setTask(t); setRuns(r); setEvents(e); })
+      .then(async ([t, r, e]) => {
+        setTask(t); setRuns(r); setEvents(e);
+        // Fetch parent task if this is a subtask
+        if (t.parentTaskId) {
+          api.get<Task>(`/api/tasks/${t.parentTaskId}`).then(setParentTask).catch(() => {});
+        }
+        // Fetch subtasks by getting all tasks for this project and filtering
+        api.get<Task[]>(`/api/tasks?projectId=${t.projectId}`).then((all) => {
+          setSubtasks(all.filter((s) => s.parentTaskId === t.id));
+        }).catch(() => {});
+      })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load task'))
       .finally(() => setLoading(false));
   }, [id]);
@@ -59,11 +75,24 @@ export const TaskPage: React.FC = () => {
   const isActive = ACTIVE_STATUSES.includes(task.status);
   const tabs: { key: Tab; label: string }[] = [{ key: 'logs', label: 'Live Logs' }, { key: 'events', label: 'Events Timeline' }, { key: 'runs', label: 'Run History' }];
 
+  // Get most recent run output for historical display
+  const lastRun = runs.length > 0
+    ? runs.slice().sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0]
+    : null;
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-4 px-5 py-3 border-b border-border-default flex-shrink-0">
-        <Link to="/" className="text-text-secondary hover:text-text-primary text-sm">← Board</Link>
+        <div className="flex items-center gap-1.5 text-sm flex-shrink-0">
+          <Link to="/" className="text-text-secondary hover:text-text-primary">← Board</Link>
+          {parentTask && (
+            <>
+              <span className="text-text-tertiary">/</span>
+              <Link to={`/tasks/${parentTask.id}`} className="text-text-secondary hover:text-text-primary truncate max-w-[150px]">{parentTask.title}</Link>
+            </>
+          )}
+        </div>
         <h1 className="text-base font-semibold text-white flex-1 truncate">{task.title}</h1>
         <span className={`${statusBadgeColor[task.status] || 'bg-text-tertiary'} text-white px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase`}>
           {task.status.replace(/_/g, ' ')}
@@ -82,6 +111,18 @@ export const TaskPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Subtasks */}
+      {subtasks.length > 0 && (
+        <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
+          <div className="text-xs font-semibold text-text-tertiary uppercase tracking-wide mb-2">Subtasks ({subtasks.filter((s) => s.status === 'done').length}/{subtasks.length} done)</div>
+          <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-3">
+            {subtasks
+              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+              .map((sub) => <SubtaskMiniCard key={sub.id} task={sub} />)}
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex border-b border-border-default pl-5 flex-shrink-0">
         {tabs.map(({ key, label }) => (
@@ -95,7 +136,22 @@ export const TaskPage: React.FC = () => {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-5">
-        {tab === 'logs' && (isActive ? <LogViewer taskId={task.id} /> : <div className="text-text-secondary text-center pt-10">No active execution. Task status: {task.status.replace(/_/g, ' ')}</div>)}
+        {tab === 'logs' && (isActive
+          ? <LogViewer taskId={task.id} />
+          : lastRun?.output
+            ? (
+              <div className="relative">
+                <div className="absolute top-2 right-2 z-10">
+                  <CopyButton text={lastRun.output} />
+                </div>
+                <div className="bg-bg-secondary font-mono text-xs text-text-primary p-3 rounded-lg max-h-[400px] overflow-y-auto border border-border-default">
+                  <div className="text-text-tertiary text-[11px] mb-2">Last run: {lastRun.stage} ({lastRun.status}) — {new Date(lastRun.startedAt).toLocaleString()}</div>
+                  <pre className="whitespace-pre-wrap break-all m-0">{lastRun.output}</pre>
+                </div>
+              </div>
+            )
+            : <div className="text-text-secondary text-center pt-10">No logs available. Task status: {task.status.replace(/_/g, ' ')}</div>
+        )}
         {tab === 'events' && <EventsTimeline taskId={task.id} events={events} />}
         {tab === 'runs' && <RunHistory runs={runs} />}
       </div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CopyButton } from './CopyButton';
 import type { Run } from '../types';
 
 interface Props { runs: Run[] }
@@ -35,7 +36,10 @@ export const RunHistory: React.FC<Props> = ({ runs }) => {
               </div>
             </div>
             {isExpanded && run.output && (
-              <div className="bg-bg-primary font-mono text-xs text-text-primary p-3 max-h-[200px] overflow-y-auto border-t border-border-default">
+              <div className="relative bg-bg-primary font-mono text-xs text-text-primary p-3 max-h-[200px] overflow-y-auto border-t border-border-default">
+                <div className="absolute top-2 right-2">
+                  <CopyButton text={run.output} />
+                </div>
                 <pre className="whitespace-pre-wrap break-all m-0">{run.output}</pre>
               </div>
             )}

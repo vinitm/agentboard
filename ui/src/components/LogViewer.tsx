@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { CopyButton } from './CopyButton';
 import { useSocket } from '../hooks/useSocket';
 
 interface LogEntry { taskId: string; runId: string; chunk: string; timestamp: string }
@@ -7,7 +8,6 @@ interface Props { taskId: string }
 export const LogViewer: React.FC<Props> = ({ taskId }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [copied, setCopied] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const socket = useSocket();
 
@@ -24,10 +24,7 @@ export const LogViewer: React.FC<Props> = ({ taskId }) => {
     if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs, autoScroll]);
 
-  const copyAll = () => {
-    const text = logs.map((e) => `${new Date(e.timestamp).toLocaleTimeString()} ${e.chunk}`).join('');
-    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
-  };
+  const allText = logs.map((e) => `${new Date(e.timestamp).toLocaleTimeString()} ${e.chunk}`).join('');
 
   if (logs.length === 0) {
     return <div className="text-sm text-text-secondary p-2">No logs yet. Logs will appear here in real-time as the agent works.</div>;
@@ -43,9 +40,7 @@ export const LogViewer: React.FC<Props> = ({ taskId }) => {
         <button onClick={() => setLogs([])} className="px-2 py-0.5 rounded text-[11px] bg-bg-elevated border border-border-default text-text-tertiary hover:text-text-primary">
           Clear
         </button>
-        <button onClick={copyAll} className="px-2 py-0.5 rounded text-[11px] bg-bg-elevated border border-border-default text-text-tertiary hover:text-text-primary">
-          {copied ? 'Copied!' : 'Copy'}
-        </button>
+        <CopyButton text={allText} />
       </div>
       <div className="bg-bg-secondary text-text-primary font-mono text-xs leading-relaxed p-3 rounded-lg max-h-[300px] overflow-y-auto">
         {logs.map((entry, i) => (

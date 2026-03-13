@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CopyButton } from './CopyButton';
 import { useSocket } from '../hooks/useSocket';
 
 interface EventRecord { id: string; taskId: string; runId: string | null; type: string; payload: string; createdAt: string }
@@ -71,9 +72,14 @@ export const EventsTimeline: React.FC<Props> = ({ taskId, events: initialEvents 
               <span className="text-[13px] text-text-primary">{summarizeEvent(event.type, payload)}</span>
             </div>
             {isExpanded && (
-              <pre className="mt-2 p-3 bg-bg-secondary rounded-md text-xs text-text-primary font-mono overflow-auto max-h-[300px] whitespace-pre-wrap break-words border border-border-default">
-                {JSON.stringify(payload, null, 2)}
-              </pre>
+              <div className="relative mt-2">
+                <div className="absolute top-2 right-2">
+                  <CopyButton text={JSON.stringify(payload, null, 2)} />
+                </div>
+                <pre className="p-3 bg-bg-secondary rounded-md text-xs text-text-primary font-mono overflow-auto max-h-[300px] whitespace-pre-wrap break-words border border-border-default">
+                  {JSON.stringify(payload, null, 2)}
+                </pre>
+              </div>
             )}
           </div>
         );

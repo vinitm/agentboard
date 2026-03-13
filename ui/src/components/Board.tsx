@@ -137,7 +137,7 @@ export const Board: React.FC<Props> = ({
         <div className="flex gap-2.5 overflow-x-auto pb-3">
           {MAIN_COLUMNS.map((status) => (
             <Column key={status} status={status} tasks={tasksByStatus(status)} onTaskClick={(t) => setSelectedTaskId(t.id)}
-              subtasksByParent={subtasksByParent} onSubtaskClick={(t) => setSelectedTaskId(t.id)}
+              subtasksByParent={subtasksByParent}
               selectedIds={selectedIds} onToggleSelect={toggleSelect} />
           ))}
         </div>
@@ -149,7 +149,7 @@ export const Board: React.FC<Props> = ({
             if (colTasks.length === 0) return null;
             return (
               <Column key={status} status={status} tasks={colTasks} onTaskClick={(t) => setSelectedTaskId(t.id)}
-                subtasksByParent={subtasksByParent} onSubtaskClick={(t) => setSelectedTaskId(t.id)}
+                subtasksByParent={subtasksByParent}
                 selectedIds={selectedIds} onToggleSelect={toggleSelect} />
             );
           })}

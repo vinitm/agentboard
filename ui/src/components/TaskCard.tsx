@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
+import { SubtaskMiniCard } from './SubtaskMiniCard';
 import type { Task } from '../types';
 
 interface Props {
@@ -7,7 +8,6 @@ interface Props {
   onClick: () => void;
   selected?: boolean;
   subtasks?: Task[];
-  onSubtaskClick?: (task: Task) => void;
 }
 
 const riskDotColor: Record<string, string> = {
@@ -50,7 +50,7 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = [], onSubtaskClick }) => {
+export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = [] }) => {
   const [expanded, setExpanded] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
@@ -120,19 +120,11 @@ export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = 
           </div>
 
           {expanded && (
-            <div className="mt-1.5">
+            <div className="mt-1.5 space-y-1">
               {subtasks
                 .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
                 .map((sub) => (
-                  <div
-                    key={sub.id}
-                    onClick={(e) => { e.stopPropagation(); onSubtaskClick?.(sub); }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1.5 py-0.5 cursor-pointer text-xs text-text-secondary hover:text-text-primary"
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDotColor[sub.status] || 'bg-text-tertiary'}`} />
-                    <span className="truncate">{sub.title}</span>
-                  </div>
+                  <SubtaskMiniCard key={sub.id} task={sub} />
                 ))}
             </div>
           )}
