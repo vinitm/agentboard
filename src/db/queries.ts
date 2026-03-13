@@ -126,6 +126,16 @@ export function listProjects(db: Database.Database): Project[] {
   return rows.map(rowToProject);
 }
 
+export function getProjectByPath(
+  db: Database.Database,
+  path: string
+): Project | undefined {
+  const row = db.prepare('SELECT * FROM projects WHERE path = ?').get(path) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToProject(row) : undefined;
+}
+
 export function updateProject(
   db: Database.Database,
   id: string,

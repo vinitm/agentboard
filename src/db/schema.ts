@@ -81,6 +81,17 @@ CREATE INDEX IF NOT EXISTS idx_git_refs_task_id ON git_refs(task_id);
 CREATE INDEX IF NOT EXISTS idx_events_task_id ON events(task_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+
+-- Deduplicate projects by path (keep oldest)
+DELETE FROM projects WHERE id NOT IN (
+  SELECT id FROM (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY path ORDER BY created_at ASC) AS rn
+    FROM projects
+  ) WHERE rn = 1
+);
+
+-- Enforce unique repo paths
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path);
 `;
 
 export function initSchema(db: Database.Database): void {
