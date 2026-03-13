@@ -21,8 +21,12 @@ const __dirname = path.dirname(__filename);
  * Load the spec review prompt template from prompts/review-spec.md
  */
 function loadSpecReviewTemplate(): string {
-  const promptPath = path.resolve(__dirname, '../../../prompts/review-spec.md');
-  return fs.readFileSync(promptPath, 'utf-8');
+  const promptPath = path.resolve(__dirname, '../../../../prompts/review-spec.md');
+  try {
+    return fs.readFileSync(promptPath, 'utf-8');
+  } catch {
+    throw new Error(`Spec review prompt template not found at ${promptPath}. Ensure the prompts/ directory exists in the agentboard root.`);
+  }
 }
 
 /**
@@ -37,7 +41,8 @@ export async function runSpecReview(
   db: Database.Database,
   task: Task,
   worktreePath: string,
-  config: AgentboardConfig
+  config: AgentboardConfig,
+  onOutput?: (chunk: string) => void
 ): Promise<ReviewResult> {
   const model = selectModel('review_spec', task.riskLevel, config);
   const taskPacket = buildTaskPacket(db, task);
@@ -59,6 +64,7 @@ export async function runSpecReview(
       prompt,
       worktreePath,
       model,
+      onOutput,
     });
 
     if (result.exitCode !== 0) {

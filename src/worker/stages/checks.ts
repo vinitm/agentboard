@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig } from '../../types/index.js';
@@ -49,7 +49,8 @@ export async function runChecks(
   db: Database.Database,
   task: Task,
   worktreePath: string,
-  config: AgentboardConfig
+  config: AgentboardConfig,
+  onOutput?: (chunk: string) => void
 ): Promise<ChecksResult> {
   const results: CheckResult[] = [];
   let formattingFixed = false;
@@ -78,6 +79,9 @@ export async function runChecks(
       return { passed: false, results, formattingFixed };
     }
 
+    // Secrets clean — stage all changes for subsequent checks
+    await execFileAsync('git', ['add', '-A'], { cwd: worktreePath });
+
     // ── Run checks in order: test → lint → format → typecheck → security
     const checkOrder: Array<{ name: string; commandKey: keyof AgentboardConfig['commands'] }> = [
       { name: 'test', commandKey: 'test' },
@@ -96,7 +100,7 @@ export async function runChecks(
         continue;
       }
 
-      const checkResult = await runCommand(check.name, command, worktreePath);
+      const checkResult = await runCommand(check.name, command, worktreePath, onOutput);
       results.push(checkResult);
 
       if (!checkResult.passed && check.name === 'format') {
@@ -109,7 +113,8 @@ export async function runChecks(
           const fixResult = await runCommand(
             'format-fix',
             config.commands.formatFix,
-            worktreePath
+            worktreePath,
+            onOutput
           );
           results.push(fixResult);
 
@@ -122,7 +127,8 @@ export async function runChecks(
             const recheck = await runCommand(
               'format-recheck',
               command,
-              worktreePath
+              worktreePath,
+              onOutput
             );
             results.push(recheck);
 
@@ -180,61 +186,71 @@ export async function runChecks(
 async function runCommand(
   name: string,
   command: string,
-  cwd: string
+  cwd: string,
+  onOutput?: (chunk: string) => void
 ): Promise<CheckResult> {
-  try {
-    const { stdout, stderr } = await execFileAsync('sh', ['-c', command], {
+  return new Promise((resolve) => {
+    onOutput?.(`[${name}] Running: ${command}\n`);
+
+    const child = spawn('sh', ['-c', command], {
       cwd,
-      timeout: 120_000,
-      maxBuffer: 10 * 1024 * 1024, // 10MB
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    return {
-      name,
-      command,
-      passed: true,
-      output: (stdout + (stderr ? `\n[stderr]\n${stderr}` : '')).trim(),
-    };
-  } catch (error) {
-    // execFile rejects on non-zero exit code
-    const err = error as {
-      stdout?: string;
-      stderr?: string;
-      code?: number;
-      message?: string;
-    };
-    const output = [
-      err.stdout ?? '',
-      err.stderr ? `\n[stderr]\n${err.stderr}` : '',
-      err.message ? `\n[error]\n${err.message}` : '',
-    ]
-      .join('')
-      .trim();
+    let stdout = '';
+    let stderr = '';
 
-    return {
-      name,
-      command,
-      passed: false,
-      output: output.slice(0, 5000), // Truncate to keep manageable
-    };
-  }
+    const timer = setTimeout(() => {
+      child.kill();
+    }, 120_000);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdout += text;
+      onOutput?.(`[${name}] ${text}`);
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      stderr += text;
+      onOutput?.(`[${name}] ${text}`);
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const output = (stdout + (stderr ? `\n[stderr]\n${stderr}` : '')).trim();
+      resolve({
+        name,
+        command,
+        passed: code === 0,
+        output: output.slice(0, 5000),
+      });
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({
+        name,
+        command,
+        passed: false,
+        output: `Failed to spawn: ${err.message}`,
+      });
+    });
+  });
 }
 
 /**
- * Scan staged changes for potential secrets.
- * Runs `git diff --cached` (or `git diff HEAD` for uncommitted) to get the diff,
- * then checks for secret patterns.
+ * Scan unstaged changes for potential secrets.
+ * Runs `git diff` on the working tree (NOT staged) to get the diff,
+ * then checks for secret patterns. Files are only staged after this passes.
  */
 async function scanForSecrets(worktreePath: string): Promise<CheckResult> {
-  // Stage all changes so the scan covers implementation changes
-  await execFileAsync('git', ['add', '-A'], { cwd: worktreePath });
-
-  // Get the staged diff content
+  // Scan unstaged changes — do NOT stage before scanning
   let diff = '';
   try {
     const { stdout } = await execFileAsync(
       'git',
-      ['diff', '--cached'],
+      ['diff'],
       { cwd: worktreePath, maxBuffer: 10 * 1024 * 1024 }
     );
     diff = stdout;
@@ -242,42 +258,53 @@ async function scanForSecrets(worktreePath: string): Promise<CheckResult> {
     diff = '';
   }
 
-  // Get staged file names
-  let stagedFiles = '';
+  // Also check untracked file names
+  let untrackedFiles = '';
   try {
     const { stdout } = await execFileAsync(
       'git',
-      ['diff', '--cached', '--name-only'],
+      ['ls-files', '--others', '--exclude-standard'],
       { cwd: worktreePath }
     );
-    stagedFiles = stdout;
+    untrackedFiles = stdout;
   } catch {
-    stagedFiles = '';
+    untrackedFiles = '';
   }
 
+  // Get modified file names
+  let modifiedFiles = '';
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['diff', '--name-only'],
+      { cwd: worktreePath }
+    );
+    modifiedFiles = stdout;
+  } catch {
+    modifiedFiles = '';
+  }
+
+  const allFileNames = modifiedFiles + '\n' + untrackedFiles;
   const detectedSecrets: string[] = [];
 
   // Check diff content for secret patterns
   for (const { name, pattern } of SECRET_PATTERNS) {
-    if (pattern.test(diff) || pattern.test(stagedFiles)) {
+    if (pattern.test(diff) || pattern.test(allFileNames)) {
       detectedSecrets.push(name);
     }
   }
 
   // Check for .env files in changed files
-  if (/\.env(?:\.|$)/m.test(stagedFiles)) {
+  if (/\.env(?:\.|$)/m.test(allFileNames)) {
     if (!detectedSecrets.includes('.env file')) {
       detectedSecrets.push('.env file detected in changed files');
     }
   }
 
   if (detectedSecrets.length > 0) {
-    // Unstage so secrets aren't accidentally committed
-    await execFileAsync('git', ['reset', 'HEAD'], { cwd: worktreePath }).catch(() => {});
-
     return {
       name: 'secret-detection',
-      command: 'git diff --name-only --cached + pattern matching',
+      command: 'git diff + pattern matching',
       passed: false,
       output: `Potential secrets detected:\n${detectedSecrets.map((s) => `  - ${s}`).join('\n')}`,
     };
@@ -285,7 +312,7 @@ async function scanForSecrets(worktreePath: string): Promise<CheckResult> {
 
   return {
     name: 'secret-detection',
-    command: 'git diff --name-only --cached + pattern matching',
+    command: 'git diff + pattern matching',
     passed: true,
     output: 'No secrets detected.',
   };

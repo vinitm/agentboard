@@ -20,8 +20,12 @@ const __dirname = path.dirname(__filename);
  * Load the implementer prompt template from prompts/implementer.md
  */
 function loadImplementerTemplate(): string {
-  const promptPath = path.resolve(__dirname, '../../../prompts/implementer.md');
-  return fs.readFileSync(promptPath, 'utf-8');
+  const promptPath = path.resolve(__dirname, '../../../../prompts/implementer.md');
+  try {
+    return fs.readFileSync(promptPath, 'utf-8');
+  } catch {
+    throw new Error(`Implementer prompt template not found at ${promptPath}. Ensure the prompts/ directory exists in the agentboard root.`);
+  }
 }
 
 /**
