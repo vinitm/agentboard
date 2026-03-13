@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
@@ -13,6 +14,7 @@ import {
   createTask,
   createGitRef,
   getTaskById,
+  getProjectById,
   listProjects,
   listGitRefsByTask,
   getSubtasksByParentId,
@@ -27,6 +29,7 @@ import { createPR } from './stages/pr-creator.js';
 import { createHooks, loadRufloHooks, runHook } from './hooks.js';
 import type { HookContext } from './hooks.js';
 import { loadMemory, saveMemory, recordFailure, recordConvention } from './memory.js';
+import type { WorkerMemory } from './memory.js';
 import { notify } from './notifications.js';
 
 const POLL_INTERVAL_MS = 5_000;
@@ -56,10 +59,6 @@ export function createWorkerLoop(
   // Initialize hooks
   const hooks = createHooks();
   loadRufloHooks(hooks, config);
-
-  // Initialize memory
-  const configDir = path.join(process.cwd(), '.agentboard');
-  const memory = loadMemory(configDir);
 
   /** After a subtask reaches a terminal state, check if all siblings are done and update parent. */
   function checkAndUpdateParentStatus(task: Task): void {
@@ -100,8 +99,8 @@ export function createWorkerLoop(
   /**
    * Helper to build a HookContext for a given task/stage/worktree.
    */
-  function makeHookContext(task: Task, stage: Stage, worktreePath: string): HookContext {
-    return { task, stage, worktreePath, config };
+  function makeHookContext(task: Task, stage: Stage, worktreePath: string, taskConfig: AgentboardConfig): HookContext {
+    return { task, stage, worktreePath, config: taskConfig };
   }
 
   /**
@@ -189,7 +188,9 @@ export function createWorkerLoop(
     worktreePath: string,
     config: AgentboardConfig,
     io: Server,
-    db: Database.Database
+    db: Database.Database,
+    memory: WorkerMemory,
+    configDir: string
   ): Promise<void> {
     // Move to implementing
     updateTask(db, task.id, { status: 'implementing' });
@@ -202,7 +203,7 @@ export function createWorkerLoop(
 
     for (let attempt = 1; attempt <= config.maxAttemptsPerTask; attempt++) {
       // Run implementer stage
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'implementing', worktreePath));
+      await runHook(hooks, 'beforeStage', makeHookContext(task, 'implementing', worktreePath, config));
       const implResult = await runImplementation(
         db,
         task,
@@ -211,7 +212,7 @@ export function createWorkerLoop(
         attempt,
         createLogStreamer(task.id, `impl-${attempt}`)
       );
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'implementing', worktreePath));
+      await runHook(hooks, 'afterStage', makeHookContext(task, 'implementing', worktreePath, config));
 
       // If needs user input → block the task
       if (implResult.needsUserInput && implResult.needsUserInput.length > 0) {
@@ -261,9 +262,9 @@ export function createWorkerLoop(
       );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
 
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'checks', worktreePath));
+      await runHook(hooks, 'beforeStage', makeHookContext(task, 'checks', worktreePath, config));
       const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'checks', worktreePath));
+      await runHook(hooks, 'afterStage', makeHookContext(task, 'checks', worktreePath, config));
 
       if (checksResult.passed) {
         // Commit the implementation
@@ -273,7 +274,7 @@ export function createWorkerLoop(
         );
 
         // Run review cycle and PR creation
-        await runReviewAndPR(task, worktreePath, config, io, db);
+        await runReviewAndPR(task, worktreePath, config, io, db, memory, configDir);
         return;
       }
 
@@ -328,7 +329,7 @@ export function createWorkerLoop(
     broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
     notify('Task Failed', `"${task.title}" failed after ${config.maxAttemptsPerTask} attempts`, config);
     checkAndUpdateParentStatus(task);
-    await runHook(hooks, 'onError', makeHookContext(task, 'implementing', worktreePath));
+    await runHook(hooks, 'onError', makeHookContext(task, 'implementing', worktreePath, config));
   }
 
   /**
@@ -341,7 +342,9 @@ export function createWorkerLoop(
     worktreePath: string,
     config: AgentboardConfig,
     io: Server,
-    db: Database.Database
+    db: Database.Database,
+    memory: WorkerMemory,
+    configDir: string
   ): Promise<void> {
     let reviewCycle = 0;
     let specPassed = false;
@@ -359,9 +362,9 @@ export function createWorkerLoop(
       );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'review_spec' });
 
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_spec', worktreePath));
+      await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_spec', worktreePath, config));
       const specResult = await runSpecReview(db, task, worktreePath, config, createLogStreamer(task.id, `review-spec-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'review_spec', worktreePath));
+      await runHook(hooks, 'afterStage', makeHookContext(task, 'review_spec', worktreePath, config));
 
       if (!specResult.passed) {
         createAndBroadcastEvent(
@@ -428,9 +431,9 @@ export function createWorkerLoop(
       );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'review_code' });
 
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_code', worktreePath));
+      await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_code', worktreePath, config));
       const codeResult = await runCodeReview(db, task, worktreePath, config, createLogStreamer(task.id, `review-code-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'review_code', worktreePath));
+      await runHook(hooks, 'afterStage', makeHookContext(task, 'review_code', worktreePath, config));
 
       if (!codeResult.passed) {
         createAndBroadcastEvent(
@@ -513,9 +516,9 @@ export function createWorkerLoop(
 
     // ── PR creation ──────────────────────────────────────────────────────
     try {
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'pr_creation', worktreePath));
+      await runHook(hooks, 'beforeStage', makeHookContext(task, 'pr_creation', worktreePath, config));
       const prResult = await createPR(db, task, worktreePath, config, createLogStreamer(task.id, `pr-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'pr_creation', worktreePath));
+      await runHook(hooks, 'afterStage', makeHookContext(task, 'pr_creation', worktreePath, config));
 
       createAndBroadcastEvent(
         task.id,
@@ -563,7 +566,7 @@ export function createWorkerLoop(
       status: 'needs_human_review',
     });
     notify('Task Complete', `"${task.title}" is ready for human review`, config);
-    await runHook(hooks, 'onTaskComplete', makeHookContext(task, 'pr_creation', worktreePath));
+    await runHook(hooks, 'onTaskComplete', makeHookContext(task, 'pr_creation', worktreePath, config));
   }
 
   /**
@@ -576,12 +579,26 @@ export function createWorkerLoop(
 
     try {
       // Find the project to get the repo path
-      const projects = listProjects(db);
-      const project = projects.find((p) => p.id === task.projectId);
+      const project = getProjectById(db, task.projectId);
       if (!project) {
         throw new Error(`Project not found for task ${task.id}`);
       }
       repoPath = project.path;
+
+      // Load per-project config (MUST happen before subtask check or createWorktree)
+      const projectConfigDir = path.join(project.path, '.agentboard');
+      let projectConfig: AgentboardConfig;
+      try {
+        const raw = fs.readFileSync(path.join(projectConfigDir, 'config.json'), 'utf-8');
+        projectConfig = JSON.parse(raw) as AgentboardConfig;
+      } catch (err) {
+        throw new Error(
+          `Failed to read per-project config at ${projectConfigDir}/config.json: ${err instanceof Error ? err.message : err}`
+        );
+      }
+
+      // Load per-project memory
+      const memory = loadMemory(projectConfigDir);
 
       // Check if this is a subtask that should reuse parent's worktree
       if (task.parentTaskId) {
@@ -591,7 +608,7 @@ export function createWorkerLoop(
           worktreePath = parentGitRefs[0].worktreePath;
 
           // Skip planning for subtasks — go directly to implementation loop
-          await runImplementationLoop(task, worktreePath, config, io, db);
+          await runImplementationLoop(task, worktreePath, projectConfig, io, db, memory, projectConfigDir);
           return;
         }
       }
@@ -608,8 +625,8 @@ export function createWorkerLoop(
         project.path,
         task.id,
         slug,
-        config.baseBranch,
-        config.branchPrefix
+        projectConfig.baseBranch,
+        projectConfig.branchPrefix
       );
       worktreePath = wtPath;
 
@@ -634,9 +651,9 @@ export function createWorkerLoop(
       broadcast(io, 'task:updated', { taskId: task.id, status: 'planning' });
 
       // Run planning stage
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'planning', worktreePath));
-      const planResult = await runPlanning(db, task, worktreePath, config, createLogStreamer(task.id, `planning-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'planning', worktreePath));
+      await runHook(hooks, 'beforeStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
+      const planResult = await runPlanning(db, task, worktreePath, projectConfig, createLogStreamer(task.id, `planning-${task.id}`));
+      await runHook(hooks, 'afterStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
 
       // Handle planning result
       if (planResult.questions.length > 0) {
@@ -660,7 +677,7 @@ export function createWorkerLoop(
           taskId: task.id,
           status: 'blocked',
         });
-        notify('Task Blocked', `"${task.title}" has planning questions`, config);
+        notify('Task Blocked', `"${task.title}" has planning questions`, projectConfig);
         return;
       }
 
@@ -718,7 +735,7 @@ export function createWorkerLoop(
       }
 
       // No questions, no subtasks — proceed to implementation
-      await runImplementationLoop(task, worktreePath, config, io, db);
+      await runImplementationLoop(task, worktreePath, projectConfig, io, db, memory, projectConfigDir);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
