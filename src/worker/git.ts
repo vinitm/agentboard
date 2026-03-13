@@ -39,10 +39,25 @@ export async function createWorktree(
 }
 
 /**
- * Remove a git worktree.
+ * Remove a git worktree and its associated branch.
  */
-export async function cleanupWorktree(repoPath: string, worktreePath: string): Promise<void> {
-  await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoPath });
+export async function cleanupWorktree(repoPath: string, worktreePath: string, branch?: string): Promise<void> {
+  // Remove the worktree
+  try {
+    await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoPath });
+  } catch {
+    // Worktree may already be gone — prune stale entries
+    await execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath }).catch(() => {});
+  }
+
+  // Delete the branch if provided
+  if (branch) {
+    try {
+      await execFileAsync('git', ['branch', '-D', branch], { cwd: repoPath });
+    } catch {
+      // Branch may already be gone
+    }
+  }
 }
 
 /**

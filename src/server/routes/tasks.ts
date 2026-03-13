@@ -404,7 +404,7 @@ Task description: ${description.trim()}`;
     if (!project) return;
 
     try {
-      await cleanupWorktree(project.path, ref.worktreePath);
+      await cleanupWorktree(project.path, ref.worktreePath, ref.branch);
       queries.updateGitRef(database, ref.id, { worktreePath: null });
     } catch {
       // Best effort — worktree may already be gone

@@ -598,6 +598,7 @@ export function createWorkerLoop(
    */
   async function processTask(task: Task): Promise<void> {
     let worktreePath: string | undefined;
+    let branchName: string | undefined;
     let isSubtask = false;
     let repoPath: string | undefined;
 
@@ -653,6 +654,7 @@ export function createWorkerLoop(
         projectConfig.branchPrefix
       );
       worktreePath = wtPath;
+      branchName = branch;
 
       // Record git ref in DB
       createGitRef(db, {
@@ -812,7 +814,7 @@ export function createWorkerLoop(
       // Attempt worktree cleanup on failure (skip for subtasks reusing parent worktree)
       if (worktreePath && !isSubtask && repoPath) {
         try {
-          await cleanupWorktree(repoPath, worktreePath);
+          await cleanupWorktree(repoPath, worktreePath, branchName);
         } catch {
           // Best effort cleanup
         }
