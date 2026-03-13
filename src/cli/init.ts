@@ -1,10 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import chalk from 'chalk';
 import { detectLanguages } from '../detect/language.js';
 import { detectCommands } from '../detect/commands.js';
-import { createDatabase } from '../db/index.js';
 import type { AgentboardConfig } from '../types/index.js';
+
+interface RegistryEntry {
+  path: string;
+  name: string;
+  registeredAt: string;
+}
 
 export default async function init(): Promise<void> {
   const cwd = process.cwd();
@@ -37,7 +43,7 @@ export default async function init(): Promise<void> {
   // 5. Build default config
   const config: AgentboardConfig = {
     port: 4200,
-    host: 'localhost',
+    host: '0.0.0.0',
     maxConcurrentTasks: 2,
     maxAttemptsPerTask: 10,
     maxReviewCycles: 3,
@@ -73,12 +79,7 @@ export default async function init(): Promise<void> {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
   console.log(chalk.green('Wrote'), configPath);
 
-  // 7. Create database
-  const dbPath = path.join(abDir, 'agentboard.db');
-  createDatabase(dbPath);
-  console.log(chalk.green('Created database'), dbPath);
-
-  // 8. Ensure .agentboard/ is in .gitignore
+  // 7. Ensure .agentboard/ is in .gitignore
   const gitignorePath = path.join(cwd, '.gitignore');
   const gitignoreEntry = '.agentboard/';
   if (fs.existsSync(gitignorePath)) {
@@ -92,8 +93,60 @@ export default async function init(): Promise<void> {
     console.log(chalk.green('Created .gitignore with'), gitignoreEntry);
   }
 
+  // 8. Register repo in global registry (~/.agentboard/repos.json)
+  registerRepo(cwd);
+
   // 9. Done
   console.log(
     chalk.green.bold('\nAgentboard initialized successfully!')
   );
+}
+
+/**
+ * Register the repo at `repoPath` in ~/.agentboard/repos.json.
+ * Idempotent — skips if already registered. Uses atomic write to prevent corruption.
+ */
+function registerRepo(repoPath: string): void {
+  const globalDir = path.join(os.homedir(), '.agentboard');
+  const registryPath = path.join(globalDir, 'repos.json');
+
+  // Ensure ~/.agentboard/ exists
+  if (!fs.existsSync(globalDir)) {
+    fs.mkdirSync(globalDir, { recursive: true });
+  }
+
+  // Read existing registry
+  let registry: RegistryEntry[] = [];
+  if (fs.existsSync(registryPath)) {
+    try {
+      registry = JSON.parse(fs.readFileSync(registryPath, 'utf-8')) as RegistryEntry[];
+      if (!Array.isArray(registry)) {
+        registry = [];
+      }
+    } catch {
+      // Malformed file — start fresh
+      registry = [];
+    }
+  }
+
+  // Check if already registered (by path)
+  if (registry.some((entry) => entry.path === repoPath)) {
+    console.log(chalk.blue('Repo already registered in global registry'));
+    return;
+  }
+
+  // Add entry
+  const entry: RegistryEntry = {
+    path: repoPath,
+    name: path.basename(repoPath),
+    registeredAt: new Date().toISOString(),
+  };
+  registry.push(entry);
+
+  // Atomic write: write to temp file, then rename
+  const tmpPath = registryPath + '.tmp';
+  fs.writeFileSync(tmpPath, JSON.stringify(registry, null, 2) + '\n');
+  fs.renameSync(tmpPath, registryPath);
+
+  console.log(chalk.green('Registered repo in'), registryPath);
 }
