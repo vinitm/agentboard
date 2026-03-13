@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Board } from './components/Board';
 import { Settings } from './components/Settings';
+import { TaskPage } from './components/TaskPage';
 import { useTasks } from './hooks/useTasks';
 import { api } from './api/client';
 import type { Project } from './types';
@@ -14,7 +16,7 @@ export const App: React.FC = () => {
   const { tasks, loading, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask } =
     useTasks(projectId);
 
-  // Load or create default project
+  // Load projects from server
   useEffect(() => {
     (async () => {
       try {
@@ -22,14 +24,6 @@ export const App: React.FC = () => {
         setProjects(list);
         if (list.length > 0) {
           setProjectId(list[0].id);
-        } else {
-          // Auto-create a default project
-          const p = await api.post<Project>('/api/projects', {
-            name: 'Default Project',
-            path: '/tmp/agentboard-default',
-          });
-          setProjects([p]);
-          setProjectId(p.id);
         }
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Failed to load projects');
@@ -38,6 +32,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
+    <BrowserRouter>
     <div style={{ minHeight: '100vh', background: '#f9fafb' }}>
       {/* Header */}
       <header
@@ -98,22 +93,37 @@ export const App: React.FC = () => {
           </div>
         </div>
       ) : !projectId ? (
-        <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>Loading...</div>
+        <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>No repos registered</div>
+          <div style={{ fontSize: 14 }}>
+            Run <code style={{ background: '#f3f4f6', padding: '2px 6px', borderRadius: 4 }}>agentboard init</code> in
+            a repo to register it, then restart the server.
+          </div>
+        </div>
       ) : (
-        <Board
-          tasks={tasks}
-          loading={loading}
-          createTask={createTask}
-          updateTask={updateTask}
-          moveTask={moveTask}
-          deleteTask={deleteTask}
-          answerTask={answerTask}
-          retryTask={retryTask}
-        />
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <Board
+                tasks={tasks}
+                loading={loading}
+                createTask={createTask}
+                updateTask={updateTask}
+                moveTask={moveTask}
+                deleteTask={deleteTask}
+                answerTask={answerTask}
+                retryTask={retryTask}
+              />
+            }
+          />
+          <Route path="/tasks/:id" element={<TaskPage />} />
+        </Routes>
       )}
 
       {/* Settings modal */}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
     </div>
+    </BrowserRouter>
   );
 };
