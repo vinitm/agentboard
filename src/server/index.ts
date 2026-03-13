@@ -78,7 +78,7 @@ export function createServer(
 
   // ── Serve static UI files in production ───────────────────────────
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
-  const uiDistPath = path.resolve(currentDir, '..', '..', 'ui', 'dist');
+  const uiDistPath = path.resolve(currentDir, '..', '..', '..', 'ui', 'dist');
   if (fs.existsSync(uiDistPath)) {
     app.use(express.static(uiDistPath));
     // SPA fallback: serve index.html for non-API routes
