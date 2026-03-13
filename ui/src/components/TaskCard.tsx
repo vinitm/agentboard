@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import type { Task } from '../types';
 
@@ -6,6 +6,8 @@ interface Props {
   task: Task;
   onClick: () => void;
   selected?: boolean;
+  subtasks?: Task[];
+  onSubtaskClick?: (task: Task) => void;
 }
 
 const riskColors: Record<string, string> = {
@@ -14,11 +16,31 @@ const riskColors: Record<string, string> = {
   high: '#ef4444',
 };
 
-export const TaskCard: React.FC<Props> = ({ task, onClick, selected }) => {
+const statusDotColors: Record<string, string> = {
+  done: '#22c55e',
+  needs_human_review: '#22c55e',
+  implementing: '#3b82f6',
+  checks: '#3b82f6',
+  review_spec: '#3b82f6',
+  review_code: '#3b82f6',
+  planning: '#3b82f6',
+  blocked: '#f59e0b',
+  failed: '#ef4444',
+  ready: '#9ca3af',
+  backlog: '#9ca3af',
+  cancelled: '#9ca3af',
+};
+
+export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = [], onSubtaskClick }) => {
+  const [expanded, setExpanded] = useState(false);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { task },
   });
+
+  const hasSubtasks = subtasks.length > 0;
+  const doneCount = subtasks.filter((s) => s.status === 'done').length;
+  const subtasksRunning = subtasks.some((s) => s.claimedBy);
 
   const style: React.CSSProperties = {
     background: selected ? '#dbeafe' : '#fff',
@@ -75,7 +97,96 @@ export const TaskCard: React.FC<Props> = ({ task, onClick, selected }) => {
             running
           </span>
         )}
+        {subtasksRunning && !task.claimedBy && (
+          <span
+            style={{
+              fontSize: 11,
+              color: '#3b82f6',
+              animation: 'pulse 2s infinite',
+            }}
+          >
+            subtasks running
+          </span>
+        )}
       </div>
+
+      {/* Collapsible subtask section */}
+      {hasSubtasks && (
+        <div style={{ marginTop: 8, borderTop: '1px solid #e5e7eb', paddingTop: 6 }}>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setExpanded(!expanded);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              cursor: 'pointer',
+              fontSize: 12,
+              color: '#6b7280',
+              userSelect: 'none',
+            }}
+          >
+            <span style={{
+              display: 'inline-block',
+              transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.15s',
+              fontSize: 10,
+            }}>
+              ▶
+            </span>
+            <span>
+              {doneCount}/{subtasks.length} subtasks done
+            </span>
+          </div>
+
+          {expanded && (
+            <div style={{ marginTop: 4 }}>
+              {subtasks
+                .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                .map((sub) => (
+                  <div
+                    key={sub.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSubtaskClick?.(sub);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '3px 0',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      color: '#374151',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: statusDotColors[sub.status] || '#9ca3af',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {sub.title.length > 40 ? sub.title.slice(0, 40) + '...' : sub.title}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

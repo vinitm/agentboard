@@ -60,8 +60,22 @@ export const Board: React.FC<Props> = ({
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
+  // Build parent→subtasks map and filter subtasks out of columns
+  const subtasksByParent = new Map<string, Task[]>();
+  const topLevelTasks = tasks.filter((t) => {
+    if (t.parentTaskId) {
+      const existing = subtasksByParent.get(t.parentTaskId) || [];
+      existing.push(t);
+      subtasksByParent.set(t.parentTaskId, existing);
+      return false;
+    }
+    return true;
+  });
+
   const tasksByStatus = (status: TaskStatus) =>
-    tasks.filter((t) => t.status === status);
+    topLevelTasks.filter((t) => t.status === status);
+
+  const handleSubtaskClick = (task: Task) => setSelectedTaskId(task.id);
 
   const handleDragStart = (event: DragStartEvent) => {
     const task = event.active.data.current?.task as Task | undefined;
@@ -267,6 +281,8 @@ export const Board: React.FC<Props> = ({
               status={status}
               tasks={tasksByStatus(status)}
               onTaskClick={(t) => setSelectedTaskId(t.id)}
+              subtasksByParent={subtasksByParent}
+              onSubtaskClick={handleSubtaskClick}
               selectedIds={selectedIds}
               onToggleSelect={toggleSelect}
             />
@@ -284,6 +300,8 @@ export const Board: React.FC<Props> = ({
                 status={status}
                 tasks={colTasks}
                 onTaskClick={(t) => setSelectedTaskId(t.id)}
+                subtasksByParent={subtasksByParent}
+                onSubtaskClick={handleSubtaskClick}
                 selectedIds={selectedIds}
                 onToggleSelect={toggleSelect}
               />

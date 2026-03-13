@@ -221,6 +221,21 @@ Task description: ${description.trim()}`;
       broadcast(io, 'task:moved', updated);
       // Best-effort worktree cleanup in background
       cleanupTaskWorktree(db, req.params.id).catch(() => {});
+      // Check if parent should be updated — see also: done handler
+      if (task.parentTaskId) {
+        const parent = queries.getTaskById(db, task.parentTaskId);
+        const terminalStatuses = ['needs_human_review', 'done', 'failed', 'cancelled'];
+        if (parent && !terminalStatuses.includes(parent.status)) {
+          const siblings = queries.getSubtasksByParentId(db, task.parentTaskId);
+          const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
+          if (allTerminal) {
+            const anyFailed = siblings.some(s => s.status === 'failed');
+            const newStatus = anyFailed ? 'failed' : 'needs_human_review';
+            queries.updateTask(db, task.parentTaskId, { status: newStatus, blockedReason: null });
+            broadcast(io, 'task:updated', { taskId: task.parentTaskId, status: newStatus });
+          }
+        }
+      }
       res.json(updated);
       return;
     }
@@ -265,6 +280,21 @@ Task description: ${description.trim()}`;
       broadcast(io, 'task:moved', updated);
       // Best-effort worktree cleanup in background
       cleanupTaskWorktree(db, req.params.id).catch(() => {});
+      // Check if parent should be updated — see also: cancelled handler
+      if (task.parentTaskId) {
+        const parent = queries.getTaskById(db, task.parentTaskId);
+        const terminalStatuses = ['needs_human_review', 'done', 'failed', 'cancelled'];
+        if (parent && !terminalStatuses.includes(parent.status)) {
+          const siblings = queries.getSubtasksByParentId(db, task.parentTaskId);
+          const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
+          if (allTerminal) {
+            const anyFailed = siblings.some(s => s.status === 'failed');
+            const newStatus = anyFailed ? 'failed' : 'needs_human_review';
+            queries.updateTask(db, task.parentTaskId, { status: newStatus, blockedReason: null });
+            broadcast(io, 'task:updated', { taskId: task.parentTaskId, status: newStatus });
+          }
+        }
+      }
       res.json(updated);
       return;
     }

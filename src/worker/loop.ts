@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
-import type { AgentboardConfig, Task, Stage } from '../types/index.js';
+import type { AgentboardConfig, Task, TaskStatus, Stage } from '../types/index.js';
 import { broadcast, broadcastLog } from '../server/ws.js';
 import {
   listTasksByStatus,
@@ -15,6 +15,7 @@ import {
   getTaskById,
   listProjects,
   listGitRefsByTask,
+  getSubtasksByParentId,
 } from '../db/queries.js';
 import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
 import { runPlanning } from './stages/planner.js';
@@ -59,6 +60,42 @@ export function createWorkerLoop(
   // Initialize memory
   const configDir = path.join(process.cwd(), '.agentboard');
   const memory = loadMemory(configDir);
+
+  /** After a subtask reaches a terminal state, check if all siblings are done and update parent. */
+  function checkAndUpdateParentStatus(task: Task): void {
+    if (!task.parentTaskId) return;
+
+    const parent = getTaskById(db, task.parentTaskId);
+    const terminalStatuses: TaskStatus[] = ['needs_human_review', 'done', 'failed', 'cancelled'];
+
+    // Skip if parent is already terminal (e.g., manually cancelled)
+    if (!parent || terminalStatuses.includes(parent.status)) return;
+
+    const siblings = getSubtasksByParentId(db, task.parentTaskId);
+    const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
+    if (!allTerminal) return;
+
+    const anyFailed = siblings.some(s => s.status === 'failed');
+    const newParentStatus: TaskStatus = anyFailed ? 'failed' : 'needs_human_review';
+
+    updateTask(db, task.parentTaskId, {
+      status: newParentStatus,
+      blockedReason: null,
+    });
+    createAndBroadcastEvent(
+      task.parentTaskId,
+      'status_changed',
+      JSON.stringify({
+        from: parent.status,
+        to: newParentStatus,
+        reason: 'all_subtasks_terminal',
+      })
+    );
+    broadcast(io, 'task:updated', {
+      taskId: task.parentTaskId,
+      status: newParentStatus,
+    });
+  }
 
   /**
    * Helper to build a HookContext for a given task/stage/worktree.
@@ -290,6 +327,7 @@ export function createWorkerLoop(
     );
     broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
     notify('Task Failed', `"${task.title}" failed after ${config.maxAttemptsPerTask} attempts`, config);
+    checkAndUpdateParentStatus(task);
     await runHook(hooks, 'onError', makeHookContext(task, 'implementing', worktreePath));
   }
 
@@ -469,6 +507,7 @@ export function createWorkerLoop(
       );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
       notify('Task Failed', `"${task.title}" failed: review cycles exhausted`, config);
+      checkAndUpdateParentStatus(task);
       return;
     }
 
@@ -508,6 +547,8 @@ export function createWorkerLoop(
     // Move to needs_human_review
     updateTask(db, task.id, { status: 'needs_human_review' });
     unclaimTask(db, task.id);
+    // Check if parent should be updated now that this subtask is done
+    checkAndUpdateParentStatus(task);
     createAndBroadcastEvent(
       task.id,
       'status_changed',
@@ -655,10 +696,10 @@ export function createWorkerLoop(
           broadcast(io, 'task:created', { task: childTask });
         }
 
-        // Move parent to blocked until subtasks complete
+        // Keep parent in implementing while subtasks run
         updateTask(db, task.id, {
-          status: 'blocked',
-          blockedReason: 'Waiting for subtasks to complete',
+          status: 'implementing',
+          blockedReason: null,
         });
         createAndBroadcastEvent(
           task.id,
@@ -669,7 +710,7 @@ export function createWorkerLoop(
         );
         broadcast(io, 'task:updated', {
           taskId: task.id,
-          status: 'blocked',
+          status: 'implementing',
         });
         // Unclaim the parent — children will be picked up individually
         unclaimTask(db, task.id);
@@ -695,6 +736,8 @@ export function createWorkerLoop(
       } catch (e) {
         console.error(`[worker] Failed to unclaim task ${task.id}:`, e);
       }
+      // Check if parent should be updated now that this subtask failed
+      checkAndUpdateParentStatus(task);
 
       // Broadcast error to live logs
       try {

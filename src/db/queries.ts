@@ -302,6 +302,16 @@ export function unclaimTask(
   return getTaskById(db, id);
 }
 
+export function getSubtasksByParentId(
+  db: Database.Database,
+  parentTaskId: string
+): Task[] {
+  const rows = db
+    .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC')
+    .all(parentTaskId) as Record<string, unknown>[];
+  return rows.map(rowToTask);
+}
+
 export function deleteTask(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
 }

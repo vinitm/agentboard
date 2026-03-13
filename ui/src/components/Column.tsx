@@ -30,11 +30,13 @@ interface Props {
   status: TaskStatus;
   tasks: Task[];
   onTaskClick: (task: Task) => void;
+  subtasksByParent?: Map<string, Task[]>;
+  onSubtaskClick?: (task: Task) => void;
   selectedIds?: Set<string>;
   onToggleSelect?: (taskId: string, event: React.MouseEvent) => void;
 }
 
-export const Column: React.FC<Props> = ({ status, tasks, onTaskClick, selectedIds, onToggleSelect }) => {
+export const Column: React.FC<Props> = ({ status, tasks, onTaskClick, subtasksByParent, onSubtaskClick, selectedIds, onToggleSelect }) => {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const isAgent = AGENT_COLUMNS.includes(status);
 
@@ -103,6 +105,8 @@ export const Column: React.FC<Props> = ({ status, tasks, onTaskClick, selectedId
                 task={task}
                 onClick={() => onTaskClick(task)}
                 selected={selectedIds?.has(task.id)}
+                subtasks={subtasksByParent?.get(task.id) || []}
+                onSubtaskClick={onSubtaskClick}
               />
             </div>
           ))}
