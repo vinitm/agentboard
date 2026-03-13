@@ -13,69 +13,25 @@ export const BlockedPanel: React.FC<Props> = ({ taskId, blockedReason, onAnswer 
   const handleSubmit = async () => {
     if (!answerText.trim()) return;
     setSubmitting(true);
-    try {
-      await onAnswer(taskId, answerText);
-      setAnswerText('');
-    } catch (err) {
-      console.error('Failed to submit answer:', err);
-    } finally {
-      setSubmitting(false);
-    }
+    try { await onAnswer(taskId, answerText); setAnswerText(''); }
+    catch (err) { console.error('Failed to submit answer:', err); }
+    finally { setSubmitting(false); }
   };
 
   return (
-    <div style={containerStyle}>
-      <h4 style={titleStyle}>Blocked</h4>
-      <p style={{ margin: '0 0 12px', fontSize: 14, whiteSpace: 'pre-wrap' }}>{blockedReason}</p>
+    <div className="mb-4 p-4 rounded-lg border-t-2 border-t-accent-amber bg-bg-tertiary border border-border-default">
+      <h4 className="text-xs font-bold uppercase tracking-wider text-accent-amber mb-2">Blocked</h4>
+      <p className="text-sm text-text-primary whitespace-pre-wrap mb-3">{blockedReason}</p>
       <textarea
-        value={answerText}
-        onChange={(e) => setAnswerText(e.target.value)}
+        value={answerText} onChange={(e) => setAnswerText(e.target.value)}
         placeholder="Provide your answer..."
         rows={4}
-        style={textareaStyle}
+        className="w-full rounded-md bg-bg-secondary border border-border-default px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-amber resize-y mb-2"
       />
-      <button onClick={handleSubmit} disabled={submitting || !answerText.trim()} style={submitBtnStyle}>
+      <button onClick={handleSubmit} disabled={submitting || !answerText.trim()}
+        className="px-4 py-2 rounded-md text-sm font-semibold bg-accent-amber text-white hover:bg-amber-600 transition-colors disabled:opacity-50">
         {submitting ? 'Submitting...' : 'Submit Answer'}
       </button>
     </div>
   );
-};
-
-const containerStyle: React.CSSProperties = {
-  background: '#fffbeb',
-  border: '1px solid #f59e0b',
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 16,
-};
-
-const titleStyle: React.CSSProperties = {
-  margin: '0 0 8px',
-  fontSize: 14,
-  fontWeight: 700,
-  color: '#b45309',
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px',
-};
-
-const textareaStyle: React.CSSProperties = {
-  width: '100%',
-  borderRadius: 6,
-  border: '1px solid #d1d5db',
-  padding: 8,
-  fontSize: 14,
-  resize: 'vertical',
-  boxSizing: 'border-box',
-  marginBottom: 8,
-};
-
-const submitBtnStyle: React.CSSProperties = {
-  border: 'none',
-  borderRadius: 6,
-  padding: '8px 16px',
-  background: '#f59e0b',
-  color: '#fff',
-  fontWeight: 600,
-  fontSize: 13,
-  cursor: 'pointer',
 };

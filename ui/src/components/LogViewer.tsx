@@ -1,89 +1,61 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSocket } from '../hooks/useSocket';
 
-interface LogEntry {
-  taskId: string;
-  runId: string;
-  chunk: string;
-  timestamp: string;
-}
-
-interface Props {
-  taskId: string;
-}
+interface LogEntry { taskId: string; runId: string; chunk: string; timestamp: string }
+interface Props { taskId: string }
 
 export const LogViewer: React.FC<Props> = ({ taskId }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [copied, setCopied] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const socket = useSocket();
 
   useEffect(() => {
     if (!socket) return;
-
     const onLog = (entry: LogEntry) => {
-      if (entry.taskId === taskId) {
-        setLogs((prev) => [...prev, entry]);
-      }
+      if (entry.taskId === taskId) setLogs((prev) => [...prev, entry]);
     };
-
     socket.on('run:log', onLog);
-    return () => {
-      socket.off('run:log', onLog);
-    };
+    return () => { socket.off('run:log', onLog); };
   }, [socket, taskId]);
 
-  // Auto-scroll to bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+    if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs, autoScroll]);
+
+  const copyAll = () => {
+    const text = logs.map((e) => `${new Date(e.timestamp).toLocaleTimeString()} ${e.chunk}`).join('');
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
 
   if (logs.length === 0) {
-    return (
-      <div style={{ fontSize: 13, color: '#9ca3af', padding: 8 }}>
-        No logs yet. Logs will appear here in real-time as the agent works.
-      </div>
-    );
+    return <div className="text-sm text-text-secondary p-2">No logs yet. Logs will appear here in real-time as the agent works.</div>;
   }
 
   return (
-    <div style={containerStyle}>
-      {logs.map((entry, i) => (
-        <div key={i} style={lineStyle}>
-          <span style={timestampStyle}>
-            {new Date(entry.timestamp).toLocaleTimeString()}
-          </span>
-          <span style={chunkStyle}>{entry.chunk}</span>
-        </div>
-      ))}
-      <div ref={bottomRef} />
+    <div className="relative">
+      <div className="absolute top-2 right-2 z-10 flex gap-1.5">
+        <button onClick={() => setAutoScroll(!autoScroll)}
+          className={`px-2 py-0.5 rounded text-[11px] border transition-colors ${autoScroll ? 'bg-accent-blue/20 border-accent-blue text-accent-blue' : 'bg-bg-elevated border-border-default text-text-tertiary'}`}>
+          {autoScroll ? 'Auto ↓' : 'Manual'}
+        </button>
+        <button onClick={() => setLogs([])} className="px-2 py-0.5 rounded text-[11px] bg-bg-elevated border border-border-default text-text-tertiary hover:text-text-primary">
+          Clear
+        </button>
+        <button onClick={copyAll} className="px-2 py-0.5 rounded text-[11px] bg-bg-elevated border border-border-default text-text-tertiary hover:text-text-primary">
+          {copied ? 'Copied!' : 'Copy'}
+        </button>
+      </div>
+      <div className="bg-bg-secondary text-text-primary font-mono text-xs leading-relaxed p-3 rounded-lg max-h-[300px] overflow-y-auto">
+        {logs.map((entry, i) => (
+          <div key={i} className="flex gap-2 whitespace-pre-wrap break-all">
+            <span className="text-text-tertiary flex-shrink-0">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+            <span className="flex-1">{entry.chunk}</span>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
-};
-
-const containerStyle: React.CSSProperties = {
-  background: '#1e1e2e',
-  color: '#cdd6f4',
-  fontFamily: '"Fira Code", "Cascadia Code", "JetBrains Mono", monospace',
-  fontSize: 12,
-  lineHeight: 1.6,
-  padding: 12,
-  borderRadius: 8,
-  maxHeight: 300,
-  overflowY: 'auto',
-};
-
-const lineStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 8,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-all',
-};
-
-const timestampStyle: React.CSSProperties = {
-  color: '#6c7086',
-  flexShrink: 0,
-};
-
-const chunkStyle: React.CSSProperties = {
-  flex: 1,
 };

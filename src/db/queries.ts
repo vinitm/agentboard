@@ -587,6 +587,33 @@ export function listEventsByTask(
   return rows.map(rowToEvent);
 }
 
+export function listEventsByProject(
+  db: Database.Database,
+  projectId: string,
+  limit: number = 50,
+  cursor?: string
+): (Event & { taskTitle: string })[] {
+  const cursorClause = cursor ? 'AND e.id < ?' : '';
+  const params: unknown[] = [projectId];
+  if (cursor) params.push(cursor);
+  params.push(limit);
+
+  const rows = db
+    .prepare(
+      `SELECT e.*, t.title as task_title FROM events e
+       JOIN tasks t ON e.task_id = t.id
+       WHERE t.project_id = ? ${cursorClause}
+       ORDER BY e.id DESC
+       LIMIT ?`
+    )
+    .all(...params) as (Record<string, unknown>)[];
+
+  return rows.map((row) => ({
+    ...rowToEvent(row),
+    taskTitle: row.task_title as string,
+  }));
+}
+
 export function deleteEvent(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM events WHERE id = ?').run(id);
 }

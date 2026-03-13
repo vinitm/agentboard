@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import * as Dialog from '@radix-ui/react-dialog';
 import { api } from '../api/client';
 import { LogViewer } from './LogViewer';
 import { BlockedPanel } from './BlockedPanel';
@@ -17,226 +19,117 @@ interface Props {
   onMove: (id: string, column: TaskStatus) => Promise<Task>;
 }
 
-export const TaskDetail: React.FC<Props> = ({
-  task,
-  onClose,
-  onUpdate,
-  onAnswer,
-  onRetry,
-  onDelete,
-  onEdit,
-  onMove,
-}) => {
+const statusBadgeColor: Record<string, string> = {
+  backlog: 'text-text-tertiary', ready: 'text-accent-blue', planning: 'text-accent-purple',
+  implementing: 'text-accent-purple', checks: 'text-accent-purple', review_spec: 'text-accent-purple',
+  review_code: 'text-accent-purple', needs_human_review: 'text-accent-pink', done: 'text-accent-green',
+  blocked: 'text-accent-amber', failed: 'text-accent-red', cancelled: 'text-text-tertiary',
+};
+
+const riskTextColor: Record<string, string> = {
+  high: 'text-accent-red', medium: 'text-accent-amber', low: 'text-accent-green',
+};
+
+export const TaskDetail: React.FC<Props> = ({ task, onClose, onUpdate, onAnswer, onRetry, onDelete, onEdit, onMove }) => {
   const [runs, setRuns] = useState<Run[]>([]);
 
   useEffect(() => {
-    api
-      .get<Run[]>(`/api/runs?taskId=${task.id}`)
-      .then(setRuns)
-      .catch(console.error);
+    api.get<Run[]>(`/api/runs?taskId=${task.id}`).then(setRuns).catch(console.error);
   }, [task.id]);
 
   let spec: Partial<SpecTemplate> | null = null;
   if (task.spec) {
-    try {
-      spec = JSON.parse(task.spec) as Partial<SpecTemplate>;
-    } catch {
-      // spec is not JSON
-    }
+    try { spec = JSON.parse(task.spec) as Partial<SpecTemplate>; } catch {}
   }
 
   const isAgentActive = ['planning', 'implementing', 'checks', 'review_spec', 'review_code'].includes(task.status);
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        paddingTop: 60,
-        zIndex: 1000,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: '#fff',
-          borderRadius: 12,
-          padding: 24,
-          maxWidth: 700,
-          width: '90%',
-          maxHeight: '80vh',
-          overflowY: 'auto',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.2)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 20 }}>{task.title}</h2>
-          <button onClick={onClose} style={closeBtnStyle}>
-            &times;
-          </button>
-        </div>
-
-        {/* Meta */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-          <Badge label={task.status} color={statusColor(task.status)} />
-          <Badge label={`Risk: ${task.riskLevel}`} color={riskColor(task.riskLevel)} />
-          <Badge label={`Priority: ${task.priority}`} color="#6b7280" />
-        </div>
-
-        {/* Description */}
-        {task.description && (
-          <div style={{ marginBottom: 16 }}>
-            <h4 style={sectionTitle}>Description</h4>
-            <p style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 14, color: '#374151' }}>
-              {task.description}
-            </p>
+    <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[1000]" />
+        <Dialog.Content className="fixed top-[10vh] left-1/2 -translate-x-1/2 bg-bg-elevated rounded-xl p-6 w-[90%] max-w-[720px] max-h-[80vh] overflow-y-auto z-[1001] shadow-2xl border border-border-default">
+          {/* Header */}
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <Dialog.Title className="text-lg font-semibold text-white">{task.title}</Dialog.Title>
+              <div className="flex items-center gap-2 mt-1 text-xs">
+                <span className={statusBadgeColor[task.status] || 'text-text-tertiary'}>{task.status.replace(/_/g, ' ')}</span>
+                <span className="text-text-tertiary">·</span>
+                <span className={riskTextColor[task.riskLevel] || 'text-text-tertiary'}>{task.riskLevel} risk</span>
+                <span className="text-text-tertiary">·</span>
+                <span className="text-text-tertiary">P{task.priority}</span>
+              </div>
+              <Link to={`/tasks/${task.id}`} onClick={onClose} className="text-xs text-accent-blue hover:underline mt-1 inline-block">
+                View Details →
+              </Link>
+            </div>
+            <Dialog.Close className="text-text-tertiary hover:text-text-primary text-2xl leading-none">×</Dialog.Close>
           </div>
-        )}
 
-        {/* Spec */}
-        {spec && (
-          <div style={{ marginBottom: 16 }}>
-            <h4 style={sectionTitle}>Spec</h4>
-            {Object.entries(spec).map(([key, val]) =>
-              val ? (
-                <div key={key} style={{ marginBottom: 8 }}>
-                  <strong style={{ fontSize: 12, color: '#6b7280', textTransform: 'capitalize' }}>
-                    {key.replace(/([A-Z])/g, ' $1')}
-                  </strong>
-                  <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap' }}>{val}</p>
-                </div>
-              ) : null,
-            )}
+          {/* Description */}
+          {task.description && (
+            <div className="mb-4 pb-4 border-b border-border-default">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-text-tertiary mb-1.5">Description</h4>
+              <p className="text-sm text-text-primary whitespace-pre-wrap">{task.description}</p>
+            </div>
+          )}
+
+          {/* Spec */}
+          {spec && (
+            <div className="mb-4 pb-4 border-b border-border-default">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-text-tertiary mb-1.5">Spec</h4>
+              {Object.entries(spec).map(([key, val]) =>
+                val ? (
+                  <div key={key} className="mb-2">
+                    <div className="text-[11px] font-semibold text-text-tertiary capitalize">{key.replace(/([A-Z])/g, ' $1')}</div>
+                    <p className="text-sm text-text-primary whitespace-pre-wrap mt-0.5">{val}</p>
+                  </div>
+                ) : null
+              )}
+            </div>
+          )}
+
+          {/* Status-specific panels */}
+          {task.status === 'blocked' && task.blockedReason && (
+            <BlockedPanel taskId={task.id} blockedReason={task.blockedReason} onAnswer={onAnswer} />
+          )}
+          {task.status === 'needs_human_review' && <PRPanel task={task} onMove={onMove} />}
+          {task.status === 'failed' && (
+            <div className="mb-4">
+              <button onClick={() => onRetry(task.id)} className="px-4 py-2 rounded-md text-sm font-semibold bg-accent-red text-white hover:bg-red-600 transition-colors">
+                Retry Task
+              </button>
+            </div>
+          )}
+
+          {/* Live logs */}
+          {isAgentActive && (
+            <div className="mb-4 pb-4 border-b border-border-default">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-text-tertiary mb-1.5">Live Logs</h4>
+              <LogViewer taskId={task.id} />
+            </div>
+          )}
+
+          {/* Run history */}
+          <div className="mb-4 pb-4 border-b border-border-default">
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-text-tertiary mb-1.5">Runs ({runs.length})</h4>
+            <RunHistory runs={runs} />
           </div>
-        )}
 
-        {/* Status-specific panels */}
-        {task.status === 'blocked' && task.blockedReason && (
-          <BlockedPanel
-            taskId={task.id}
-            blockedReason={task.blockedReason}
-            onAnswer={onAnswer}
-          />
-        )}
-
-        {task.status === 'needs_human_review' && (
-          <PRPanel task={task} onMove={onMove} />
-        )}
-
-        {/* Failed */}
-        {task.status === 'failed' && (
-          <div style={{ marginBottom: 16 }}>
-            <button onClick={() => onRetry(task.id)} style={{ ...btnStyle, background: '#ef4444' }}>
-              Retry Task
-            </button>
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-2">
+            <button onClick={() => onEdit(task)} className="px-4 py-2 rounded-md text-sm font-semibold bg-accent-blue text-white hover:bg-blue-600 transition-colors">Edit</button>
+            <button
+              onClick={async () => { if (confirm('Delete this task?')) { await onDelete(task.id); onClose(); } }}
+              className="px-4 py-2 rounded-md text-sm font-semibold bg-accent-red text-white hover:bg-red-600 transition-colors"
+            >Delete</button>
+            <Link to={`/tasks/${task.id}`} onClick={onClose} className="ml-auto text-sm text-accent-blue hover:underline">
+              View Details →
+            </Link>
           </div>
-        )}
-
-        {/* Live logs when agent is active */}
-        {isAgentActive && (
-          <div style={{ marginBottom: 16 }}>
-            <h4 style={sectionTitle}>Live Logs</h4>
-            <LogViewer taskId={task.id} />
-          </div>
-        )}
-
-        {/* Run history */}
-        <div style={{ marginBottom: 16 }}>
-          <h4 style={sectionTitle}>Runs ({runs.length})</h4>
-          <RunHistory runs={runs} />
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 8, borderTop: '1px solid #e5e7eb', paddingTop: 16 }}>
-          <button onClick={() => onEdit(task)} style={{ ...btnStyle, background: '#3b82f6' }}>
-            Edit
-          </button>
-          <button
-            onClick={async () => {
-              if (confirm('Delete this task?')) {
-                await onDelete(task.id);
-                onClose();
-              }
-            }}
-            style={{ ...btnStyle, background: '#ef4444' }}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
-};
-
-// -- Helpers --
-
-const Badge: React.FC<{ label: string; color: string }> = ({ label, color }) => (
-  <span
-    style={{
-      fontSize: 12,
-      padding: '2px 8px',
-      borderRadius: 4,
-      background: color,
-      color: '#fff',
-      fontWeight: 600,
-    }}
-  >
-    {label}
-  </span>
-);
-
-function statusColor(s: string): string {
-  const map: Record<string, string> = {
-    backlog: '#9ca3af',
-    ready: '#3b82f6',
-    planning: '#8b5cf6',
-    implementing: '#8b5cf6',
-    checks: '#8b5cf6',
-    review_spec: '#8b5cf6',
-    review_code: '#8b5cf6',
-    needs_human_review: '#f59e0b',
-    done: '#22c55e',
-    blocked: '#f59e0b',
-    failed: '#ef4444',
-    cancelled: '#6b7280',
-  };
-  return map[s] || '#6b7280';
-}
-
-function riskColor(r: string): string {
-  return r === 'high' ? '#ef4444' : r === 'medium' ? '#f59e0b' : '#22c55e';
-}
-
-const sectionTitle: React.CSSProperties = {
-  margin: '0 0 6px',
-  fontSize: 13,
-  color: '#6b7280',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px',
-};
-
-const btnStyle: React.CSSProperties = {
-  border: 'none',
-  borderRadius: 6,
-  padding: '8px 16px',
-  color: '#fff',
-  fontWeight: 600,
-  fontSize: 13,
-  cursor: 'pointer',
-};
-
-const closeBtnStyle: React.CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  fontSize: 24,
-  cursor: 'pointer',
-  color: '#9ca3af',
-  lineHeight: 1,
 };
