@@ -29,7 +29,7 @@ Dark-first theme inspired by Linear. All colors defined as CSS custom properties
 
 --text-primary:   #e5e7eb    (main text)
 --text-secondary: #9ca3af    (secondary/muted text)
---text-tertiary:  #6b7280    (labels, counts)
+--text-tertiary:  #7c8493    (labels, counts — adjusted for WCAG AA on --bg-tertiary)
 
 --accent-blue:    #3b82f6    (primary actions, links)
 --accent-green:   #22c55e    (success, done, running)
@@ -117,7 +117,9 @@ A Radix Dialog with a search input at top. Searches across:
 - Task titles (navigate to task)
 - Actions ("New task", "Settings", "Switch to [project]")
 
-Styled as a floating overlay, similar to Linear's command palette. This is a stretch goal — implement the shell first, add command palette in a follow-up.
+Styled as a floating overlay, similar to Linear's command palette.
+
+**Scope:** The command palette is explicitly deferred to a follow-up iteration. It is not part of this implementation plan. The `Cmd+K` shortcut should be wired up to show a placeholder "Coming soon" toast for now.
 
 ---
 
@@ -149,6 +151,7 @@ Redesign cards for dark theme with more information density:
 - Background: `--bg-secondary`
 - Border: `--border-default`, with left accent border for status:
   - Agent-active (claimed): `--accent-purple`
+  - Needs human review: `--accent-pink`
   - Blocked: `--accent-amber`
   - Failed: `--accent-red`
   - Default: transparent
@@ -178,8 +181,10 @@ Merge the "+ New Task" button and bulk actions into the top bar:
 Add a filter popover (Radix Popover) accessible from the top bar:
 - Filter by status (multi-select checkboxes)
 - Filter by risk level
-- Filter by "has subtasks" / "is running"
+- Filter by "has subtasks" (uses existing `parentTaskId` field — subtask nesting is already implemented)
+- Filter by "is running" (checks `claimedBy !== null`)
 - Active filters show as pills in the top bar
+- Filter state is local React state (not persisted to localStorage or URL). Filters reset on page reload. This keeps the implementation simple — URL-based filters can be added later if needed.
 
 ---
 
@@ -274,6 +279,10 @@ Adapt to dark theme. Each run shown as a row with:
 
 Settings becomes a full page accessible from sidebar instead of a modal overlay. Route: `/settings`.
 
+This means the current `Settings` component changes its interface: the `onClose` prop is removed, and the overlay/modal wrapper is removed. The component becomes a standard routed page component. The `showSettings` state in `App.tsx` is removed and replaced by React Router navigation.
+
+Note: React Router (`react-router-dom`) is already installed and in use — `App.tsx` uses `BrowserRouter`, `Routes`, and `Route`, and `TaskPage`/`TaskDetail` use `Link` and `useParams`. Adding `/settings` and `/activity` routes is straightforward.
+
 ### 6.2 Layout
 
 Two-column layout on the settings page:
@@ -309,7 +318,17 @@ Each item shows:
 
 ### 7.3 Data Source
 
-Uses the existing `/api/events` endpoint. Add a `projectId` query parameter if not already supported.
+Requires a new backend endpoint: `GET /api/events?projectId=<id>&limit=50&cursor=<lastEventId>`.
+
+The existing `/api/events` endpoint only supports `taskId` as a filter. A new database query `listEventsByProject(projectId, limit, cursor)` must be added that joins events with tasks to filter by project. Returns events in reverse-chronological order.
+
+**Pagination:** Cursor-based using the event `id` (auto-incrementing). Initial load fetches 50 events. A "Load more" button fetches the next page.
+
+**Real-time updates:** WebSocket `task:event` messages append new events to the top. The frontend filters client-side: it maintains a set of task IDs belonging to the active project (already available via the `useTasks` hook) and only appends events whose `taskId` matches.
+
+**Database join:** The events table has a `taskId` column. Tasks have a `projectId` column. The new query joins `events.taskId = tasks.id` and filters by `tasks.projectId`. Returns events in reverse-chronological order (`ORDER BY events.id DESC`).
+
+**Response shape:** `{ id, taskId, runId, type, payload, createdAt, taskTitle }` — the `taskTitle` is joined from the tasks table to avoid N+1 lookups on the frontend.
 
 ---
 
@@ -372,7 +391,11 @@ These provide built-in ARIA attributes, focus trapping, keyboard navigation.
 
 ### 10.3 Color Contrast
 
-All text/background combinations meet WCAG AA contrast ratios. The dark theme palette above was chosen with this in mind.
+Text/background combinations target WCAG AA contrast ratios (4.5:1 for normal text). Key pairings:
+- `--text-primary` (#e5e7eb) on `--bg-primary` (#0a0a0b): ~16:1 (passes)
+- `--text-secondary` (#9ca3af) on `--bg-primary` (#0a0a0b): ~8:1 (passes)
+- `--text-tertiary` (#7c8493) on `--bg-primary` (#0a0a0b): ~6.2:1 (passes)
+- `--text-tertiary` (#7c8493) on `--bg-tertiary` (#1a1a1e): ~4.6:1 (passes AA)
 
 ---
 
@@ -401,7 +424,7 @@ tailwindcss @tailwindcss/vite    (Tailwind v4 + Vite plugin)
 8. **Log Viewer**: Minor tweaks (already dark)
 9. **Events Timeline**: Convert to dark theme
 10. **Run History**: Convert to dark theme
-11. **New Features**: Toast notifications, activity feed, command palette
+11. **New Features**: Toast notifications, activity feed (requires new backend endpoint)
 12. **Polish**: Keyboard shortcuts, filters, responsive tweaks
 
 ### 11.3 Files Affected
@@ -411,7 +434,8 @@ Every component file in `ui/src/components/` will be modified to replace inline 
 - `ui/src/components/TopBar.tsx` — new contextual top bar
 - `ui/src/components/Toast.tsx` — toast notification wrapper
 - `ui/src/components/ActivityFeed.tsx` — new activity feed page
-- `ui/src/components/CommandPalette.tsx` — Cmd+K palette (stretch goal)
+
+Note: `CommandPalette.tsx` is deferred to a follow-up iteration and not created in this plan.
 
 ### 11.4 Files to Remove
 
