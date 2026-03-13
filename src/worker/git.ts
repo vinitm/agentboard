@@ -53,7 +53,20 @@ export async function commitChanges(
   message: string
 ): Promise<string> {
   await git(['add', '-A'], worktreePath);
-  await git(['commit', '-m', message, '--allow-empty'], worktreePath);
+
+  // Check if there are staged changes before committing
+  try {
+    await git(['diff', '--cached', '--quiet'], worktreePath);
+    // If diff --cached --quiet exits 0, there are NO changes staged
+    throw new Error('No changes to commit — implementation produced no file modifications');
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('No changes to commit')) {
+      throw error;
+    }
+    // diff --cached --quiet exits 1 when there ARE changes — proceed with commit
+  }
+
+  await git(['commit', '-m', message], worktreePath);
   return getCurrentSha(worktreePath);
 }
 

@@ -27,7 +27,7 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
   const startTime = Date.now();
 
   return new Promise<ExecuteResult>((resolve) => {
-    const args = ['--print', '--model', model];
+    const args = ['--print', '--model', model, '--permission-mode', 'acceptEdits'];
 
     const child = spawn('claude', args, {
       cwd: worktreePath,

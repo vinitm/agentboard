@@ -347,7 +347,7 @@ Task description: ${description.trim()}`;
     res.json(updated);
   });
 
-  // POST /api/tasks/:id/retry — retry failed task
+  // POST /api/tasks/:id/retry — retry failed task (deletes subtasks, cleans up worktrees, starts fresh)
   router.post('/:id/retry', async (req, res) => {
     const task = queries.getTaskById(db, req.params.id);
     if (!task) {
@@ -358,12 +358,26 @@ Task description: ${description.trim()}`;
       res.status(400).json({ error: 'Task is not in failed state' });
       return;
     }
-    // Clean up old worktree and git refs before retrying
+
+    // Clean up subtasks first (worktrees, git refs, then delete)
+    const subtasks = queries.getSubtasksByParentId(db, task.id);
+    for (const subtask of subtasks) {
+      await cleanupTaskWorktree(db, subtask.id);
+      const subtaskRefs = queries.listGitRefsByTask(db, subtask.id);
+      for (const ref of subtaskRefs) {
+        queries.deleteGitRef(db, ref.id);
+      }
+      queries.deleteTask(db, subtask.id);
+      broadcast(io, 'task:deleted', { id: subtask.id });
+    }
+
+    // Clean up parent's worktree and git refs
     await cleanupTaskWorktree(db, req.params.id);
     const oldRefs = queries.listGitRefsByTask(db, req.params.id);
     for (const ref of oldRefs) {
       queries.deleteGitRef(db, ref.id);
     }
+
     const updated = queries.updateTask(db, req.params.id, {
       status: 'ready',
     });
