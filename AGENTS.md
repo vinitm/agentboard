@@ -48,7 +48,7 @@ agentboard doctor      # Verify prerequisites (git, gh, node, claude)
 
 3 layers: CLI (`src/cli/`) → Server+Worker (`src/server/`, `src/worker/`) → DB (`src/db/`)
 
-Pipeline: backlog → ready → planning → implementing → checks → review_spec → review_code → pr_creation → needs_human_review → done
+Pipeline: backlog → ready → planning → implementing → checks → review_panel → pr_creation → needs_human_review → done
 
 Subtasks execute serially. First child is `ready`, rest `backlog`. Parent creates single PR after all succeed.
 
