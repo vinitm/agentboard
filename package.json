@@ -7,7 +7,10 @@
     "build:server": "tsc",
     "build:ui": "cd ui && npm run build",
     "dev": "tsx watch bin/agentboard.ts",
-    "start": "node dist/bin/agentboard.js"
+    "start": "node dist/bin/agentboard.js",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "test:coverage": "vitest run --coverage"
   },
   "bin": {
     "agentboard": "./dist/bin/agentboard.js"
@@ -25,8 +28,12 @@
     "@types/better-sqlite3": "^7.6.11",
     "@types/express": "^4.17.21",
     "@types/node": "^22.5.0",
+    "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
+    "@vitest/coverage-v8": "^4.1.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.0"
   }
 }
