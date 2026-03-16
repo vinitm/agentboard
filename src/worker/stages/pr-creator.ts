@@ -10,6 +10,7 @@ import {
   updateGitRef,
   getLatestRunByTaskAndStage,
   listArtifactsByRun,
+  listRunsByTask,
   getTaskById,
   getSubtasksByParentId,
 } from '../../db/queries.js';
@@ -296,34 +297,37 @@ function buildPRBody(db: Database.Database, task: Task): string {
     sections.push('</details>');
   }
 
-  // Review results
-  const specReviewRun = getLatestRunByTaskAndStage(db, task.id, 'review_spec');
-  const codeReviewRun = getLatestRunByTaskAndStage(db, task.id, 'review_code');
+  // Review panel results
+  const allRuns = listRunsByTask(db, task.id);
+  const panelRuns = allRuns
+    .filter(r => r.stage === 'review_panel')
+    .slice(-3); // Last 3 = most recent cycle (one per reviewer role)
 
-  sections.push('## Review');
+  sections.push('## Review Panel');
 
-  if (specReviewRun?.output) {
-    try {
-      const specResult = JSON.parse(specReviewRun.output) as { passed: boolean };
-      const icon = specResult.passed ? '\u2705 Passed' : '\u274c Failed';
-      sections.push(`- Spec compliance: ${icon}`);
-    } catch {
-      sections.push('- Spec compliance: \u2753 Unknown');
+  if (panelRuns.length > 0) {
+    const ROLE_LABELS: Record<string, string> = {
+      architect: 'Architect',
+      qa: 'QA Engineer',
+      security: 'Security',
+    };
+
+    for (const run of panelRuns) {
+      const artifacts = listArtifactsByRun(db, run.id);
+      const roleArtifact = artifacts.find(a => a.type === 'review_result');
+      if (roleArtifact) {
+        try {
+          const result = JSON.parse(roleArtifact.content) as { passed: boolean };
+          const label = ROLE_LABELS[roleArtifact.name] ?? roleArtifact.name;
+          const icon = result.passed ? '\u2705 Passed' : '\u274c Failed';
+          sections.push(`- ${label}: ${icon}`);
+        } catch {
+          sections.push(`- ${roleArtifact.name}: \u2753 Unknown`);
+        }
+      }
     }
   } else {
-    sections.push('- Spec compliance: \u2753 Not run');
-  }
-
-  if (codeReviewRun?.output) {
-    try {
-      const codeResult = JSON.parse(codeReviewRun.output) as { passed: boolean };
-      const icon = codeResult.passed ? '\u2705 Passed' : '\u274c Failed';
-      sections.push(`- Code quality: ${icon}`);
-    } catch {
-      sections.push('- Code quality: \u2753 Unknown');
-    }
-  } else {
-    sections.push('- Code quality: \u2753 Not run');
+    sections.push('- Review panel: \u2753 Not run');
   }
 
   return sections.join('\n');
