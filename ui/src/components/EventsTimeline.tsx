@@ -7,8 +7,8 @@ interface Props { taskId: string; events: EventRecord[] }
 
 const EVENT_COLORS: Record<string, string> = {
   status_changed: 'text-accent-blue', implementation_failed: 'text-accent-red',
-  checks_failed: 'text-accent-red', review_spec_failed: 'text-accent-red',
-  review_code_failed: 'text-accent-red', pr_created: 'text-accent-green',
+  checks_failed: 'text-accent-red', review_panel_failed: 'text-accent-red',
+  review_panel_completed: 'text-accent-green', pr_created: 'text-accent-green',
   task_created: 'text-text-tertiary', subtasks_created: 'text-text-tertiary',
   task_error: 'text-accent-red', answer_provided: 'text-accent-purple',
 };
@@ -23,8 +23,12 @@ function summarizeEvent(type: string, payload: Record<string, unknown>): string 
     case 'status_changed': return `Status changed: ${payload.from} → ${payload.to}${payload.reason ? ` (${payload.reason})` : ''}`;
     case 'implementation_failed': return `Implementation failed (attempt ${payload.attempt})`;
     case 'checks_failed': return `Checks failed (attempt ${payload.attempt})`;
-    case 'review_spec_failed': return `Spec review failed (cycle ${payload.reviewCycle})`;
-    case 'review_code_failed': return `Code review failed (cycle ${payload.reviewCycle})`;
+    case 'review_panel_failed': {
+      const results = payload.results as Array<{ role: string; passed: boolean }> | undefined;
+      const failed = results?.filter(r => !r.passed).map(r => r.role).join(', ') ?? 'unknown';
+      return `Review panel failed: ${failed} (cycle ${payload.reviewCycle})`;
+    }
+    case 'review_panel_completed': return `Review panel passed (cycle ${payload.reviewCycle})`;
     case 'pr_created': return `PR #${payload.prNumber} created`;
     case 'pr_creation_failed': return `PR creation failed: ${payload.error}`;
     case 'task_created': return 'Task created';
