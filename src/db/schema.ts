@@ -97,4 +97,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path);
 export function initSchema(db: Database.Database): void {
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(DDL);
+  migrateReviewStages(db);
+}
+
+export function migrateReviewStages(db: Database.Database): void {
+  const migrated = db
+    .prepare(`UPDATE tasks SET status = 'review_panel' WHERE status IN ('review_spec', 'review_code')`)
+    .run();
+  const migratedRuns = db
+    .prepare(`UPDATE runs SET stage = 'review_panel' WHERE stage IN ('review_spec', 'review_code')`)
+    .run();
+  if (migrated.changes > 0 || migratedRuns.changes > 0) {
+    console.log(`[db] Migrated ${migrated.changes} tasks and ${migratedRuns.changes} runs from review_spec/review_code to review_panel`);
+  }
 }
