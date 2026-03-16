@@ -176,7 +176,7 @@ describe('POST /api/tasks/:id/move', () => {
   it('rejects moves to agent-controlled columns', async () => {
     const task = queries.createTask(db, { projectId, title: 'Agent Move', status: 'ready' });
 
-    for (const col of ['planning', 'implementing', 'checks', 'review_spec', 'review_code']) {
+    for (const col of ['planning', 'implementing', 'checks', 'review_panel']) {
       const res = await request(app)
         .post(`/api/tasks/${task.id}/move`)
         .send({ column: col });

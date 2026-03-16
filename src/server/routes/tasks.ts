@@ -11,8 +11,7 @@ const AGENT_CONTROLLED_COLUMNS: TaskStatus[] = [
   'planning',
   'implementing',
   'checks',
-  'review_spec',
-  'review_code',
+  'review_panel',
 ];
 
 export function createTaskRoutes(db: Database.Database, io: Server): Router {

@@ -412,7 +412,7 @@ describe('runs', () => {
   it('getLatestRunByTaskAndStage returns undefined when no matching run', () => {
     const project = makeProject(db);
     const task = makeTask(db, project.id);
-    const result = queries.getLatestRunByTaskAndStage(db, task.id, 'review_code');
+    const result = queries.getLatestRunByTaskAndStage(db, task.id, 'review_panel');
     expect(result).toBeUndefined();
   });
 

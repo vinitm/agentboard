@@ -7,8 +7,7 @@ const AGENT_CONTROLLED_STATUSES: TaskStatus[] = [
   'planning',
   'implementing',
   'checks',
-  'review_spec',
-  'review_code',
+  'review_panel',
 ];
 
 /**
