@@ -79,7 +79,7 @@ Read existing file, propose diff with one-sentence justification, wait for appro
 After task completion, ask: "Did I learn a new command, convention, or boundary?" If yes → generate diff against nearest AGENTS.md, present with justification, wait for explicit approval, re-validate hierarchy after write.
 
 ### Mode 4: Initialize
-On first encounter with a project lacking AGENTS.md, offer to create root file. Also offer `~/.config/AGENTS.md` if it doesn't exist yet. Bootstraps from existing project files (CLAUDE.md, package.json, Makefile, etc.).
+On first encounter with a project lacking AGENTS.md, offer to create root file. Also offer `~/.claude/AGENTS.md` if it doesn't exist yet. Bootstraps from existing project files (CLAUDE.md, package.json, Makefile, etc.).
 
 ### Hard Rules (always enforced)
 - Never write without explicit user approval
@@ -148,12 +148,12 @@ Every AGENTS.md must follow this skeleton:
 - **References** replaces inline detail; reference external docs instead of duplicating
 - Sections can be omitted if not applicable (except Commands)
 - No section should exceed ~30 lines; extract to reference doc if it does
-- Referenced files are checked for existence; missing references flagged; existing ones get one-line summary
+- Referenced filesystem paths are checked for existence; missing references flagged; existing ones get one-line summary. URLs are not validated.
 
 ## Self-Update Loop
 
 ### Trigger
-After every successful task completion.
+After every successful task completion in an interactive session. In non-interactive mode (`claude --print`), skip self-update proposals entirely — the agent cannot wait for approval. Non-interactive agents should instead append learned conventions as comments in their PR description for human review.
 
 ### Sequence
 1. Ask: "Did I learn a new command, convention, or boundary?"
