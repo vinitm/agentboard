@@ -71,6 +71,7 @@ export default async function init(): Promise<void> {
     ruflo: {
       enabled: false,
     },
+    maxRalphIterations: 5,
   };
 
   // 6. Write config

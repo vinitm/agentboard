@@ -18,8 +18,9 @@ const __dirname = path.dirname(__filename);
 /**
  * Load the implementer prompt template from prompts/implementer.md
  */
-function loadImplementerTemplate(): string {
-  const promptPath = path.resolve(__dirname, '../../../../prompts/implementer.md');
+function loadImplementerTemplate(fallback = false): string {
+  const filename = fallback ? 'implementer-fallback.md' : 'implementer.md';
+  const promptPath = path.resolve(__dirname, '../../../../prompts', filename);
   try {
     return fs.readFileSync(promptPath, 'utf-8');
   } catch {
@@ -41,7 +42,8 @@ export async function runImplementation(
   worktreePath: string,
   config: AgentboardConfig,
   attempt: number,
-  onOutput?: (chunk: string) => void
+  onOutput?: (chunk: string) => void,
+  useFallbackPrompt = false
 ): Promise<ImplementationResult> {
   // Always use Opus for implementation
   const model = 'opus';
@@ -51,7 +53,7 @@ export async function runImplementation(
   });
 
   // Build the prompt
-  const template = loadImplementerTemplate();
+  const template = loadImplementerTemplate(useFallbackPrompt);
   let prompt = template.replace('{taskSpec}', () => taskPacket);
 
   // Include failure summary for retries

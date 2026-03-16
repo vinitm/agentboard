@@ -23,6 +23,7 @@ import {
   getLatestRunByTaskAndStage,
 } from '../db/queries.js';
 import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
+import { runSpecGeneration } from './stages/spec-generator.js';
 import { runPlanning } from './stages/planner.js';
 import { runImplementation } from './stages/implementer.js';
 import { runChecks } from './stages/checks.js';
@@ -34,6 +35,16 @@ import { loadMemory, saveMemory, recordFailure, recordConvention } from './memor
 import type { WorkerMemory } from './memory.js';
 import { notify } from './notifications.js';
 import { normalizeConfig } from './config-compat.js';
+import { runRalphLoop } from './ralph-loop.js';
+import { evaluateAutoMerge } from './auto-merge.js';
+import { collectTaskMetrics, recordLearning } from './stages/learner.js';
+import { createTaskLogger, openTaskLogger, cleanupOldLogs, createBufferedWriter } from './log-writer.js';
+import type { TaskLogger } from './log-writer.js';
+import {
+  createTaskLog,
+  getTaskLogByTaskId,
+  updateTaskLogSize,
+} from '../db/queries.js';
 
 const POLL_INTERVAL_MS = 5_000;
 const WORKER_ID = `worker-${process.pid}`;
@@ -72,8 +83,8 @@ export function createWorkerLoop(
     if (!freshTask) return;
 
     const parent = getTaskById(db, task.parentTaskId);
-    const terminalStatuses: TaskStatus[] = ['needs_human_review', 'done', 'failed', 'cancelled'];
-    const successStatuses: TaskStatus[] = ['needs_human_review', 'done'];
+    const terminalStatuses: TaskStatus[] = ['done', 'failed', 'cancelled'];
+    const successStatuses: TaskStatus[] = ['done'];
 
     // Skip if parent is already terminal (e.g., manually cancelled)
     if (!parent || terminalStatuses.includes(parent.status)) return;
@@ -142,9 +153,15 @@ export function createWorkerLoop(
             projectConfig = config;
           }
 
+          // Open parent's logger if it exists
+          const parentTaskLog = getTaskLogByTaskId(db, parent.id);
+          const parentLogger = parentTaskLog ? openTaskLogger(parentTaskLog.logPath) : undefined;
+
           try {
             await runHook(hooks, 'beforeStage', makeHookContext(parent, 'pr_creation', worktreePath, projectConfig));
-            const prResult = await createPR(db, parent, worktreePath, projectConfig, createLogStreamer(parent.id, `pr-${parent.id}`));
+            parentLogger?.stageStart('pr_creation', `pr-${parent.id}`, 1, 'n/a');
+            const prResult = await createPR(db, parent, worktreePath, projectConfig, createLogStreamer(parent.id, `pr-${parent.id}`, parentLogger));
+            parentLogger?.stageEnd('success');
             await runHook(hooks, 'afterStage', makeHookContext(parent, 'pr_creation', worktreePath, projectConfig));
 
             createAndBroadcastEvent(
@@ -155,13 +172,19 @@ export function createWorkerLoop(
                 prNumber: prResult.prNumber,
               })
             );
+            parentLogger?.event('pr_created', `PR #${prResult.prNumber} — ${prResult.prUrl}`);
             notify('PR Created', `PR for "${parent.title}" is ready for review`, projectConfig);
 
             const memory = loadMemory(projectConfigDir);
             recordConvention(memory, `task:${parent.id}:pr`, `PR #${prResult.prNumber} created successfully`);
             saveMemory(projectConfigDir, memory);
+
+            if (parentTaskLog) {
+              updateTaskLogSize(db, parentTaskLog.id, parentLogger?.sizeBytes() ?? 0);
+            }
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            parentLogger?.error(`PR creation failed: ${errorMessage}`);
             createAndBroadcastEvent(
               parent.id,
               'pr_creation_failed',
@@ -202,9 +225,10 @@ export function createWorkerLoop(
 
   /**
    * Create a log streaming callback for a task + run that broadcasts
-   * output chunks to WebSocket clients in real time.
+   * output chunks to WebSocket clients in real time AND writes to the
+   * task's persistent log file.
    */
-  function createLogStreamer(taskId: string, runId: string): (chunk: string) => void {
+  function createLogStreamer(taskId: string, runId: string, logger?: TaskLogger): (chunk: string) => void {
     return (chunk: string) => {
       broadcastLog(io, {
         taskId,
@@ -212,6 +236,7 @@ export function createWorkerLoop(
         chunk,
         timestamp: new Date().toISOString(),
       });
+      logger?.write(chunk);
     };
   }
 
@@ -277,8 +302,90 @@ export function createWorkerLoop(
   }
 
   /**
-   * Run the implementation → checks loop for a task.
-   * Attempts implementation up to maxAttemptsPerTask times.
+   * Process a subtask autonomously: run the ralph loop and go directly
+   * to done/failed. No intermediate status broadcasts, no review panel,
+   * no auto-merge evaluation.
+   */
+  async function processSubtask(
+    task: Task,
+    worktreePath: string,
+    config: AgentboardConfig,
+    configDir: string,
+    logger?: TaskLogger
+  ): Promise<void> {
+    const maxIterations = config.maxRalphIterations ?? config.maxAttemptsPerTask;
+
+    const ralphResult = await runRalphLoop({
+      db,
+      task,
+      worktreePath,
+      config,
+      maxIterations,
+      onOutput: createLogStreamer(task.id, `ralph-${task.id}`, logger),
+      onIterationComplete: (iteration, passed) => {
+        // Still log events for debugging, but no status broadcasts
+        createAndBroadcastEvent(
+          task.id,
+          passed ? 'ralph_iteration_passed' : 'ralph_iteration_failed',
+          JSON.stringify({ iteration, maxIterations })
+        );
+        logger?.event(
+          passed ? 'ralph_iteration_passed' : 'ralph_iteration_failed',
+          `iteration=${iteration}/${maxIterations}`
+        );
+      },
+    });
+
+    if (ralphResult.passed) {
+      createAndBroadcastEvent(
+        task.id,
+        'ralph_loop_completed',
+        JSON.stringify({ iterations: ralphResult.iterations })
+      );
+
+      // Go directly to done — no review panel, no PR creation
+      updateTask(db, task.id, { status: 'done' });
+      unclaimTask(db, task.id);
+      createAndBroadcastEvent(
+        task.id,
+        'status_changed',
+        JSON.stringify({ from: 'ready', to: 'done', reason: 'subtask_completed' })
+      );
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'done' });
+
+      // Record learning
+      const metrics = collectTaskMetrics(db, task, 'success');
+      recordLearning(configDir, metrics);
+
+      await checkAndUpdateParentStatus(task);
+      return;
+    }
+
+    // Ralph loop exhausted → failed
+    updateTask(db, task.id, { status: 'failed' });
+    unclaimTask(db, task.id);
+    createAndBroadcastEvent(
+      task.id,
+      'status_changed',
+      JSON.stringify({
+        from: 'ready',
+        to: 'failed',
+        reason: 'ralph_loop_exhausted',
+        iterations: ralphResult.iterations,
+      })
+    );
+    broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
+
+    const failedMetrics = collectTaskMetrics(db, task, 'failed');
+    recordLearning(configDir, failedMetrics);
+
+    await checkAndUpdateParentStatus(task);
+  }
+
+  /**
+   * Run the implementation → checks ralph loop for a task.
+   * Uses the ralph loop pattern: fresh Claude session per iteration,
+   * progress persists in git + .agentboard-progress.md.
    */
   async function runImplementationLoop(
     task: Task,
@@ -287,7 +394,8 @@ export function createWorkerLoop(
     io: Server,
     db: Database.Database,
     memory: WorkerMemory,
-    configDir: string
+    configDir: string,
+    logger?: TaskLogger
   ): Promise<void> {
     // Move to implementing
     updateTask(db, task.id, { status: 'implementing' });
@@ -298,102 +406,50 @@ export function createWorkerLoop(
     );
     broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
-    for (let attempt = 1; attempt <= config.maxAttemptsPerTask; attempt++) {
-      // Run implementer stage
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'implementing', worktreePath, config));
-      const implResult = await runImplementation(
-        db,
-        task,
-        worktreePath,
-        config,
-        attempt,
-        createLogStreamer(task.id, `impl-${attempt}`)
-      );
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'implementing', worktreePath, config));
+    await runHook(hooks, 'beforeStage', makeHookContext(task, 'implementing', worktreePath, config));
 
-      // If implementation failed, record and try again
-      if (!implResult.success) {
+    const maxIterations = config.maxRalphIterations ?? config.maxAttemptsPerTask;
+
+    const ralphResult = await runRalphLoop({
+      db,
+      task,
+      worktreePath,
+      config,
+      maxIterations,
+      onOutput: createLogStreamer(task.id, `ralph-${task.id}`, logger),
+      onIterationComplete: (iteration, passed) => {
         createAndBroadcastEvent(
           task.id,
-          'implementation_failed',
-          JSON.stringify({
-            attempt,
-            output: implResult.output.slice(0, 2000),
-          })
+          passed ? 'ralph_iteration_passed' : 'ralph_iteration_failed',
+          JSON.stringify({ iteration, maxIterations })
+        );
+        logger?.event(
+          passed ? 'ralph_iteration_passed' : 'ralph_iteration_failed',
+          `iteration=${iteration}/${maxIterations}`
         );
 
-        if (attempt >= config.maxAttemptsPerTask) {
-          break; // Will fall through to failed state
+        if (!passed) {
+          // Update UI status cycling
+          broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
         }
-        continue;
-      }
+      },
+    });
 
-      // Implementation succeeded — run checks
-      updateTask(db, task.id, { status: 'checks' });
+    await runHook(hooks, 'afterStage', makeHookContext(task, 'implementing', worktreePath, config));
+
+    if (ralphResult.passed) {
       createAndBroadcastEvent(
         task.id,
-        'status_changed',
-        JSON.stringify({ from: 'implementing', to: 'checks' })
-      );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
-
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'checks', worktreePath, config));
-      const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'checks', worktreePath, config));
-
-      if (checksResult.passed) {
-        // Commit the implementation with a contextual prefix
-        const titleLower = task.title.toLowerCase();
-        const isDocChange = /\b(doc|readme|changelog|\.md|documentation)\b/i.test(titleLower);
-        const isFix = /\b(fix|bug|patch|repair|resolve)\b/i.test(titleLower);
-        const commitPrefix = isDocChange ? 'docs' : isFix ? 'fix' : 'feat';
-        await commitChanges(
-          worktreePath,
-          `${commitPrefix}: ${task.title}`
-        );
-
-        // Run review cycle and PR creation
-        await runReviewAndPR(task, worktreePath, config, io, db, memory, configDir);
-        return;
-      }
-
-      // Checks failed — record failure summary and retry
-      const failedChecks = checksResult.results.filter((r) => !r.passed);
-      for (const fc of failedChecks) {
-        recordFailure(memory, `check:${fc.name}`, fc.output.slice(0, 500));
-      }
-      saveMemory(configDir, memory);
-
-      createAndBroadcastEvent(
-        task.id,
-        'checks_failed',
-        JSON.stringify({
-          attempt,
-          results: checksResult.results.map((r) => ({
-            name: r.name,
-            passed: r.passed,
-            output: r.output.slice(0, 1000),
-          })),
-          formattingFixed: checksResult.formattingFixed,
-        })
+        'ralph_loop_completed',
+        JSON.stringify({ iterations: ralphResult.iterations })
       );
 
-      // Move back to implementing for next attempt
-      if (attempt < config.maxAttemptsPerTask) {
-        updateTask(db, task.id, { status: 'implementing' });
-        createAndBroadcastEvent(
-          task.id,
-          'status_changed',
-          JSON.stringify({ from: 'checks', to: 'implementing' })
-        );
-        broadcast(io, 'task:updated', {
-          taskId: task.id,
-          status: 'implementing',
-        });
-      }
+      // Run review cycle and PR creation
+      await runReviewAndPR(task, worktreePath, config, io, db, memory, configDir, logger);
+      return;
     }
 
-    // All attempts exhausted → failed
+    // All iterations exhausted → failed
     updateTask(db, task.id, { status: 'failed' });
     unclaimTask(db, task.id);
     createAndBroadcastEvent(
@@ -402,11 +458,17 @@ export function createWorkerLoop(
       JSON.stringify({
         from: task.status,
         to: 'failed',
-        reason: 'max_attempts_exhausted',
+        reason: 'ralph_loop_exhausted',
+        iterations: ralphResult.iterations,
       })
     );
     broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
-    notify('Task Failed', `"${task.title}" failed after ${config.maxAttemptsPerTask} attempts`, config);
+    notify('Task Failed', `"${task.title}" failed after ${ralphResult.iterations} ralph loop iterations`, config);
+
+    // Record learning for failed task
+    const failedMetrics = collectTaskMetrics(db, task, 'failed');
+    recordLearning(configDir, failedMetrics);
+
     await checkAndUpdateParentStatus(task);
     await runHook(hooks, 'onError', makeHookContext(task, 'implementing', worktreePath, config));
   }
@@ -422,7 +484,8 @@ export function createWorkerLoop(
     io: Server,
     db: Database.Database,
     memory: WorkerMemory,
-    configDir: string
+    configDir: string,
+    logger?: TaskLogger
   ): Promise<void> {
     let reviewCycle = 0;
     let panelPassed = false;
@@ -440,7 +503,9 @@ export function createWorkerLoop(
       broadcast(io, 'task:updated', { taskId: task.id, status: 'review_panel' });
 
       await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_panel', worktreePath, config));
-      const panelResult = await runReviewPanel(db, task, worktreePath, config, createLogStreamer(task.id, `review-panel-${task.id}`));
+      logger?.stageStart('review_panel', `review-panel-${task.id}`, reviewCycle, config.modelDefaults.review);
+      const panelResult = await runReviewPanel(db, task, worktreePath, config, createLogStreamer(task.id, `review-panel-${task.id}`), logger);
+      logger?.stageEnd(panelResult.passed ? 'passed' : 'failed');
       await runHook(hooks, 'afterStage', makeHookContext(task, 'review_panel', worktreePath, config));
 
       if (panelResult.passed) {
@@ -495,7 +560,9 @@ export function createWorkerLoop(
       broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
       // Re-run implementation with review feedback
-      const implResult = await runImplementation(db, task, worktreePath, config, reviewCycle + 1, createLogStreamer(task.id, `review-impl-${reviewCycle}`));
+      logger?.stageStart('implementing', `review-impl-${reviewCycle}`, reviewCycle + 1, config.modelDefaults.implementation);
+      const implResult = await runImplementation(db, task, worktreePath, config, reviewCycle + 1, createLogStreamer(task.id, `review-impl-${reviewCycle}`, logger));
+      logger?.stageEnd(implResult.success ? 'success' : 'failed');
       if (!implResult.success) {
         break;
       }
@@ -509,7 +576,9 @@ export function createWorkerLoop(
       );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
 
-      const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-review-${task.id}`));
+      logger?.stageStart('checks', `checks-review-${task.id}`, reviewCycle, 'n/a');
+      const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-review-${task.id}`, logger));
+      logger?.stageEnd(checksResult.passed ? 'passed' : 'failed');
       if (!checksResult.passed) {
         break;
       }
@@ -533,6 +602,11 @@ export function createWorkerLoop(
       );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
       notify('Task Failed', `"${task.title}" failed: review cycles exhausted`, config);
+
+      // Record learning for failed task
+      const failedMetrics = collectTaskMetrics(db, task, 'failed');
+      recordLearning(configDir, failedMetrics);
+
       await checkAndUpdateParentStatus(task);
       return;
     }
@@ -541,7 +615,9 @@ export function createWorkerLoop(
     if (!task.parentTaskId) {
       try {
         await runHook(hooks, 'beforeStage', makeHookContext(task, 'pr_creation', worktreePath, config));
-        const prResult = await createPR(db, task, worktreePath, config, createLogStreamer(task.id, `pr-${task.id}`));
+        logger?.stageStart('pr_creation', `pr-${task.id}`, 1, 'n/a');
+        const prResult = await createPR(db, task, worktreePath, config, createLogStreamer(task.id, `pr-${task.id}`, logger));
+        logger?.stageEnd('success');
         await runHook(hooks, 'afterStage', makeHookContext(task, 'pr_creation', worktreePath, config));
 
         createAndBroadcastEvent(
@@ -553,18 +629,47 @@ export function createWorkerLoop(
             reviewCycles: reviewCycle,
           })
         );
+        logger?.event('pr_created', `PR #${prResult.prNumber} — ${prResult.prUrl}`);
         notify('PR Created', `PR for "${task.title}" is ready for review`, config);
 
         recordConvention(memory, `task:${task.id}:pr`, `PR #${prResult.prNumber} created successfully`);
         saveMemory(configDir, memory);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        logger?.error(`PR creation failed: ${errorMessage}`);
         createAndBroadcastEvent(
           task.id,
           'pr_creation_failed',
           JSON.stringify({ error: errorMessage })
         );
       }
+    }
+
+    // ── Auto-merge evaluation ────────────────────────────────────────
+    const autoMergeDecision = evaluateAutoMerge(db, task, config);
+
+    if (autoMergeDecision.canAutoMerge) {
+      // Auto-advance to done — skip human review
+      updateTask(db, task.id, { status: 'done' });
+      unclaimTask(db, task.id);
+      createAndBroadcastEvent(
+        task.id,
+        'auto_merged',
+        JSON.stringify({
+          reviewCycles: reviewCycle,
+          reasons: ['All review criteria met for auto-merge'],
+        })
+      );
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'done' });
+      notify('Task Auto-Merged', `"${task.title}" passed all gates and was auto-merged`, config);
+
+      // Record learning for successful auto-merged task
+      const successMetrics = collectTaskMetrics(db, task, 'success');
+      recordLearning(configDir, successMetrics);
+
+      await checkAndUpdateParentStatus(task);
+      await runHook(hooks, 'onTaskComplete', makeHookContext(task, 'pr_creation', worktreePath, config));
+      return;
     }
 
     // Move to needs_human_review
@@ -578,10 +683,16 @@ export function createWorkerLoop(
         from: task.status,
         to: 'needs_human_review',
         reviewCycles: reviewCycle,
+        autoMergeReasons: autoMergeDecision.reasons,
       })
     );
     broadcast(io, 'task:updated', { taskId: task.id, status: 'needs_human_review' });
     notify('Task Complete', `"${task.title}" is ready for human review`, config);
+
+    // Record learning for successful task (pending human review)
+    const successMetrics = collectTaskMetrics(db, task, 'success');
+    recordLearning(configDir, successMetrics);
+
     await runHook(hooks, 'onTaskComplete', makeHookContext(task, 'pr_creation', worktreePath, config));
   }
 
@@ -593,6 +704,7 @@ export function createWorkerLoop(
     let branchName: string | undefined;
     let isSubtask = false;
     let repoPath: string | undefined;
+    let logger: TaskLogger | undefined;
 
     try {
       // Find the project to get the repo path
@@ -620,12 +732,28 @@ export function createWorkerLoop(
       // Check if this is a subtask that should reuse parent's worktree
       if (task.parentTaskId) {
         isSubtask = true;
+
+        // Subtasks append to parent's log file
+        const parentLog = getTaskLogByTaskId(db, task.parentTaskId);
+        if (parentLog) {
+          logger = openTaskLogger(parentLog.logPath);
+          // Find subtask index among siblings
+          const siblings = getSubtasksByParentId(db, task.parentTaskId);
+          const index = siblings.findIndex(s => s.id === task.id) + 1;
+          logger.subtaskStart(index, siblings.length, task.title, task.id);
+        }
+
         const parentGitRefs = listGitRefsByTask(db, task.parentTaskId);
         if (parentGitRefs.length > 0 && parentGitRefs[0].worktreePath) {
           worktreePath = parentGitRefs[0].worktreePath;
 
-          // Skip planning for subtasks — go directly to implementation loop
-          await runImplementationLoop(task, worktreePath, projectConfig, io, db, memory, projectConfigDir);
+          // Subtasks are fully autonomous — run ralph loop, go directly to done/failed
+          await processSubtask(task, worktreePath, projectConfig, projectConfigDir, logger);
+
+          // Update parent log size
+          if (parentLog) {
+            updateTaskLogSize(db, parentLog.id, logger?.sizeBytes() ?? 0);
+          }
           return;
         }
       }
@@ -656,13 +784,50 @@ export function createWorkerLoop(
         status: 'local',
       });
 
+      // Create persistent task logger
+      logger = createTaskLogger(projectConfigDir, task.id, task.title, task.riskLevel);
+      const taskLogRecord = createTaskLog(db, {
+        taskId: task.id,
+        projectId: task.projectId,
+        logPath: logger.logPath,
+      });
+
+      // Move to spec
+      updateTask(db, task.id, { status: 'spec' });
+      createAndBroadcastEvent(
+        task.id,
+        'status_changed',
+        JSON.stringify({
+          from: 'ready',
+          to: 'spec',
+        })
+      );
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'spec' });
+
+      // Run spec generation stage
+      await runHook(hooks, 'beforeStage', makeHookContext(task, 'spec', worktreePath, projectConfig));
+      logger.stageStart('spec', `spec-${task.id}`, 1, projectConfig.modelDefaults.planning);
+      const specResult = await runSpecGeneration(db, task, worktreePath, projectConfig, createLogStreamer(task.id, `spec-${task.id}`, logger));
+      logger.stageEnd('success');
+      await runHook(hooks, 'afterStage', makeHookContext(task, 'spec', worktreePath, projectConfig));
+
+      createAndBroadcastEvent(
+        task.id,
+        'spec_generated',
+        JSON.stringify({
+          acceptanceCriteria: specResult.acceptanceCriteria,
+          fileScope: specResult.fileScope,
+          riskAssessment: specResult.riskAssessment,
+        })
+      );
+
       // Move to planning
       updateTask(db, task.id, { status: 'planning' });
       createAndBroadcastEvent(
         task.id,
         'status_changed',
         JSON.stringify({
-          from: 'ready',
+          from: 'spec',
           to: 'planning',
         })
       );
@@ -670,7 +835,9 @@ export function createWorkerLoop(
 
       // Run planning stage
       await runHook(hooks, 'beforeStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
-      const planResult = await runPlanning(db, task, worktreePath, projectConfig, createLogStreamer(task.id, `planning-${task.id}`));
+      logger.stageStart('planning', `planning-${task.id}`, 1, projectConfig.modelDefaults.planning);
+      const planResult = await runPlanning(db, task, worktreePath, projectConfig, createLogStreamer(task.id, `planning-${task.id}`, logger));
+      logger.stageEnd('success');
       await runHook(hooks, 'afterStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
 
       // Log assumptions if any were made
@@ -735,6 +902,7 @@ export function createWorkerLoop(
           status: 'implementing',
           blockedReason: null,
         });
+        logger.event('subtasks_created', `${planResult.subtasks.length} subtask(s) created — executing serially`);
         createAndBroadcastEvent(
           task.id,
           'subtasks_created',
@@ -752,11 +920,15 @@ export function createWorkerLoop(
       }
 
       // No subtasks — proceed to implementation
-      await runImplementationLoop(task, worktreePath, projectConfig, io, db, memory, projectConfigDir);
+      await runImplementationLoop(task, worktreePath, projectConfig, io, db, memory, projectConfigDir, logger);
+
+      // Update log file size in DB
+      updateTaskLogSize(db, taskLogRecord.id, logger.sizeBytes());
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(`[worker] Task ${task.id} failed:`, errorMessage);
+      logger?.error(errorMessage);
 
       // Wrap all error-handling DB/IO ops so a secondary failure
       // doesn't leave the task permanently claimed
@@ -853,6 +1025,18 @@ export function createWorkerLoop(
       if (running) return;
       running = true;
       console.log('[worker] Starting worker loop');
+
+      // Cleanup old log files across all projects
+      try {
+        const projects = listProjects(db);
+        for (const project of projects) {
+          const configDir = path.join(project.path, '.agentboard');
+          cleanupOldLogs(configDir);
+        }
+      } catch (e) {
+        console.error('[worker] Log cleanup error:', e);
+      }
+
       scheduleTick();
     },
 

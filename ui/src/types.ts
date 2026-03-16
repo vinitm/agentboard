@@ -3,6 +3,7 @@
 export type TaskStatus =
   | 'backlog'
   | 'ready'
+  | 'spec'
   | 'planning'
   | 'implementing'
   | 'checks'
@@ -14,6 +15,7 @@ export type TaskStatus =
   | 'cancelled';
 
 export type Stage =
+  | 'spec'
   | 'planning'
   | 'implementing'
   | 'checks'
@@ -62,6 +64,13 @@ export interface Run {
   output: string | null;
   startedAt: string;
   finishedAt: string | null;
+}
+
+export interface SpecResult {
+  acceptanceCriteria: string[];
+  fileScope: string[];
+  outOfScope: string[];
+  riskAssessment: string;
 }
 
 export interface SpecTemplate {

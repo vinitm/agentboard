@@ -12,6 +12,7 @@ import type {
   GitRef,
   GitRefStatus,
   Event,
+  TaskLog,
 } from '../types/index.js';
 
 // ── Helper: snake_case row → camelCase object ────────────────────────
@@ -616,4 +617,75 @@ export function listEventsByProject(
 
 export function deleteEvent(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM events WHERE id = ?').run(id);
+}
+
+// ── Task Logs ─────────────────────────────────────────────────────────
+
+function rowToTaskLog(row: Record<string, unknown>): TaskLog {
+  return {
+    id: row.id as string,
+    taskId: row.task_id as string,
+    projectId: row.project_id as string,
+    logPath: row.log_path as string,
+    sizeBytes: row.size_bytes as number,
+    createdAt: row.created_at as string,
+  };
+}
+
+export interface CreateTaskLogData {
+  taskId: string;
+  projectId: string;
+  logPath: string;
+  sizeBytes?: number;
+}
+
+export function createTaskLog(
+  db: Database.Database,
+  data: CreateTaskLogData
+): TaskLog {
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO task_logs (id, task_id, project_id, log_path, size_bytes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(id, data.taskId, data.projectId, data.logPath, data.sizeBytes ?? 0, now);
+  return getTaskLogById(db, id)!;
+}
+
+export function getTaskLogById(
+  db: Database.Database,
+  id: string
+): TaskLog | undefined {
+  const row = db.prepare('SELECT * FROM task_logs WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToTaskLog(row) : undefined;
+}
+
+export function getTaskLogByTaskId(
+  db: Database.Database,
+  taskId: string
+): TaskLog | undefined {
+  const row = db.prepare('SELECT * FROM task_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1').get(taskId) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToTaskLog(row) : undefined;
+}
+
+export function listTaskLogsByProject(
+  db: Database.Database,
+  projectId: string
+): TaskLog[] {
+  const rows = db
+    .prepare('SELECT * FROM task_logs WHERE project_id = ? ORDER BY created_at DESC')
+    .all(projectId) as Record<string, unknown>[];
+  return rows.map(rowToTaskLog);
+}
+
+export function updateTaskLogSize(
+  db: Database.Database,
+  id: string,
+  sizeBytes: number
+): void {
+  db.prepare('UPDATE task_logs SET size_bytes = ? WHERE id = ?').run(sizeBytes, id);
 }

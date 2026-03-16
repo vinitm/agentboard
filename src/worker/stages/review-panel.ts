@@ -7,6 +7,8 @@ import { selectModel } from '../model-selector.js';
 import { buildTaskPacket } from '../context-builder.js';
 import { executeClaudeCode } from '../executor.js';
 import { createRun, updateRun, createArtifact } from '../../db/queries.js';
+import type { TaskLogger } from '../log-writer.js';
+import { createBufferedWriter } from '../log-writer.js';
 
 export type ReviewerRole = 'architect' | 'qa' | 'security';
 
@@ -208,11 +210,21 @@ export async function runReviewPanel(
   task: Task,
   worktreePath: string,
   config: AgentboardConfig,
-  onOutput?: (chunk: string) => void
+  onOutput?: (chunk: string) => void,
+  logger?: TaskLogger
 ): Promise<PanelResult> {
-  const reviewPromises = ROLES.map(role =>
-    runSingleReviewer(db, task, worktreePath, config, role, onOutput)
-  );
+  // Create a buffered writer per reviewer so parallel output doesn't interleave
+  const buffers = ROLES.map(() => logger ? createBufferedWriter() : undefined);
+
+  const reviewPromises = ROLES.map((role, i) => {
+    const buffer = buffers[i];
+    // Each reviewer writes to its own buffer (if logger present), plus the original onOutput for WebSocket
+    const wrappedOnOutput = (chunk: string) => {
+      onOutput?.(chunk);
+      buffer?.write(chunk);
+    };
+    return runSingleReviewer(db, task, worktreePath, config, role, wrappedOnOutput);
+  });
 
   const settledResults = await Promise.allSettled(reviewPromises);
 
@@ -228,6 +240,21 @@ export async function runReviewPanel(
       issues: ['Review execution error'],
     };
   });
+
+  // Flush buffered output sequentially into the log file — clean sections, no interleaving
+  if (logger) {
+    for (let i = 0; i < ROLES.length; i++) {
+      const role = ROLES[i];
+      const result = results[i];
+      const buffer = buffers[i];
+      logger.parallelSectionStart(`REVIEWER: ${ROLE_LABELS[role]}`, `review-${role}-${task.id}`);
+      if (buffer) {
+        logger.writeBuffered(buffer.flush());
+      }
+      const issueDetail = result.issues.length > 0 ? `issues=${result.issues.length}` : '';
+      logger.parallelSectionEnd(ROLE_LABELS[role], result.passed ? 'passed' : 'failed', issueDetail);
+    }
+  }
 
   const passed = results.every(r => r.passed);
 

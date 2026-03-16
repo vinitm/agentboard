@@ -10,6 +10,7 @@ export function selectModel(
   }
 
   const stageToConfigKey: Record<Stage, keyof AgentboardConfig['modelDefaults']> = {
+    spec: 'planning',
     planning: 'planning',
     implementing: 'implementation',
     checks: 'implementation',

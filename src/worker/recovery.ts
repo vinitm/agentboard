@@ -4,6 +4,7 @@ import type { TaskStatus } from '../types/index.js';
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
 const AGENT_CONTROLLED_STATUSES: TaskStatus[] = [
+  'spec',
   'planning',
   'implementing',
   'checks',
@@ -25,7 +26,7 @@ export function recoverStaleTasks(db: Database.Database): number {
   for (const status of AGENT_CONTROLLED_STATUSES) {
     const rows = db
       .prepare(
-        `SELECT id, title, status, claimed_at FROM tasks
+        `SELECT id, title, status, claimed_at, parent_task_id FROM tasks
          WHERE status = ? AND claimed_at IS NOT NULL AND claimed_at < ?`
       )
       .all(status, cutoff) as Array<{
@@ -33,15 +34,19 @@ export function recoverStaleTasks(db: Database.Database): number {
       title: string;
       status: string;
       claimed_at: string;
+      parent_task_id: string | null;
     }>;
 
     for (const row of rows) {
+      // Subtasks reset to ready — the worker will re-pick them up and run them
+      // through the autonomous processSubtask path
+      const resetStatus = 'ready';
       db.prepare(
-        `UPDATE tasks SET status = 'ready', claimed_at = NULL, claimed_by = NULL, updated_at = ? WHERE id = ?`
-      ).run(now, row.id);
+        `UPDATE tasks SET status = ?, claimed_at = NULL, claimed_by = NULL, updated_at = ? WHERE id = ?`
+      ).run(resetStatus, now, row.id);
 
       console.log(
-        `[recovery] Reset stale task "${row.title}" (${row.id}) from ${row.status} to ready (claimed at ${row.claimed_at})`
+        `[recovery] Reset stale ${row.parent_task_id ? 'subtask' : 'task'} "${row.title}" (${row.id}) from ${row.status} to ${resetStatus} (claimed at ${row.claimed_at})`
       );
       recovered++;
     }

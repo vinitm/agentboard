@@ -2,6 +2,7 @@
 export type TaskStatus =
   | 'backlog'
   | 'ready'
+  | 'spec'
   | 'planning'
   | 'implementing'
   | 'checks'
@@ -14,6 +15,7 @@ export type TaskStatus =
 
 // ── Stage enum for worker pipeline ───────────────────────────────────
 export type Stage =
+  | 'spec'
   | 'planning'
   | 'implementing'
   | 'checks'
@@ -146,6 +148,25 @@ export interface AgentboardConfig {
   commands: Commands;
   notifications: Notifications;
   ruflo: RufloConfig;
+  maxRalphIterations: number;
+}
+
+// ── Spec result from spec-generator stage ───────────────────────────
+export interface SpecResult {
+  acceptanceCriteria: string[];
+  fileScope: string[];
+  outOfScope: string[];
+  riskAssessment: string;
+}
+
+// ── Task log metadata ───────────────────────────────────────────────
+export interface TaskLog {
+  id: string;
+  taskId: string;
+  projectId: string;
+  logPath: string;
+  sizeBytes: number;
+  createdAt: string;
 }
 
 // ── Decision points for task creation ───────────────────────────────

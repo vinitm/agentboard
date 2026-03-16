@@ -13,6 +13,8 @@ import { createRunRoutes } from './routes/runs.js';
 import { createArtifactRoutes } from './routes/artifacts.js';
 import { createConfigRoutes } from './routes/config.js';
 import { createEventRoutes } from './routes/events.js';
+import { createLearningRoutes } from './routes/learning.js';
+import { createLogRoutes } from './routes/logs.js';
 
 export interface ServerResult {
   server: http.Server;
@@ -75,6 +77,8 @@ export function createServer(
   app.use('/api/artifacts', createArtifactRoutes(db));
   app.use('/api/config', createConfigRoutes(config, configPath));
   app.use('/api/events', createEventRoutes(db));
+  app.use('/api/projects', createLearningRoutes(db));
+  app.use('/api/logs', createLogRoutes(db));
 
   // ── Serve static UI files in production ───────────────────────────
   const currentDir = path.dirname(fileURLToPath(import.meta.url));

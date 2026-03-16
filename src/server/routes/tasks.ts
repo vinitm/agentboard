@@ -8,6 +8,7 @@ import { broadcast } from '../ws.js';
 import { cleanupWorktree } from '../../worker/git.js';
 
 const AGENT_CONTROLLED_COLUMNS: TaskStatus[] = [
+  'spec',
   'planning',
   'implementing',
   'checks',
@@ -25,8 +26,8 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
     if (!task.parentTaskId) return;
 
     const parent = queries.getTaskById(db, task.parentTaskId);
-    const terminalStatuses: TaskStatus[] = ['needs_human_review', 'done', 'failed', 'cancelled'];
-    const successStatuses: TaskStatus[] = ['needs_human_review', 'done'];
+    const terminalStatuses: TaskStatus[] = ['done', 'failed', 'cancelled'];
+    const successStatuses: TaskStatus[] = ['done'];
 
     if (!parent || terminalStatuses.includes(parent.status)) return;
 
@@ -271,6 +272,12 @@ Task description: ${description.trim()}`;
       return;
     }
 
+    // Subtasks are fully autonomous — only cancellation is allowed
+    if (task.parentTaskId && column !== 'cancelled') {
+      res.status(400).json({ error: 'Cannot manually move subtasks — they run autonomously. Only cancellation is allowed.' });
+      return;
+    }
+
     // Guardrails: can't manually move to agent-controlled columns
     if (AGENT_CONTROLLED_COLUMNS.includes(column)) {
       res.status(400).json({ error: `Cannot manually move task to agent-controlled column: ${column}` });
@@ -348,6 +355,10 @@ Task description: ${description.trim()}`;
       res.status(404).json({ error: 'Task not found' });
       return;
     }
+    if (task.parentTaskId) {
+      res.status(400).json({ error: 'Subtasks do not support answers — they run autonomously' });
+      return;
+    }
     if (task.status !== 'blocked') {
       res.status(400).json({ error: 'Task is not blocked' });
       return;
@@ -382,6 +393,10 @@ Task description: ${description.trim()}`;
     const task = queries.getTaskById(db, req.params.id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (task.parentTaskId) {
+      res.status(400).json({ error: 'Cannot retry subtasks directly — retry the parent task instead' });
       return;
     }
     if (task.status !== 'failed') {

@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe('schema initialization', () => {
   describe('tables', () => {
-    const expectedTables = ['projects', 'tasks', 'runs', 'artifacts', 'git_refs', 'events'];
+    const expectedTables = ['projects', 'tasks', 'runs', 'artifacts', 'git_refs', 'events', 'task_logs'];
 
     it.each(expectedTables)('creates table: %s', (tableName) => {
       const row = db
@@ -24,7 +24,7 @@ describe('schema initialization', () => {
       expect(row!.name).toBe(tableName);
     });
 
-    it('creates exactly 6 tables', () => {
+    it('creates exactly 7 tables', () => {
       const rows = db
         .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
         .all() as { name: string }[];

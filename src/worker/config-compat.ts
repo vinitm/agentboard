@@ -16,5 +16,9 @@ export function normalizeConfig(raw: Record<string, unknown>): AgentboardConfig 
     }
   }
 
+  if (raw.maxRalphIterations === undefined) {
+    raw.maxRalphIterations = 5;
+  }
+
   return raw as unknown as AgentboardConfig;
 }
