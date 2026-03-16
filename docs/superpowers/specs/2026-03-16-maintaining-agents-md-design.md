@@ -16,7 +16,7 @@ A personal Claude Code skill at `~/.claude/skills/maintaining-agents-md/` that o
 | File scope | AGENTS.md only |
 | Self-update behavior | Fully automatic — proposes after every task |
 | Hierarchy handling | Strict enforcement with conflict warnings |
-| Global layer | Create and manage `~/.config/AGENTS.md` |
+| Global layer | Create and manage `~/.claude/AGENTS.md` |
 
 ## File Structure
 
@@ -38,10 +38,20 @@ description: Use when creating, updating, or reviewing AGENTS.md files, when sta
 
 ## Activation Triggers
 
+These are **instructions the agent should follow**, not event-driven hooks. Skills are passive instruction documents — the agent checks these conditions as part of its workflow.
+
 - User says "update AGENTS.md", "create AGENTS.md", "show merged AGENTS.md", "migrate AGENTS.md"
-- After any successful task (self-update loop)
-- When opening a project with no AGENTS.md
+- After completing any task, the agent should consult this skill to evaluate self-update proposals
+- When the agent notices a project has no AGENTS.md, it should offer to initialize one
 - When working in a subdirectory that could benefit from a nested AGENTS.md
+
+## CLAUDE.md Relationship
+
+This skill manages AGENTS.md files only. It does **not** create or manage CLAUDE.md files. However:
+
+- **Bootstrap source:** When initializing AGENTS.md in a project that has CLAUDE.md but no AGENTS.md, the skill reads CLAUDE.md content as input to generate the initial AGENTS.md draft. The existing CLAUDE.md is left untouched — the user decides whether to keep, symlink, or remove it.
+- **No symlink management:** The skill does not create or manage CLAUDE.md → AGENTS.md symlinks. That is a project-level decision for the user.
+- **No migration:** The skill does not rename or delete CLAUDE.md files. It only proposes AGENTS.md content.
 
 ## Core Skill Logic — Four Modes
 
@@ -51,7 +61,19 @@ The SKILL.md contains a decision flowchart selecting between four modes:
 Walk the directory tree, identify where a new AGENTS.md is needed (root vs nested package), generate from template in `file-template.md`, enforce hierarchy rules before writing.
 
 ### Mode 2: Update / Migrate
-Read existing file, propose diff with one-sentence justification, wait for approval. For migration: restructure to match the canonical skeleton while preserving content.
+Read existing file, propose diff with one-sentence justification, wait for approval (conversational — present diff and ask in natural language, user responds in next message; if user ignores the proposal and asks something else, drop the proposal silently). For migration: restructure to match the canonical skeleton while preserving content using the following section mapping:
+
+**Migration mapping from common existing formats:**
+| Existing Section | Maps To |
+|-----------------|---------|
+| Commands, Scripts, Build | Commands |
+| About, Overview, Description | Project Context |
+| Do, Style, Conventions, Formatting | Code Style & Conventions |
+| Tests, Testing, Test, Coverage | Testing Requirements |
+| Architecture, Structure, Modules, Gotchas | Architecture & Boundaries |
+| Don't, Never, Forbidden, Warnings | Never Do / Always Ask First |
+| Docs, Links, See Also | References |
+| (unmapped sections) | Best-fit canonical section, or Architecture & Boundaries as fallback |
 
 ### Mode 3: Self-Update Loop
 After task completion, ask: "Did I learn a new command, convention, or boundary?" If yes → generate diff against nearest AGENTS.md, present with justification, wait for explicit approval, re-validate hierarchy after write.
@@ -70,7 +92,7 @@ On first encounter with a project lacking AGENTS.md, offer to create root file. 
 ### Merge Algorithm
 
 ```
-~/.config/AGENTS.md          (outermost — personal defaults)
+~/.claude/AGENTS.md           (outermost — personal defaults)
   └── project/AGENTS.md      (project root)
        └── packages/ui/AGENTS.md   (nested — most specific, wins)
 ```
@@ -79,17 +101,20 @@ On first encounter with a project lacking AGENTS.md, offer to create root file. 
 1. Deeper file overrides conflicting sections from parent
 2. "Never Do" / "Always" lists are **appended** across all levels (deduplicated)
 3. Commands are **merged** — child adds to parent's commands, doesn't replace
-4. Optional `merge: append|override` frontmatter in child files to control per-section behavior (default: override for most sections, append for lists)
+4. Per-section merge behavior is determined by section type: "Never Do / Always Ask First" and "Commands" always append; other sections override. No frontmatter directives are used — this avoids polluting AGENTS.md files with metadata that other tools wouldn't understand
 
 ### Conflict Detection
 The skill actively checks for:
 - Child file repeating rules already stated in parent → warns "redundant, remove from child"
-- Child file contradicting parent without explicit override → warns "conflict detected, add `merge: override` or reconcile"
+- Child file contradicting parent → warns "conflict detected — reconcile or add comment explaining the override"
 - Files exceeding 150 lines → warns with suggestions to split or use references
-- Missing required sections (Commands must always be present)
+- Missing required sections (Commands section must always be present; an empty Commands section is valid — it signals "no project-specific commands, inherit from parent")
+
+### Nesting Depth
+Arbitrary depth is supported. The merge walks from `~/.claude/AGENTS.md` through every ancestor directory's AGENTS.md down to the nearest one. In practice, most projects need at most 2-3 levels (global → root → package).
 
 ### Show Merged Command
-When user asks to see the merged view, the skill walks from `~/.config/AGENTS.md` → root → nearest, applies the merge algorithm, and outputs the fully resolved AGENTS.md for the current working directory. Read-only output, never written to disk.
+When user asks to see the merged view, the skill walks from `~/.claude/AGENTS.md` → root → nearest, applies the merge algorithm, and outputs the fully resolved AGENTS.md for the current working directory. Read-only output, never written to disk.
 
 ## Canonical AGENTS.md Template
 
@@ -125,7 +150,7 @@ Every AGENTS.md must follow this skeleton:
 - No section should exceed ~30 lines; extract to reference doc if it does
 - Referenced files are checked for existence; missing references flagged; existing ones get one-line summary
 
-## Self-Update Loop (Ralph Wiggum)
+## Self-Update Loop
 
 ### Trigger
 After every successful task completion.
@@ -161,8 +186,8 @@ Approve? (y/n)
 
 ## Global Layer
 
-### ~/.config/AGENTS.md
-On first activation in any project, check for `~/.config/AGENTS.md`. If missing, offer to create it.
+### ~/.claude/AGENTS.md (Global Defaults)
+The global layer lives at `~/.claude/AGENTS.md` (inside the Claude Code config directory, not `~/.config/` which is for XDG app directories). On first activation in any project, check for this file. If missing, offer to create it.
 
 ### Default Global Contents
 ```markdown
