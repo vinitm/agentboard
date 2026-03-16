@@ -19,6 +19,8 @@ import {
   listGitRefsByTask,
   getSubtasksByParentId,
   getNextBacklogSubtask,
+  createArtifact,
+  getLatestRunByTaskAndStage,
 } from '../db/queries.js';
 import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
 import { runPlanning } from './stages/planner.js';
@@ -749,6 +751,16 @@ export function createWorkerLoop(
             assumptions: planResult.assumptions,
           })
         );
+
+        const planningRun = getLatestRunByTaskAndStage(db, task.id, 'planning');
+        if (planningRun) {
+          createArtifact(db, {
+            runId: planningRun.id,
+            type: 'assumptions',
+            name: 'planning_assumptions',
+            content: JSON.stringify(planResult.assumptions),
+          });
+        }
       }
 
       if (planResult.subtasks.length > 0) {
