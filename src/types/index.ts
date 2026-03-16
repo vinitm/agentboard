@@ -5,8 +5,7 @@ export type TaskStatus =
   | 'planning'
   | 'implementing'
   | 'checks'
-  | 'review_spec'
-  | 'review_code'
+  | 'review_panel'
   | 'needs_human_review'
   | 'done'
   | 'blocked'
@@ -18,8 +17,7 @@ export type Stage =
   | 'planning'
   | 'implementing'
   | 'checks'
-  | 'review_spec'
-  | 'review_code'
+  | 'review_panel'
   | 'pr_creation';
 
 // ── Run status ───────────────────────────────────────────────────────
@@ -106,8 +104,7 @@ export interface Event {
 export interface ModelDefaults {
   planning: string;
   implementation: string;
-  reviewSpec: string;
-  reviewCode: string;
+  review: string;
   security: string;
 }
 
