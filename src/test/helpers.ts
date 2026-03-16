@@ -78,8 +78,7 @@ export function createTestConfig(overrides?: Record<string, unknown>): Agentboar
     modelDefaults: {
       planning: 'sonnet',
       implementation: 'opus',
-      reviewSpec: 'sonnet',
-      reviewCode: 'sonnet',
+      review: 'sonnet',
       security: 'sonnet',
     },
     commands: {

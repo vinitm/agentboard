@@ -60,8 +60,7 @@ export default async function init(): Promise<void> {
     modelDefaults: {
       planning: 'sonnet',
       implementation: 'opus',
-      reviewSpec: 'sonnet',
-      reviewCode: 'sonnet',
+      review: 'sonnet',
       security: 'haiku',
     },
     commands,

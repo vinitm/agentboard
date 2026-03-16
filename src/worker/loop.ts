@@ -34,6 +34,7 @@ import type { HookContext } from './hooks.js';
 import { loadMemory, saveMemory, recordFailure, recordConvention } from './memory.js';
 import type { WorkerMemory } from './memory.js';
 import { notify } from './notifications.js';
+import { normalizeConfig } from './config-compat.js';
 
 const POLL_INTERVAL_MS = 5_000;
 const WORKER_ID = `worker-${process.pid}`;
@@ -137,7 +138,7 @@ export function createWorkerLoop(
           let projectConfig: AgentboardConfig;
           try {
             const raw = fs.readFileSync(path.join(projectConfigDir, 'config.json'), 'utf-8');
-            projectConfig = JSON.parse(raw) as AgentboardConfig;
+            projectConfig = normalizeConfig(JSON.parse(raw));
           } catch {
             projectConfig = config;
           }
@@ -672,7 +673,7 @@ export function createWorkerLoop(
       let projectConfig: AgentboardConfig;
       try {
         const raw = fs.readFileSync(path.join(projectConfigDir, 'config.json'), 'utf-8');
-        projectConfig = JSON.parse(raw) as AgentboardConfig;
+        projectConfig = normalizeConfig(JSON.parse(raw));
       } catch (err) {
         throw new Error(
           `Failed to read per-project config at ${projectConfigDir}/config.json: ${err instanceof Error ? err.message : err}`
