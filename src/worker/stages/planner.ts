@@ -11,7 +11,7 @@ import { createRun, updateRun, createArtifact } from '../../db/queries.js';
 export interface PlanningResult {
   planSummary: string;
   subtasks: Array<{ title: string; description: string }>;
-  questions: string[];
+  assumptions: string[];
   fileHints: string[];
 }
 
@@ -147,7 +147,7 @@ function parseJsonFromOutput(output: string): PlanningResult {
   return {
     planSummary: output.slice(0, 1000),
     subtasks: [],
-    questions: [],
+    assumptions: [],
     fileHints: [],
   };
 }
@@ -167,9 +167,9 @@ function validatePlanningResult(data: unknown): PlanningResult {
           })
         )
       : [],
-    questions: Array.isArray(obj.questions)
-      ? (obj.questions as string[]).filter(
-          (q): q is string => typeof q === 'string'
+    assumptions: Array.isArray(obj.assumptions)
+      ? (obj.assumptions as string[]).filter(
+          (a): a is string => typeof a === 'string'
         )
       : [],
     fileHints: Array.isArray(obj.fileHints)

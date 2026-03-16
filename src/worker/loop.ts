@@ -758,30 +758,19 @@ export function createWorkerLoop(
       const planResult = await runPlanning(db, task, worktreePath, projectConfig, createLogStreamer(task.id, `planning-${task.id}`));
       await runHook(hooks, 'afterStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
 
-      // Handle planning result
-      if (planResult.questions.length > 0) {
-        // Block the task — needs human answers
-        updateTask(db, task.id, {
-          status: 'blocked',
-          blockedReason: `Planning has questions:\n${planResult.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
-        });
-        unclaimTask(db, task.id);
+      // Log assumptions if any were made
+      if (planResult.assumptions.length > 0) {
+        console.log(`[worker] Task ${task.id} planner made ${planResult.assumptions.length} assumption(s):`);
+        for (const assumption of planResult.assumptions) {
+          console.log(`[worker]   - ${assumption}`);
+        }
         createAndBroadcastEvent(
           task.id,
-          'status_changed',
+          'assumptions_made',
           JSON.stringify({
-            from: 'planning',
-            to: 'blocked',
-            reason: 'questions',
-            questions: planResult.questions,
+            assumptions: planResult.assumptions,
           })
         );
-        broadcast(io, 'task:updated', {
-          taskId: task.id,
-          status: 'blocked',
-        });
-        notify('Task Blocked', `"${task.title}" has planning questions`, projectConfig);
-        return;
       }
 
       if (planResult.subtasks.length > 0) {
@@ -837,7 +826,7 @@ export function createWorkerLoop(
         return;
       }
 
-      // No questions, no subtasks — proceed to implementation
+      // No subtasks — proceed to implementation
       await runImplementationLoop(task, worktreePath, projectConfig, io, db, memory, projectConfigDir);
     } catch (error) {
       const errorMessage =
