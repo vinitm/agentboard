@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { api } from '../api/client';
-import type { Task, RiskLevel, SpecTemplate } from '../types';
+import type { Task, RiskLevel, SpecTemplate, DecisionPoint } from '../types';
 
 interface Props {
   initial?: Task | null;
@@ -15,7 +15,7 @@ function parseSpec(spec: string | null): SpecTemplate {
   try { return { ...empty, ...(JSON.parse(spec) as Partial<SpecTemplate>) }; } catch { return empty; }
 }
 
-type Phase = 'describe' | 'preview';
+type Phase = 'describe' | 'decisions' | 'preview';
 
 const inputClasses = 'w-full rounded-md bg-bg-tertiary border border-border-default px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-transparent resize-y';
 const btnClasses = 'px-4 py-2 rounded-md text-sm font-semibold transition-colors duration-150 cursor-pointer';
@@ -30,6 +30,8 @@ export const TaskForm: React.FC<Props> = ({ initial, onSubmit, onCancel }) => {
   const [riskLevel, setRiskLevel] = useState<RiskLevel>(initial?.riskLevel ?? 'low');
   const [priority, setPriority] = useState(initial?.priority ?? 0);
   const [spec, setSpec] = useState<SpecTemplate>(() => parseSpec(initial?.spec ?? null));
+  const [decisionPoints, setDecisionPoints] = useState<DecisionPoint[]>([]);
+  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -37,11 +39,17 @@ export const TaskForm: React.FC<Props> = ({ initial, onSubmit, onCancel }) => {
     if (!shortDescription.trim()) { setError('Please describe the task'); return; }
     setError(''); setParsing(true);
     try {
-      const parsed = await api.post<{ title: string; description: string; riskLevel: RiskLevel; priority: number; spec: { context: string; acceptanceCriteria: string; constraints: string; verification: string; infrastructureAllowed: string } }>('/api/tasks/parse', { description: shortDescription.trim() });
+      const parsed = await api.post<{ title: string; description: string; riskLevel: RiskLevel; priority: number; spec: { context: string; acceptanceCriteria: string; constraints: string; verification: string; infrastructureAllowed: string }; decisionPoints?: DecisionPoint[] }>('/api/tasks/parse', { description: shortDescription.trim() });
       setTitle(parsed.title || ''); setDescription(parsed.description || '');
       setRiskLevel(parsed.riskLevel || 'low'); setPriority(parsed.priority || 0);
       if (parsed.spec) setSpec({ context: parsed.spec.context || '', acceptanceCriteria: parsed.spec.acceptanceCriteria || '', constraints: parsed.spec.constraints || '', verification: parsed.spec.verification || '', riskLevel: parsed.riskLevel || 'low', infrastructureAllowed: parsed.spec.infrastructureAllowed || '' });
-      setPhase('preview');
+      if (Array.isArray(parsed.decisionPoints) && parsed.decisionPoints.length > 0) {
+        setDecisionPoints(parsed.decisionPoints);
+        setSelectedOptions(parsed.decisionPoints.map((dp: { defaultIndex: number }) => dp.defaultIndex));
+        setPhase('decisions');
+      } else {
+        setPhase('preview');
+      }
     } catch (err) { setError(err instanceof Error ? err.message : 'Failed to parse task'); } finally { setParsing(false); }
   };
 
@@ -77,6 +85,63 @@ export const TaskForm: React.FC<Props> = ({ initial, onSubmit, onCancel }) => {
                 </button>
                 <button onClick={() => setPhase('preview')} className={`${btnClasses} text-text-secondary border border-border-default hover:bg-bg-tertiary`}>Fill manually</button>
                 <button onClick={onCancel} className={`${btnClasses} bg-text-tertiary text-white hover:bg-gray-600`}>Cancel</button>
+              </div>
+            </>
+          )}
+
+          {phase === 'decisions' && (
+            <>
+              <Dialog.Title className="text-lg font-semibold text-white mb-1">Quick Decisions</Dialog.Title>
+              <p className="text-xs text-text-secondary mb-4">These help the AI make better choices. Defaults are pre-selected — just click Continue if they look right.</p>
+              {error && <div className="text-accent-red text-sm mb-3">{error}</div>}
+              {decisionPoints.map((dp, i) => (
+                <div key={i} className="mb-4 pb-3 border-b border-border-default last:border-0">
+                  <div className="text-sm font-medium text-text-primary mb-2">{dp.question}</div>
+                  <div className="flex flex-col gap-1.5">
+                    {dp.options.map((opt, j) => (
+                      <label key={j} className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer hover:text-text-primary">
+                        <input
+                          type="radio"
+                          name={`decision-${i}`}
+                          checked={selectedOptions[i] === j}
+                          onChange={() => {
+                            const next = [...selectedOptions];
+                            next[i] = j;
+                            setSelectedOptions(next);
+                          }}
+                          className="accent-accent-blue"
+                        />
+                        {opt}
+                        {j === dp.defaultIndex && <span className="text-[10px] text-accent-blue">(recommended)</span>}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => {
+                    const updatedSpec = { ...spec };
+                    for (let i = 0; i < decisionPoints.length; i++) {
+                      const dp = decisionPoints[i];
+                      const answer = dp.options[selectedOptions[i]];
+                      const field = dp.specField as keyof typeof updatedSpec;
+                      if (field in updatedSpec && field !== 'riskLevel') {
+                        const existing = updatedSpec[field] as string;
+                        (updatedSpec as Record<string, string>)[field] = existing
+                          ? `${existing}\n- Decision: ${dp.question} → ${answer}`
+                          : `- Decision: ${dp.question} → ${answer}`;
+                      }
+                    }
+                    setSpec(updatedSpec);
+                    setPhase('preview');
+                  }}
+                  className={`${btnClasses} bg-accent-blue text-white hover:bg-blue-600`}
+                >
+                  Continue
+                </button>
+                <button onClick={() => setPhase('preview')} className={`${btnClasses} text-text-secondary border border-border-default hover:bg-bg-tertiary`}>Skip</button>
+                <button onClick={() => setPhase('describe')} className={`${btnClasses} text-text-secondary border border-border-default hover:bg-bg-tertiary`}>← Back</button>
               </div>
             </>
           )}
