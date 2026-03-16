@@ -18,6 +18,22 @@ agentboard up          # Start server + worker
 agentboard down        # Graceful shutdown
 agentboard doctor      # Verify prerequisites (git, gh, node, claude)
 
+## Testing
+
+npm test               # Run backend tests
+npm run test:watch     # Watch mode
+npm run test:coverage  # Backend tests with coverage report
+
+### Writing tests
+
+- Co-locate tests with source: `foo.ts` → `foo.test.ts`, `Bar.tsx` → `Bar.test.tsx`
+- Use `createTestDb()` from `src/test/helpers.ts` for a fresh in-memory database per test
+- Use `createTestRepo()` for tests needing real git repos (auto-cleaned)
+- Use `createTestApp()` for API route tests with supertest
+- Backend tests run in Node environment, UI tests in jsdom
+- E2E tests live in `e2e/` and use Playwright with mock CLI scripts
+- Always run `npm test` before committing to verify nothing is broken
+
 ## Do
 
 - Use ES module imports with `.js` extensions (even for .ts files)
@@ -61,4 +77,4 @@ Subtasks execute serially: first child is `ready`, rest are `backlog`. On comple
 - DB uses a singleton pattern (`getDatabase()`) — don't create new connections
 - Worktrees live in `.agentboard/worktrees/` — subtasks share their parent's worktree
 - Recovery resets tasks claimed >30 minutes ago — keep this in mind when debugging long-running tasks
-- No test suite exists yet — verify changes manually via `npm run dev` + `agentboard up`
+- Run `npm test` to verify changes before committing
