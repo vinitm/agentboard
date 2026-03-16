@@ -19,6 +19,46 @@ interface Props {
   onMove: (id: string, column: TaskStatus) => Promise<Task>;
 }
 
+const AssumptionsPanel: React.FC<{ runs: Run[] }> = ({ runs }) => {
+  const [assumptions, setAssumptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    const planningRun = runs.find((r) => r.stage === 'planning' && r.status === 'success');
+    if (!planningRun) {
+      setAssumptions([]);
+      return;
+    }
+    api.get<Array<{ type: string; content: string }>>(`/api/artifacts?runId=${planningRun.id}`)
+      .then((artifacts) => {
+        const found = artifacts.find((a) => a.type === 'assumptions');
+        if (found) {
+          try {
+            setAssumptions(JSON.parse(found.content) as string[]);
+          } catch {
+            setAssumptions([]);
+          }
+        } else {
+          setAssumptions([]);
+        }
+      })
+      .catch(console.error);
+  }, [runs]);
+
+  if (assumptions.length === 0) return null;
+
+  return (
+    <div className="mb-4 pb-4 border-b border-border-default">
+      <h4 className="text-[11px] font-bold uppercase tracking-wider text-accent-amber mb-1.5">Assumptions</h4>
+      <div className="bg-accent-amber/10 border border-accent-amber/30 rounded-md p-3">
+        <p className="text-[11px] text-accent-amber mb-2">These decisions were made autonomously. Verify during PR review.</p>
+        <ul className="list-disc list-inside text-sm text-text-primary space-y-1">
+          {assumptions.map((a, i) => <li key={i}>{a}</li>)}
+        </ul>
+      </div>
+    </div>
+  );
+};
+
 const statusBadgeColor: Record<string, string> = {
   backlog: 'text-text-tertiary', ready: 'text-accent-blue', planning: 'text-accent-purple',
   implementing: 'text-accent-purple', checks: 'text-accent-purple', review_spec: 'text-accent-purple',
@@ -89,6 +129,9 @@ export const TaskDetail: React.FC<Props> = ({ task, onClose, onUpdate, onAnswer,
               )}
             </div>
           )}
+
+          {/* Assumptions */}
+          <AssumptionsPanel runs={runs} />
 
           {/* Status-specific panels */}
           {task.status === 'blocked' && task.blockedReason && (
