@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { TaskCard } from './TaskCard';
 import type { Task, TaskStatus } from '../types';
 
-const AGENT_COLUMNS: TaskStatus[] = ['planning', 'implementing', 'checks', 'review_spec', 'review_code'];
+const AGENT_COLUMNS: TaskStatus[] = ['planning', 'implementing', 'checks', 'review_panel'];
 
 const COLUMN_LABELS: Record<TaskStatus, string> = {
   backlog: 'Backlog',
@@ -11,8 +11,7 @@ const COLUMN_LABELS: Record<TaskStatus, string> = {
   planning: 'Planning',
   implementing: 'Implementing',
   checks: 'Checks',
-  review_spec: 'Review: Spec',
-  review_code: 'Review: Code',
+  review_panel: 'Review Panel',
   needs_human_review: 'Needs Human Review',
   done: 'Done',
   blocked: 'Blocked',

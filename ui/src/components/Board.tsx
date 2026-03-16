@@ -8,7 +8,7 @@ import type { Task, TaskStatus, RiskLevel } from '../types';
 
 const MAIN_COLUMNS: TaskStatus[] = [
   'backlog', 'ready', 'planning', 'implementing', 'checks',
-  'review_spec', 'review_code', 'needs_human_review', 'done',
+  'review_panel', 'needs_human_review', 'done',
 ];
 
 const EXTRA_COLUMNS: TaskStatus[] = ['blocked', 'failed', 'cancelled'];
