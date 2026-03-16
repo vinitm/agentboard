@@ -76,7 +76,9 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       return;
     }
 
-    const prompt = `You are a task parser. Given a short task description, extract structured fields for a software engineering task. Return ONLY valid JSON with no markdown fences or extra text.
+    const prompt = `You are a task parser. Given a short task description, extract structured fields for a software engineering task. Also anticipate likely ambiguities and generate decision points the implementer would need answered.
+
+Return ONLY valid JSON with no markdown fences or extra text.
 
 The JSON must have this exact shape:
 {
@@ -90,8 +92,23 @@ The JSON must have this exact shape:
     "constraints": "technical constraints or limitations",
     "verification": "how to verify this task is correct",
     "infrastructureAllowed": "what infrastructure changes are allowed"
-  }
+  },
+  "decisionPoints": [
+    {
+      "question": "A specific implementation question the developer would face",
+      "options": ["Option A", "Option B", "Option C"],
+      "defaultIndex": 0,
+      "specField": "constraints"
+    }
+  ]
 }
+
+Guidelines for decision points:
+- Generate 0-5 decision points for genuine ambiguities only
+- Each must have 2-4 concrete options with one recommended as defaultIndex
+- specField must be one of: context, acceptanceCriteria, constraints, verification, infrastructureAllowed
+- Focus on product behavior decisions, not implementation details
+- If the task is clear and unambiguous, return an empty decisionPoints array
 
 Guidelines for field inference:
 - riskLevel: "high" for DB migrations, auth changes, infra; "medium" for API changes, refactors; "low" for UI tweaks, docs, tests
@@ -133,6 +150,20 @@ Task description: ${description.trim()}`;
       }
       try {
         const parsed = JSON.parse(jsonStr);
+        // Validate and cap decision points
+        if (Array.isArray(parsed.decisionPoints)) {
+          parsed.decisionPoints = parsed.decisionPoints
+            .filter((dp: Record<string, unknown>) =>
+              typeof dp.question === 'string' &&
+              Array.isArray(dp.options) &&
+              dp.options.length >= 2 &&
+              typeof dp.defaultIndex === 'number' &&
+              typeof dp.specField === 'string'
+            )
+            .slice(0, 5);
+        } else {
+          parsed.decisionPoints = [];
+        }
         res.json(parsed);
       } catch {
         res.status(500).json({ error: 'Failed to parse AI response as JSON', raw: stdout });
