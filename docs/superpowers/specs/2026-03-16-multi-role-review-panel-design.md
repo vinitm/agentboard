@@ -40,7 +40,7 @@ The `TaskStatus` type replaces `'review_spec' | 'review_code'` with a single `'r
 
 ### Run Records
 
-Each reviewer invocation creates its own `Run` record in the database. The `Run.stage` field is `'review_panel'` (matching the `Stage` type). The reviewer role is stored in an `Artifact` attached to the Run with `type: 'review_role'` and `name` set to `'architect' | 'qa' | 'security'`. The artifact `content` holds the full reviewer output JSON. This keeps audit trails per-reviewer without polluting the `Stage` type union.
+Each reviewer invocation creates its own `Run` record in the database. The `Run.stage` field is `'review_panel'` (matching the `Stage` type). The reviewer role is stored in an `Artifact` attached to the Run with `type: 'review_result'` and `name` set to `'architect' | 'qa' | 'security'`. The artifact `content` holds the full reviewer output JSON. This keeps audit trails per-reviewer without polluting the `Stage` type union.
 
 ## Feedback Format
 
@@ -130,7 +130,7 @@ This gives the UI and event timeline enough information to display per-role resu
 ### Types & Config
 | File | Change |
 |---|---|
-| `src/types/index.ts` | `TaskStatus`: replace `review_spec \| review_code` with `review_panel`. `Stage`: same. `ModelDefaults`: replace `reviewSpec` + `reviewCode` with `review`. |
+| `src/types/index.ts` | `TaskStatus`: replace `review_spec \| review_code` with `review_panel`. `Stage`: same. `ModelDefaults`: replace `reviewSpec` + `reviewCode` with `review`. Keep `security` key unchanged. |
 | `ui/src/types.ts` | Mirror the `TaskStatus` and `Stage` changes. |
 
 ### Worker (backend)
@@ -150,10 +150,16 @@ This gives the UI and event timeline enough information to display per-role resu
 | `src/server/routes/tasks.ts` | Update `AGENT_CONTROLLED_COLUMNS`: replace `review_spec`, `review_code` with `review_panel`. |
 | `src/server/routes/tasks.test.ts` | Update test iterations over agent columns. |
 
+### CLI
+| File | Change |
+|---|---|
+| `src/cli/init.ts` | Update default config generation: emit `review: 'sonnet'` instead of `reviewSpec`/`reviewCode`. |
+
 ### Database
 | File | Change |
 |---|---|
 | `src/db/queries.ts` | Update any stage-specific queries referencing old stage names. Add migration function. |
+| `src/db/queries.test.ts` | Update `'review_code'` stage literal in test to `'review_panel'`. |
 | `src/db/schema.ts` | Call migration function after table creation. |
 
 ### Prompts
