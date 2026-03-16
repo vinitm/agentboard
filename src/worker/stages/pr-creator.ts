@@ -11,6 +11,7 @@ import {
   getLatestRunByTaskAndStage,
   listArtifactsByRun,
   getTaskById,
+  getSubtasksByParentId,
 } from '../../db/queries.js';
 
 export interface PRResult {
@@ -191,6 +192,46 @@ export async function createPR(
 }
 
 /**
+ * Collect all planning assumptions for a task and its subtasks.
+ */
+function collectAssumptions(db: Database.Database, task: Task): string[] {
+  const assumptions: string[] = [];
+
+  const planningRun = getLatestRunByTaskAndStage(db, task.id, 'planning');
+  if (planningRun) {
+    const artifacts = listArtifactsByRun(db, planningRun.id);
+    const assumptionArtifact = artifacts.find((a) => a.type === 'assumptions');
+    if (assumptionArtifact) {
+      try {
+        const parsed = JSON.parse(assumptionArtifact.content) as string[];
+        assumptions.push(...parsed);
+      } catch {
+        // Malformed JSON — skip
+      }
+    }
+  }
+
+  const subtasks = getSubtasksByParentId(db, task.id);
+  for (const subtask of subtasks) {
+    const subtaskRun = getLatestRunByTaskAndStage(db, subtask.id, 'planning');
+    if (subtaskRun) {
+      const artifacts = listArtifactsByRun(db, subtaskRun.id);
+      const assumptionArtifact = artifacts.find((a) => a.type === 'assumptions');
+      if (assumptionArtifact) {
+        try {
+          const parsed = JSON.parse(assumptionArtifact.content) as string[];
+          assumptions.push(...parsed);
+        } catch {
+          // Malformed JSON — skip
+        }
+      }
+    }
+  }
+
+  return assumptions;
+}
+
+/**
  * Build the PR body from task data and run artifacts.
  */
 function buildPRBody(db: Database.Database, task: Task): string {
@@ -209,6 +250,17 @@ function buildPRBody(db: Database.Database, task: Task): string {
 
   sections.push('## Summary');
   sections.push(planSummary);
+
+  // Assumptions from planning
+  const assumptions = collectAssumptions(db, task);
+  if (assumptions.length > 0) {
+    sections.push('## Assumptions Made');
+    sections.push('> These decisions were made autonomously. Please verify during review.');
+    sections.push('');
+    for (const assumption of assumptions) {
+      sections.push(`- ${assumption}`);
+    }
+  }
 
   // Task info
   sections.push('## Task');
