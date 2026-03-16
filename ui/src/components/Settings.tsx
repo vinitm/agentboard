@@ -3,7 +3,7 @@ import { api } from '../api/client';
 
 interface Commands { test: string | null; lint: string | null; format: string | null; formatFix: string | null; typecheck: string | null; security: string | null }
 interface Notifications { desktop: boolean; terminal: boolean }
-interface ModelDefaults { planning: string; implementation: string; reviewSpec: string; reviewCode: string; security: string }
+interface ModelDefaults { planning: string; implementation: string; review: string; security: string }
 interface Config {
   port: number; host: string; maxConcurrentTasks: number; maxAttemptsPerTask: number; maxReviewCycles: number; maxSubcardDepth: number;
   prDraft: boolean; autoMerge: boolean; prMethod: string; securityMode: string; branchPrefix: string; baseBranch: string; githubRemote: string;
@@ -98,7 +98,7 @@ export const Settings: React.FC = () => {
         )}
         {activeSection === 'models' && (
           <FormSection title="Model Defaults">
-            {(['planning', 'implementation', 'reviewSpec', 'reviewCode', 'security'] as const).map((key) => (
+            {(['planning', 'implementation', 'review', 'security'] as const).map((key) => (
               <Field key={key} label={key}><input type="text" value={config.modelDefaults[key]} onChange={(e) => setConfig({ ...config, modelDefaults: { ...config.modelDefaults, [key]: e.target.value } })} placeholder={`Model for ${key}`} className={inputClasses} /></Field>
             ))}
           </FormSection>

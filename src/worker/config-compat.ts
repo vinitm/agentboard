@@ -6,17 +6,15 @@ import type { AgentboardConfig } from '../types/index.js';
  * instead of the new 'review' key.
  */
 export function normalizeConfig(raw: Record<string, unknown>): AgentboardConfig {
-  const config = raw as AgentboardConfig;
-
   // Migrate old reviewSpec/reviewCode to review
-  if (config.modelDefaults) {
-    const md = config.modelDefaults as Record<string, string>;
-    if (!md.review && (md.reviewSpec || md.reviewCode)) {
-      md.review = md.reviewSpec ?? md.reviewCode ?? 'sonnet';
-      delete md.reviewSpec;
-      delete md.reviewCode;
+  if (raw.modelDefaults && typeof raw.modelDefaults === 'object') {
+    const md = raw.modelDefaults as Record<string, unknown>;
+    if (!md['review'] && (md['reviewSpec'] || md['reviewCode'])) {
+      md['review'] = md['reviewSpec'] ?? md['reviewCode'] ?? 'sonnet';
+      delete md['reviewSpec'];
+      delete md['reviewCode'];
     }
   }
 
-  return config;
+  return raw as unknown as AgentboardConfig;
 }
