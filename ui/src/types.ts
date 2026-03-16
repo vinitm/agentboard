@@ -6,8 +6,7 @@ export type TaskStatus =
   | 'planning'
   | 'implementing'
   | 'checks'
-  | 'review_spec'
-  | 'review_code'
+  | 'review_panel'
   | 'needs_human_review'
   | 'done'
   | 'blocked'
@@ -18,8 +17,7 @@ export type Stage =
   | 'planning'
   | 'implementing'
   | 'checks'
-  | 'review_spec'
-  | 'review_code'
+  | 'review_panel'
   | 'pr_creation';
 
 export type RunStatus = 'running' | 'success' | 'failed' | 'cancelled';
