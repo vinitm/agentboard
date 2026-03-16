@@ -9,7 +9,7 @@ import { SubtaskMiniCard } from './SubtaskMiniCard';
 import type { Task, Run, TaskStatus } from '../types';
 
 type Tab = 'logs' | 'events' | 'runs';
-const ACTIVE_STATUSES: TaskStatus[] = ['planning', 'implementing', 'checks', 'review_spec', 'review_code'];
+const ACTIVE_STATUSES: TaskStatus[] = ['planning', 'implementing', 'checks', 'review_panel'];
 
 function getInitialTab(): Tab {
   const hash = window.location.hash.slice(1);
@@ -19,8 +19,8 @@ function getInitialTab(): Tab {
 
 const statusBadgeColor: Record<string, string> = {
   backlog: 'bg-text-tertiary', ready: 'bg-accent-blue', planning: 'bg-accent-purple',
-  implementing: 'bg-accent-purple', checks: 'bg-accent-purple', review_spec: 'bg-accent-purple',
-  review_code: 'bg-accent-purple', needs_human_review: 'bg-accent-pink', done: 'bg-accent-green',
+  implementing: 'bg-accent-purple', checks: 'bg-accent-purple', review_panel: 'bg-accent-purple',
+  needs_human_review: 'bg-accent-pink', done: 'bg-accent-green',
   blocked: 'bg-accent-amber', failed: 'bg-accent-red', cancelled: 'bg-text-tertiary',
 };
 

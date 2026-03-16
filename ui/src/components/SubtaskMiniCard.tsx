@@ -11,8 +11,7 @@ const statusDotColor: Record<string, string> = {
   needs_human_review: 'bg-accent-pink',
   implementing: 'bg-accent-purple',
   checks: 'bg-accent-purple',
-  review_spec: 'bg-accent-purple',
-  review_code: 'bg-accent-purple',
+  review_panel: 'bg-accent-purple',
   planning: 'bg-accent-purple',
   blocked: 'bg-accent-amber',
   failed: 'bg-accent-red',
@@ -25,7 +24,7 @@ function leftBorderClass(status: string): string {
   if (status === 'blocked') return 'border-l-accent-amber';
   if (status === 'failed') return 'border-l-accent-red';
   if (status === 'needs_human_review') return 'border-l-accent-pink';
-  if (['planning', 'implementing', 'checks', 'review_spec', 'review_code'].includes(status)) return 'border-l-accent-purple';
+  if (['planning', 'implementing', 'checks', 'review_panel'].includes(status)) return 'border-l-accent-purple';
   if (status === 'done') return 'border-l-accent-green';
   return 'border-l-transparent';
 }

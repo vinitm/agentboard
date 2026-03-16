@@ -61,8 +61,8 @@ const AssumptionsPanel: React.FC<{ runs: Run[] }> = ({ runs }) => {
 
 const statusBadgeColor: Record<string, string> = {
   backlog: 'text-text-tertiary', ready: 'text-accent-blue', planning: 'text-accent-purple',
-  implementing: 'text-accent-purple', checks: 'text-accent-purple', review_spec: 'text-accent-purple',
-  review_code: 'text-accent-purple', needs_human_review: 'text-accent-pink', done: 'text-accent-green',
+  implementing: 'text-accent-purple', checks: 'text-accent-purple', review_panel: 'text-accent-purple',
+  needs_human_review: 'text-accent-pink', done: 'text-accent-green',
   blocked: 'text-accent-amber', failed: 'text-accent-red', cancelled: 'text-text-tertiary',
 };
 
@@ -82,7 +82,7 @@ export const TaskDetail: React.FC<Props> = ({ task, onClose, onUpdate, onAnswer,
     try { spec = JSON.parse(task.spec) as Partial<SpecTemplate>; } catch {}
   }
 
-  const isAgentActive = ['planning', 'implementing', 'checks', 'review_spec', 'review_code'].includes(task.status);
+  const isAgentActive = ['planning', 'implementing', 'checks', 'review_panel'].includes(task.status);
 
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
