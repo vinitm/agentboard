@@ -150,3 +150,11 @@ export interface AgentboardConfig {
   notifications: Notifications;
   ruflo: RufloConfig;
 }
+
+// ── Decision points for task creation ───────────────────────────────
+export interface DecisionPoint {
+  question: string;
+  options: string[];
+  defaultIndex: number;
+  specField: string;
+}

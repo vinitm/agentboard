@@ -74,3 +74,10 @@ export interface SpecTemplate {
   riskLevel: RiskLevel;
   infrastructureAllowed: string;
 }
+
+export interface DecisionPoint {
+  question: string;
+  options: string[];
+  defaultIndex: number;
+  specField: string;
+}
