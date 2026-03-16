@@ -78,3 +78,12 @@ Subtasks execute serially: first child is `ready`, rest are `backlog`. On comple
 - Worktrees live in `.agentboard/worktrees/` — subtasks share their parent's worktree
 - Recovery resets tasks claimed >30 minutes ago — keep this in mind when debugging long-running tasks
 - Run `npm test` to verify changes before committing
+
+### Subtask pipeline
+
+- Subtasks reuse the parent's worktree and branch — they have NO git_refs of their own. Code that needs a git ref for a subtask must fall back to the parent's ref via `task.parentTaskId`.
+- Subtasks skip PR creation — the parent creates a single PR after all subtasks complete (in `checkAndUpdateParentStatus`).
+- The `task` object passed through `processTask → runImplementationLoop → runReviewAndPR` is fetched ONCE at claim time. Its `.status` becomes stale as the pipeline progresses. Any function that checks `task.status` for a decision (e.g., `checkAndUpdateParentStatus`) must re-fetch from DB.
+- `commitChanges()` returns empty string (no-op) when there are no staged changes. Callers must handle this gracefully — review retries often produce no new changes because the code was already committed in the previous cycle.
+- When a subtask fails, remaining `backlog` siblings are cancelled automatically so the parent can resolve to `failed`. Without this, `backlog` siblings (non-terminal) block parent resolution forever.
+- `checkAndUpdateParentStatus` is async — it triggers PR creation for the parent when all subtasks succeed. All call sites must `await` it.

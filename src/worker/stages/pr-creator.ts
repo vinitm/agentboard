@@ -10,6 +10,7 @@ import {
   updateGitRef,
   getLatestRunByTaskAndStage,
   listArtifactsByRun,
+  getTaskById,
 } from '../../db/queries.js';
 
 export interface PRResult {
@@ -42,8 +43,11 @@ export async function createPR(
   });
 
   try {
-    // Get the git ref for this task
-    const gitRefs = listGitRefsByTask(db, task.id);
+    // Get the git ref for this task (subtasks reuse parent's worktree/branch)
+    let gitRefs = listGitRefsByTask(db, task.id);
+    if (gitRefs.length === 0 && task.parentTaskId) {
+      gitRefs = listGitRefsByTask(db, task.parentTaskId);
+    }
     if (gitRefs.length === 0) {
       throw new Error(`No git ref found for task ${task.id}`);
     }
@@ -72,6 +76,19 @@ export async function createPR(
 
     // Build PR body
     const prBody = buildPRBody(db, task);
+
+    // Ensure required labels exist on the repo (gh label create is idempotent)
+    const labels = ['agentboard', `risk:${task.riskLevel}`];
+    for (const label of labels) {
+      await new Promise<void>((resolve) => {
+        const child = spawn('gh', ['label', 'create', label, '--force'], {
+          cwd: worktreePath,
+          stdio: 'pipe',
+        });
+        child.on('close', () => resolve());
+        child.on('error', () => resolve());
+      });
+    }
 
     // Create PR via gh CLI
     const ghArgs = [

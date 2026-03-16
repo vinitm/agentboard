@@ -75,7 +75,7 @@ describe('commitChanges', () => {
     expect(sha).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  it('throws when there are no changes to commit', async () => {
+  it('returns empty string when there are no changes to commit', async () => {
     const { worktreePath } = await createWorktree(
       repoPath,
       'task-4',
@@ -84,9 +84,8 @@ describe('commitChanges', () => {
       'agentboard/'
     );
 
-    await expect(commitChanges(worktreePath, 'empty commit')).rejects.toThrow(
-      'No changes to commit'
-    );
+    const result = await commitChanges(worktreePath, 'empty commit');
+    expect(result).toBe('');
   });
 });
 

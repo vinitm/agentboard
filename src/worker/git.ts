@@ -62,6 +62,7 @@ export async function cleanupWorktree(repoPath: string, worktreePath: string, br
 
 /**
  * Stage all changes and commit, returning the commit SHA.
+ * Returns empty string if there are no changes to commit (no-op).
  */
 export async function commitChanges(
   worktreePath: string,
@@ -73,11 +74,9 @@ export async function commitChanges(
   try {
     await git(['diff', '--cached', '--quiet'], worktreePath);
     // If diff --cached --quiet exits 0, there are NO changes staged
-    throw new Error('No changes to commit — implementation produced no file modifications');
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('No changes to commit')) {
-      throw error;
-    }
+    console.log('[git] No changes to commit — skipping');
+    return '';
+  } catch {
     // diff --cached --quiet exits 1 when there ARE changes — proceed with commit
   }
 

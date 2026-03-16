@@ -62,8 +62,12 @@ export function createWorkerLoop(
   loadRufloHooks(hooks, config);
 
   /** After a subtask reaches a terminal state, promote next sibling or update parent. */
-  function checkAndUpdateParentStatus(task: Task): void {
+  async function checkAndUpdateParentStatus(task: Task): Promise<void> {
     if (!task.parentTaskId) return;
+
+    // Re-fetch the task to get current status (the in-memory task object may be stale)
+    const freshTask = getTaskById(db, task.id);
+    if (!freshTask) return;
 
     const parent = getTaskById(db, task.parentTaskId);
     const terminalStatuses: TaskStatus[] = ['needs_human_review', 'done', 'failed', 'cancelled'];
@@ -73,7 +77,7 @@ export function createWorkerLoop(
     if (!parent || terminalStatuses.includes(parent.status)) return;
 
     // If this subtask succeeded, promote the next backlog sibling to ready
-    if (successStatuses.includes(task.status)) {
+    if (successStatuses.includes(freshTask.status)) {
       const nextSubtask = getNextBacklogSubtask(db, task.parentTaskId);
       if (nextSubtask) {
         updateTask(db, nextSubtask.id, { status: 'ready' });
@@ -92,13 +96,80 @@ export function createWorkerLoop(
         return; // Not all siblings are done yet — don't update parent
       }
     }
-    // If subtask failed/cancelled, do NOT promote — fall through to check if all are terminal
+    // If subtask failed/cancelled, cancel remaining backlog siblings so parent can resolve
+    if (!successStatuses.includes(freshTask.status)) {
+      const siblings = getSubtasksByParentId(db, task.parentTaskId);
+      for (const sibling of siblings) {
+        if (sibling.status === 'backlog') {
+          updateTask(db, sibling.id, { status: 'cancelled' });
+          createAndBroadcastEvent(
+            sibling.id,
+            'status_changed',
+            JSON.stringify({
+              from: 'backlog',
+              to: 'cancelled',
+              reason: 'sibling_failed',
+            })
+          );
+          broadcast(io, 'task:updated', { taskId: sibling.id, status: 'cancelled' });
+        }
+      }
+    }
 
     const siblings = getSubtasksByParentId(db, task.parentTaskId);
     const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
     if (!allTerminal) return;
 
     const anyFailed = siblings.some(s => s.status === 'failed');
+
+    // If all subtasks succeeded, create a single PR for the parent
+    if (!anyFailed) {
+      const parentGitRefs = listGitRefsByTask(db, task.parentTaskId);
+      if (parentGitRefs.length > 0 && parentGitRefs[0].worktreePath) {
+        const worktreePath = parentGitRefs[0].worktreePath;
+
+        // Load per-project config for PR creation
+        const project = getProjectById(db, parent.projectId);
+        if (project) {
+          const projectConfigDir = path.join(project.path, '.agentboard');
+          let projectConfig: AgentboardConfig;
+          try {
+            const raw = fs.readFileSync(path.join(projectConfigDir, 'config.json'), 'utf-8');
+            projectConfig = JSON.parse(raw) as AgentboardConfig;
+          } catch {
+            projectConfig = config;
+          }
+
+          try {
+            await runHook(hooks, 'beforeStage', makeHookContext(parent, 'pr_creation', worktreePath, projectConfig));
+            const prResult = await createPR(db, parent, worktreePath, projectConfig, createLogStreamer(parent.id, `pr-${parent.id}`));
+            await runHook(hooks, 'afterStage', makeHookContext(parent, 'pr_creation', worktreePath, projectConfig));
+
+            createAndBroadcastEvent(
+              parent.id,
+              'pr_created',
+              JSON.stringify({
+                prUrl: prResult.prUrl,
+                prNumber: prResult.prNumber,
+              })
+            );
+            notify('PR Created', `PR for "${parent.title}" is ready for review`, projectConfig);
+
+            const memory = loadMemory(projectConfigDir);
+            recordConvention(memory, `task:${parent.id}:pr`, `PR #${prResult.prNumber} created successfully`);
+            saveMemory(projectConfigDir, memory);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            createAndBroadcastEvent(
+              parent.id,
+              'pr_creation_failed',
+              JSON.stringify({ error: errorMessage })
+            );
+          }
+        }
+      }
+    }
+
     const newParentStatus: TaskStatus = anyFailed ? 'failed' : 'needs_human_review';
 
     updateTask(db, task.parentTaskId, {
@@ -291,10 +362,14 @@ export function createWorkerLoop(
       await runHook(hooks, 'afterStage', makeHookContext(task, 'checks', worktreePath, config));
 
       if (checksResult.passed) {
-        // Commit the implementation
+        // Commit the implementation with a contextual prefix
+        const titleLower = task.title.toLowerCase();
+        const isDocChange = /\b(doc|readme|changelog|\.md|documentation)\b/i.test(titleLower);
+        const isFix = /\b(fix|bug|patch|repair|resolve)\b/i.test(titleLower);
+        const commitPrefix = isDocChange ? 'docs' : isFix ? 'fix' : 'feat';
         await commitChanges(
           worktreePath,
-          `feat: implement ${task.title}`
+          `${commitPrefix}: ${task.title}`
         );
 
         // Run review cycle and PR creation
@@ -352,7 +427,7 @@ export function createWorkerLoop(
     );
     broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
     notify('Task Failed', `"${task.title}" failed after ${config.maxAttemptsPerTask} attempts`, config);
-    checkAndUpdateParentStatus(task);
+    await checkAndUpdateParentStatus(task);
     await runHook(hooks, 'onError', makeHookContext(task, 'implementing', worktreePath, config));
   }
 
@@ -534,48 +609,50 @@ export function createWorkerLoop(
       );
       broadcast(io, 'task:updated', { taskId: task.id, status: 'failed' });
       notify('Task Failed', `"${task.title}" failed: review cycles exhausted`, config);
-      checkAndUpdateParentStatus(task);
+      await checkAndUpdateParentStatus(task);
       return;
     }
 
-    // ── PR creation ──────────────────────────────────────────────────────
-    try {
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'pr_creation', worktreePath, config));
-      const prResult = await createPR(db, task, worktreePath, config, createLogStreamer(task.id, `pr-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'pr_creation', worktreePath, config));
+    // ── PR creation (skip for subtasks — parent creates a single PR) ──────
+    if (!task.parentTaskId) {
+      try {
+        await runHook(hooks, 'beforeStage', makeHookContext(task, 'pr_creation', worktreePath, config));
+        const prResult = await createPR(db, task, worktreePath, config, createLogStreamer(task.id, `pr-${task.id}`));
+        await runHook(hooks, 'afterStage', makeHookContext(task, 'pr_creation', worktreePath, config));
 
-      createAndBroadcastEvent(
-        task.id,
-        'pr_created',
-        JSON.stringify({
-          prUrl: prResult.prUrl,
-          prNumber: prResult.prNumber,
-          reviewCycles: reviewCycle,
-        })
-      );
-      notify('PR Created', `PR for "${task.title}" is ready for review`, config);
+        createAndBroadcastEvent(
+          task.id,
+          'pr_created',
+          JSON.stringify({
+            prUrl: prResult.prUrl,
+            prNumber: prResult.prNumber,
+            reviewCycles: reviewCycle,
+          })
+        );
+        notify('PR Created', `PR for "${task.title}" is ready for review`, config);
 
-      // Record any conventions learned from successful PR creation
-      recordConvention(memory, `task:${task.id}:pr`, `PR #${prResult.prNumber} created successfully`);
-      saveMemory(configDir, memory);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+        // Record any conventions learned from successful PR creation
+        recordConvention(memory, `task:${task.id}:pr`, `PR #${prResult.prNumber} created successfully`);
+        saveMemory(configDir, memory);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
 
-      createAndBroadcastEvent(
-        task.id,
-        'pr_creation_failed',
-        JSON.stringify({ error: errorMessage })
-      );
-      // Even if PR creation fails, move to needs_human_review
-      // so a human can manually create the PR
+        createAndBroadcastEvent(
+          task.id,
+          'pr_creation_failed',
+          JSON.stringify({ error: errorMessage })
+        );
+        // Even if PR creation fails, move to needs_human_review
+        // so a human can manually create the PR
+      }
     }
 
     // Move to needs_human_review
     updateTask(db, task.id, { status: 'needs_human_review' });
     unclaimTask(db, task.id);
     // Check if parent should be updated now that this subtask is done
-    checkAndUpdateParentStatus(task);
+    await checkAndUpdateParentStatus(task);
     createAndBroadcastEvent(
       task.id,
       'status_changed',
@@ -780,7 +857,7 @@ export function createWorkerLoop(
         console.error(`[worker] Failed to unclaim task ${task.id}:`, e);
       }
       // Check if parent should be updated now that this subtask failed
-      checkAndUpdateParentStatus(task);
+      await checkAndUpdateParentStatus(task);
 
       // Broadcast error to live logs
       try {
