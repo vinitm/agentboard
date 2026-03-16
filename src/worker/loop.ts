@@ -26,8 +26,7 @@ import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
 import { runPlanning } from './stages/planner.js';
 import { runImplementation } from './stages/implementer.js';
 import { runChecks } from './stages/checks.js';
-import { runSpecReview } from './stages/review-spec.js';
-import { runCodeReview } from './stages/review-code.js';
+import { runReviewPanel, formatPanelFeedback } from './stages/review-panel.js';
 import { createPR } from './stages/pr-creator.js';
 import { createHooks, loadRufloHooks, runHook } from './hooks.js';
 import type { HookContext } from './hooks.js';
@@ -413,9 +412,8 @@ export function createWorkerLoop(
   }
 
   /**
-   * Run the review stages (spec + code) and PR creation.
-   * If a review fails, cycle back to implementing (up to maxReviewCycles).
-   * If cycles are exhausted, create the PR anyway with a note.
+   * Run the review panel (3 parallel reviewers) and PR creation.
+   * If the panel fails, cycle back to implementing (up to maxReviewCycles).
    */
   async function runReviewAndPR(
     task: Task,
@@ -427,156 +425,101 @@ export function createWorkerLoop(
     configDir: string
   ): Promise<void> {
     let reviewCycle = 0;
-    let specPassed = false;
-    let codePassed = false;
+    let panelPassed = false;
 
     while (reviewCycle < config.maxReviewCycles) {
       reviewCycle++;
 
-      // ── Spec review ──────────────────────────────────────────────────
-      updateTask(db, task.id, { status: 'review_spec' });
+      // ── Review panel (3 parallel reviewers) ────────────────────────
+      updateTask(db, task.id, { status: 'review_panel' });
       createAndBroadcastEvent(
         task.id,
         'status_changed',
-        JSON.stringify({ from: task.status, to: 'review_spec', reviewCycle })
+        JSON.stringify({ from: task.status, to: 'review_panel', reviewCycle })
       );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'review_spec' });
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'review_panel' });
 
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_spec', worktreePath, config));
-      const specResult = await runSpecReview(db, task, worktreePath, config, createLogStreamer(task.id, `review-spec-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'review_spec', worktreePath, config));
+      await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_panel', worktreePath, config));
+      const panelResult = await runReviewPanel(db, task, worktreePath, config, createLogStreamer(task.id, `review-panel-${task.id}`));
+      await runHook(hooks, 'afterStage', makeHookContext(task, 'review_panel', worktreePath, config));
 
-      if (!specResult.passed) {
+      if (panelResult.passed) {
+        panelPassed = true;
+
         createAndBroadcastEvent(
           task.id,
-          'review_spec_failed',
+          'review_panel_completed',
           JSON.stringify({
             reviewCycle,
-            feedback: specResult.feedback,
-            issues: specResult.issues,
+            results: panelResult.results.map(r => ({ role: r.role, passed: r.passed, issues: r.issues })),
           })
         );
-
-        if (reviewCycle >= config.maxReviewCycles) {
-          // Exhausted review cycles — proceed to PR with note
-          break;
-        }
-
-        // Cycle back to implementing with review feedback
-        updateTask(db, task.id, { status: 'implementing' });
-        createAndBroadcastEvent(
-          task.id,
-          'status_changed',
-          JSON.stringify({
-            from: 'review_spec',
-            to: 'implementing',
-            reason: 'spec_review_failed',
-            reviewCycle,
-          })
-        );
-        broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
-
-        // Re-run implementation with feedback
-        const implResult = await runImplementation(db, task, worktreePath, config, reviewCycle + 1, createLogStreamer(task.id, `review-impl-${reviewCycle}`));
-        if (!implResult.success) {
-          break; // Will fall through to PR creation with note
-        }
-
-        // Re-run checks
-        updateTask(db, task.id, { status: 'checks' });
-        createAndBroadcastEvent(
-          task.id,
-          'status_changed',
-          JSON.stringify({ from: 'implementing', to: 'checks' })
-        );
-        broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
-
-        const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-review-${task.id}`));
-        if (!checksResult.passed) {
-          break; // Will fall through to PR creation with note
-        }
-
-        await commitChanges(worktreePath, `feat: address spec review feedback (cycle ${reviewCycle})`);
-        continue; // Go back to spec review
+        break;
       }
 
-      specPassed = true;
+      // Panel failed — emit event with per-role details
+      createAndBroadcastEvent(
+        task.id,
+        'review_panel_failed',
+        JSON.stringify({
+          reviewCycle,
+          results: panelResult.results.map(r => ({ role: r.role, passed: r.passed, issues: r.issues })),
+        })
+      );
 
-      // ── Code review ──────────────────────────────────────────────────
-      updateTask(db, task.id, { status: 'review_code' });
+      if (reviewCycle >= config.maxReviewCycles) {
+        break;
+      }
+
+      // Format and store feedback for the implementer
+      const feedbackText = formatPanelFeedback(panelResult.results, reviewCycle, config.maxReviewCycles);
+
+      createAndBroadcastEvent(
+        task.id,
+        'review_panel_feedback',
+        JSON.stringify({ feedback: feedbackText, reviewCycle })
+      );
+
+      // Cycle back to implementing with combined feedback
+      updateTask(db, task.id, { status: 'implementing' });
       createAndBroadcastEvent(
         task.id,
         'status_changed',
-        JSON.stringify({ from: 'review_spec', to: 'review_code', reviewCycle })
+        JSON.stringify({
+          from: 'review_panel',
+          to: 'implementing',
+          reason: 'review_panel_failed',
+          reviewCycle,
+        })
       );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'review_code' });
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'review_code', worktreePath, config));
-      const codeResult = await runCodeReview(db, task, worktreePath, config, createLogStreamer(task.id, `review-code-${task.id}`));
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'review_code', worktreePath, config));
-
-      if (!codeResult.passed) {
-        createAndBroadcastEvent(
-          task.id,
-          'review_code_failed',
-          JSON.stringify({
-            reviewCycle,
-            feedback: codeResult.feedback,
-            issues: codeResult.issues,
-          })
-        );
-
-        if (reviewCycle >= config.maxReviewCycles) {
-          // Exhausted review cycles — proceed to PR with note
-          break;
-        }
-
-        // Cycle back to implementing with review feedback
-        updateTask(db, task.id, { status: 'implementing' });
-        createAndBroadcastEvent(
-          task.id,
-          'status_changed',
-          JSON.stringify({
-            from: 'review_code',
-            to: 'implementing',
-            reason: 'code_review_failed',
-            reviewCycle,
-          })
-        );
-        broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
-
-        // Re-run implementation with feedback
-        const implResult = await runImplementation(db, task, worktreePath, config, reviewCycle + 1, createLogStreamer(task.id, `review-impl-${reviewCycle}`));
-        if (!implResult.success) {
-          break; // Will fall through to PR creation with note
-        }
-
-        // Re-run checks
-        updateTask(db, task.id, { status: 'checks' });
-        createAndBroadcastEvent(
-          task.id,
-          'status_changed',
-          JSON.stringify({ from: 'implementing', to: 'checks' })
-        );
-        broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
-
-        const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-review-${task.id}`));
-        if (!checksResult.passed) {
-          break; // Will fall through to PR creation with note
-        }
-
-        await commitChanges(worktreePath, `feat: address code review feedback (cycle ${reviewCycle})`);
-        continue; // Go back to spec review
+      // Re-run implementation with review feedback
+      const implResult = await runImplementation(db, task, worktreePath, config, reviewCycle + 1, createLogStreamer(task.id, `review-impl-${reviewCycle}`));
+      if (!implResult.success) {
+        break;
       }
 
-      // Both reviews passed — proceed to PR creation
-      specPassed = true;
-      codePassed = true;
-      break;
+      // Re-run checks
+      updateTask(db, task.id, { status: 'checks' });
+      createAndBroadcastEvent(
+        task.id,
+        'status_changed',
+        JSON.stringify({ from: 'implementing', to: 'checks' })
+      );
+      broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
+
+      const checksResult = await runChecks(db, task, worktreePath, config, createLogStreamer(task.id, `checks-review-${task.id}`));
+      if (!checksResult.passed) {
+        break;
+      }
+
+      await commitChanges(worktreePath, `feat: address review panel feedback (cycle ${reviewCycle})`);
+      continue;
     }
 
-    // If reviews didn't pass, fail the task instead of creating a broken PR
-    if (!specPassed || !codePassed) {
+    // If panel didn't pass, fail the task
+    if (!panelPassed) {
       updateTask(db, task.id, { status: 'failed' });
       unclaimTask(db, task.id);
       createAndBroadcastEvent(
@@ -594,7 +537,7 @@ export function createWorkerLoop(
       return;
     }
 
-    // ── PR creation (skip for subtasks — parent creates a single PR) ──────
+    // ── PR creation (skip for subtasks) ────────────────────────────────
     if (!task.parentTaskId) {
       try {
         await runHook(hooks, 'beforeStage', makeHookContext(task, 'pr_creation', worktreePath, config));
@@ -612,27 +555,21 @@ export function createWorkerLoop(
         );
         notify('PR Created', `PR for "${task.title}" is ready for review`, config);
 
-        // Record any conventions learned from successful PR creation
         recordConvention(memory, `task:${task.id}:pr`, `PR #${prResult.prNumber} created successfully`);
         saveMemory(configDir, memory);
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-
+        const errorMessage = error instanceof Error ? error.message : String(error);
         createAndBroadcastEvent(
           task.id,
           'pr_creation_failed',
           JSON.stringify({ error: errorMessage })
         );
-        // Even if PR creation fails, move to needs_human_review
-        // so a human can manually create the PR
       }
     }
 
     // Move to needs_human_review
     updateTask(db, task.id, { status: 'needs_human_review' });
     unclaimTask(db, task.id);
-    // Check if parent should be updated now that this subtask is done
     await checkAndUpdateParentStatus(task);
     createAndBroadcastEvent(
       task.id,
@@ -643,10 +580,7 @@ export function createWorkerLoop(
         reviewCycles: reviewCycle,
       })
     );
-    broadcast(io, 'task:updated', {
-      taskId: task.id,
-      status: 'needs_human_review',
-    });
+    broadcast(io, 'task:updated', { taskId: task.id, status: 'needs_human_review' });
     notify('Task Complete', `"${task.title}" is ready for human review`, config);
     await runHook(hooks, 'onTaskComplete', makeHookContext(task, 'pr_creation', worktreePath, config));
   }
