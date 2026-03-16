@@ -309,28 +309,6 @@ export function createWorkerLoop(
       );
       await runHook(hooks, 'afterStage', makeHookContext(task, 'implementing', worktreePath, config));
 
-      // If needs user input → block the task
-      if (implResult.needsUserInput && implResult.needsUserInput.length > 0) {
-        updateTask(db, task.id, {
-          status: 'blocked',
-          blockedReason: `Implementation needs input:\n${implResult.needsUserInput.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
-        });
-        unclaimTask(db, task.id);
-        createAndBroadcastEvent(
-          task.id,
-          'status_changed',
-          JSON.stringify({
-            from: 'implementing',
-            to: 'blocked',
-            reason: 'needs_user_input',
-            questions: implResult.needsUserInput,
-          })
-        );
-        broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
-        notify('Task Blocked', `"${task.title}" needs human input`, config);
-        return;
-      }
-
       // If implementation failed, record and try again
       if (!implResult.success) {
         createAndBroadcastEvent(
