@@ -20,6 +20,8 @@ Comprehensive testing strategy for agentboard covering backend, frontend, and E2
 | @testing-library/jest-dom | DOM assertion matchers |
 | Playwright | E2E browser tests |
 
+All dependencies above are pre-approved as part of this testing initiative.
+
 ## Project Setup
 
 ### Two Vitest Configs
@@ -68,6 +70,7 @@ src/
     git.test.ts
     recovery.test.ts
     hooks.test.ts
+    notifications.test.ts
     loop.test.ts
     stages/
       planner.test.ts
@@ -99,7 +102,10 @@ ui/
       Board.test.tsx
       TaskCard.test.tsx
       TaskDetail.test.tsx
-      SubtaskCards.test.tsx
+      SubtaskMiniCard.test.tsx
+      TaskForm.test.tsx
+      RunHistory.test.tsx
+      LogViewer.test.tsx
 e2e/
   pipeline.spec.ts
   subtasks.spec.ts
@@ -115,7 +121,7 @@ e2e/
 
 ### `src/db/schema.test.ts`
 
-- Schema creates all 7 tables (projects, tasks, runs, artifacts, git_refs, events)
+- Schema creates all 6 tables (projects, tasks, runs, artifacts, git_refs, events)
 - Indexes exist
 - WAL mode is enabled
 - Foreign keys are enforced
@@ -189,6 +195,13 @@ Each test gets a fresh in-memory database via `createTestDb()`.
 - Tasks claimed >30 min ago get unclaimed
 - Tasks claimed <30 min ago are untouched
 - Stalled subtask chains promote next sibling
+
+### Notifications
+
+**`src/worker/notifications.test.ts`:**
+- Desktop notification sent on task completion
+- Terminal notification sent on task failure
+- Gracefully handles notification system unavailability
 
 ### Hook execution
 
@@ -310,10 +323,28 @@ Each test gets a fresh in-memory database via `createTestDb()`.
 - Status transitions via buttons
 - Displays run history with stage labels
 
-**`ui/src/components/SubtaskCards.test.tsx`:**
+**`ui/src/components/SubtaskMiniCard.test.tsx`:**
 - Renders mini-cards for each subtask
 - Shows failure state visually
 - Links to subtask detail
+
+**`ui/src/components/TaskForm.test.tsx`:**
+- Renders form fields for creating/editing tasks
+- Validates required fields
+- Submits correct payload
+
+**`ui/src/components/RunHistory.test.tsx`:**
+- Renders run list with stage labels and status
+- Shows token usage and duration
+- Expands to show run output
+
+**`ui/src/components/LogViewer.test.tsx`:**
+- Renders streaming log output
+- Auto-scrolls to bottom on new content
+- Handles large output without performance issues
+
+**Intentionally excluded** (thin wrapper/presentational components with minimal logic):
+ActivityFeed, BlockedPanel, Column, CopyButton, EventsTimeline, PRPanel, Settings, Sidebar, TaskPage, Toast, TopBar.
 
 **Socket.IO integration:**
 - Mock `socket.io-client` — verify components update on incoming events
@@ -353,7 +384,7 @@ Each test gets a fresh in-memory database via `createTestDb()`.
 **Test infrastructure:**
 - `e2e/fixtures/mock-claude` — shell script returning canned JSON per stage
 - `e2e/fixtures/mock-gh` — shell script faking PR creation
-- `globalSetup.ts` — starts server, seeds test project, tears down after suite
+- `globalSetup.ts` — starts server on a random available port (to avoid conflicts with dev instances), seeds test project, tears down after suite
 
 ## CLAUDE.md Updates
 
@@ -380,6 +411,8 @@ npm run test:coverage  # Backend tests with coverage report
 - E2E tests live in `e2e/` and use Playwright with mock CLI scripts
 - Always run `npm test` before committing to verify nothing is broken
 ```
+
+Also update the Gotchas section: remove "No test suite exists yet" and replace with "Run `npm test` to verify changes before committing."
 
 ## Implementation Order
 
