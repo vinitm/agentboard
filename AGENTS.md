@@ -12,78 +12,61 @@ npm run build:ui       # React/Vite UI only
 npm run dev            # Watch mode with auto-reload (tsx)
 npm start              # Run compiled dist/bin/agentboard.js
 
-# CLI
-agentboard init        # Initialize .agentboard/ config in a repo
-agentboard up          # Start server + worker
-agentboard down        # Graceful shutdown
-agentboard doctor      # Verify prerequisites (git, gh, node, claude)
-
-## Testing
+### Testing
 
 npm test               # Run backend tests
 npm run test:watch     # Watch mode
 npm run test:coverage  # Backend tests with coverage report
 
-### Writing tests
+### CLI
 
-- Co-locate tests with source: `foo.ts` → `foo.test.ts`, `Bar.tsx` → `Bar.test.tsx`
-- Use `createTestDb()` from `src/test/helpers.ts` for a fresh in-memory database per test
-- Use `createTestRepo()` for tests needing real git repos (auto-cleaned)
-- Use `createTestApp()` for API route tests with supertest
-- Backend tests run in Node environment, UI tests in jsdom
-- E2E tests live in `e2e/` and use Playwright with mock CLI scripts
-- Always run `npm test` before committing to verify nothing is broken
+agentboard init        # Initialize .agentboard/ config in a repo
+agentboard up          # Start server + worker
+agentboard down        # Graceful shutdown
+agentboard doctor      # Verify prerequisites (git, gh, node, claude)
 
-## Do
+## Code Style & Conventions
 
-- Use ES module imports with `.js` extensions (even for .ts files)
-- Use `console.log` with bracketed prefixes for logging: `[worker]`, `[http]`, `[recovery]`
-- Use prepared statements for all DB queries (see src/db/queries.ts)
-- Convert DB rows from snake_case to camelCase via row conversion functions
-- Use `execFile` (promisified) for shell commands, never `exec`
-- Keep prompt templates in `prompts/` as markdown files
-- Follow existing stage patterns in `src/worker/stages/` when adding pipeline stages
+- ES module imports with `.js` extensions (even for .ts files) — see [docs/gotchas/imports.md](docs/gotchas/imports.md)
+- `console.log` with bracketed prefixes: `[worker]`, `[http]`, `[recovery]`
+- Prepared statements for all DB queries (see src/db/queries.ts)
+- snake_case DB columns → camelCase TypeScript via row-conversion functions
+- `execFile` (promisified) for shell commands, never `exec`
+- Prompt templates in `prompts/` as markdown files
+- Follow existing stage patterns in `src/worker/stages/`
 
-## Don't
+## Testing Requirements
+
+- Co-locate tests: `foo.ts` → `foo.test.ts`, `Bar.tsx` → `Bar.test.tsx`
+- `createTestDb()` from `src/test/helpers.ts` for in-memory DB per test
+- `createTestRepo()` for tests needing real git repos (auto-cleaned)
+- `createTestApp()` for API route tests with supertest
+- Backend: Node environment. UI: jsdom. E2E: Playwright in `e2e/`
+- Run `npm test` before committing
+
+## Architecture & Boundaries
+
+3 layers: CLI (`src/cli/`) → Server+Worker (`src/server/`, `src/worker/`) → DB (`src/db/`)
+
+Pipeline: backlog → ready → planning → implementing → checks → review_spec → review_code → pr_creation → needs_human_review → done
+
+Subtasks execute serially. First child is `ready`, rest `backlog`. Parent creates single PR after all succeed.
+
+See [docs/architecture/](docs/architecture/) for ADRs on key design decisions.
+See [docs/gotchas/](docs/gotchas/) for known pitfalls by subsystem.
+
+## Never Do / Always Ask First
 
 - Don't use `any` — strict TypeScript throughout
 - Don't add dependencies without discussion
-- Don't modify the worker loop's 5-second polling interval or stage ordering without understanding the full pipeline
+- Don't modify the worker loop's 5-second polling or stage ordering without understanding the full pipeline
 - Don't commit directly to master — agentboard creates feature branches per task
 - Don't hardcode model names — use config.modelDefaults and model-selector.ts
+- Don't create new DB connections — use `getDatabase()` singleton
 
-## Architecture
+## References
 
-The system has 3 layers: CLI → Server+Worker → Database.
-
-- **CLI** (`src/cli/`) — Commands: init, up, down, doctor
-- **Server** (`src/server/`) — Express API + Socket.IO for real-time UI updates
-- **Worker** (`src/worker/loop.ts`) — Polls DB every 5s, claims ready tasks, runs them through 6 stages
-- **Stages** (`src/worker/stages/`) — planner, implementer, checks, review-spec, review-code, pr-creator
-- **DB** (`src/db/`) — SQLite with WAL mode. Schema in schema.ts, queries in queries.ts
-- **UI** (`ui/`) — React + Tailwind + Radix UI + dnd-kit. Vite build, Socket.IO for live updates
-- **Types** (`src/types/index.ts`) — All shared interfaces and type unions
-
-### Pipeline flow
-
-backlog → ready → planning → implementing → checks → review_spec → review_code → pr_creation → needs_human_review → done
-
-Subtasks execute serially: first child is `ready`, rest are `backlog`. On completion, next sibling is promoted.
-
-## Gotchas
-
-- Imports MUST use `.js` extension (NodeNext module resolution) even for TypeScript files
-- The worker spawns Claude Code via `claude --print --permission-mode acceptEdits` — changes to executor.ts affect all agent runs
-- DB uses a singleton pattern (`getDatabase()`) — don't create new connections
-- Worktrees live in `.agentboard/worktrees/` — subtasks share their parent's worktree
-- Recovery resets tasks claimed >30 minutes ago — keep this in mind when debugging long-running tasks
-- Run `npm test` to verify changes before committing
-
-### Subtask pipeline
-
-- Subtasks reuse the parent's worktree and branch — they have NO git_refs of their own. Code that needs a git ref for a subtask must fall back to the parent's ref via `task.parentTaskId`.
-- Subtasks skip PR creation — the parent creates a single PR after all subtasks complete (in `checkAndUpdateParentStatus`).
-- The `task` object passed through `processTask → runImplementationLoop → runReviewAndPR` is fetched ONCE at claim time. Its `.status` becomes stale as the pipeline progresses. Any function that checks `task.status` for a decision (e.g., `checkAndUpdateParentStatus`) must re-fetch from DB.
-- `commitChanges()` returns empty string (no-op) when there are no staged changes. Callers must handle this gracefully — review retries often produce no new changes because the code was already committed in the previous cycle.
-- When a subtask fails, remaining `backlog` siblings are cancelled automatically so the parent can resolve to `failed`. Without this, `backlog` siblings (non-terminal) block parent resolution forever.
-- `checkAndUpdateParentStatus` is async — it triggers PR creation for the parent when all subtasks succeed. All call sites must `await` it.
+- [docs/architecture/](docs/architecture/) — Architecture Decision Records
+- [docs/gotchas/](docs/gotchas/) — Known pitfalls by subsystem
+- [prompts/](prompts/) — Prompt templates for each pipeline stage
+- [src/types/index.ts](src/types/index.ts) — All shared interfaces and type unions
