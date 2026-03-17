@@ -3,6 +3,7 @@
 Self-hosted Kanban board that orchestrates AI coding agents through an autonomous pipeline:
 spec → planning → ralph loop (implement ↔ checks) → multi-role review panel → auto-merge gate → PR creation.
 Built with TypeScript, Express, SQLite, Socket.IO, React + Tailwind.
+See [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestration.md) for the complete agent orchestration architecture.
 
 ## Commands
 

@@ -15,7 +15,8 @@ Spawn Claude Code as a child process via `spawn('claude', ['--print', '--model',
 - `spawn` (not `execFile`) is used so output can be streamed to the `onOutput` callback, which broadcasts live logs to the UI via Socket.IO
 - Configurable timeout (default 300s) kills the process if it hangs
 - Token usage is parsed from output with regex; falls back to `output.length / 4` as estimate
-- The `cwd` is the worktree path, so the agent operates directly in the task's isolated branch checkout
+
+For the full executor interface and streaming architecture, see [Agent Orchestration → Claude Code Executor](agent-orchestration.md#claude-code-executor).
 
 ## Consequences
 
@@ -26,9 +27,10 @@ Spawn Claude Code as a child process via `spawn('claude', ['--print', '--model',
 
 ### Negative
 - Tight coupling to Claude Code CLI interface — changes to CLI flags or output format break all stages
-- All four LLM-using stages (planner, implementer, review-spec, review-code) share the same `executeClaudeCode()` function — a change affects all of them
 
 ### Risks
 - `acceptEdits` permission mode gives the agent broad write access within the worktree
 - 300s timeout may be too short for complex implementation tasks
 - Token usage parsing via regex is fragile — output format changes could break cost tracking
+
+See also: [Worker Gotchas](../gotchas/worker.md)

@@ -1,10 +1,26 @@
-# Architecture Decision Records
+# Architecture
 
-This directory contains Architecture Decision Records (ADRs) for agentboard.
+## System Architecture
 
-ADRs capture the "why" behind key architectural choices — context that cannot be inferred from code alone. They follow the format: Context → Decision → Consequences.
+**[Agent Orchestration](agent-orchestration.md)** — the single comprehensive architecture document covering:
+- System overview (UI → API → Worker → Executor → Worktrees)
+- Task state machine (14 states, subtask pipeline)
+- All 7 pipeline stages (spec → planning → ralph loop → review panel → PR creation → auto-merge → learner)
+- Claude Code executor (spawn model, streaming, token tracking)
+- Model selection (stage-to-model mapping)
+- Git worktree isolation
+- Context flow between stages (task packet)
+- Real-time Socket.IO event model
+- Task logging format
+- Recovery & crash handling
+- Worker memory
+- Database schema
 
-## Index
+Start here for understanding how agentboard works.
+
+## Architecture Decision Records
+
+ADRs capture the "why" behind key choices — context not inferable from code. Each links back to the relevant section of the orchestration doc for full detail.
 
 | ADR | Decision | Status |
 |-----|----------|--------|
@@ -14,3 +30,8 @@ ADRs capture the "why" behind key architectural choices — context that cannot 
 | [004-serial-subtasks](004-serial-subtasks.md) | Serial subtask execution with single parent PR | Accepted |
 | [005-model-selection](005-model-selection.md) | Stage-and-risk-driven model selection | Accepted |
 | [006-claude-code-executor](006-claude-code-executor.md) | Spawn Claude Code as child process in non-interactive mode | Accepted |
+
+## Related Documentation
+
+- [Gotchas](../gotchas/) — Failure-backed troubleshooting by subsystem
+- [Decision Log](../decisions.md) — Quick-reference decision diary (complements ADRs)

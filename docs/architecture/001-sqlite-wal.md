@@ -14,8 +14,9 @@ Use SQLite with WAL (Write-Ahead Logging) mode via `better-sqlite3`.
 - Single connection singleton pattern (`getDatabase()` in `src/db/index.ts`)
 - Synchronous prepared statements for all queries
 - WAL mode enabled via `db.pragma('journal_mode = WAL')` to allow concurrent readers without blocking the writer
-- Snake_case DB columns mapped to camelCase TypeScript via row-conversion functions (`rowToTask`, `rowToProject`, etc.) in `queries.ts`
-- 6 tables: `projects`, `tasks`, `runs`, `artifacts`, `git_refs`, `events`
+- Snake_case DB columns mapped to camelCase TypeScript via row-conversion functions in `queries.ts`
+
+For the full schema (7 tables, 13 indexes) and query patterns, see [Agent Orchestration → Database Schema](agent-orchestration.md#database-schema).
 
 ## Consequences
 
@@ -32,3 +33,5 @@ Use SQLite with WAL (Write-Ahead Logging) mode via `better-sqlite3`.
 - If multi-server deployment is ever needed, SQLite becomes a bottleneck
 - WAL files can grow large under sustained write load
 - The singleton pattern means the entire process shares one connection — connection lifecycle bugs affect everything
+
+See also: [Database Gotchas](../gotchas/database.md)

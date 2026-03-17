@@ -97,6 +97,8 @@ Auto-detected check commands. Set to `null` to disable a check.
 
 ## Architecture Overview
 
+For the complete agent orchestration architecture — state machine, stage details, context flow, review panel, auto-merge gate, and recovery — see [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestration.md).
+
 ### Pipeline Stages
 
 Each task flows through a structured pipeline:

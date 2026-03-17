@@ -4,15 +4,16 @@
 Accepted
 
 ## Context
-Different pipeline stages have different quality/cost tradeoffs. Only four stages invoke Claude Code: planner, implementer, review-spec, and review-code. The checks stage runs shell commands (test, lint, typecheck) and pr-creator runs `gh` CLI — neither uses an LLM.
+Different pipeline stages have different quality/cost tradeoffs. Only four stages invoke Claude Code: spec-generator, planner, implementer, and review-panel. The checks stage runs shell commands and pr-creator runs `gh` CLI — neither uses an LLM.
 
 ## Decision
 `selectModel(stage, riskLevel, config)` in `src/worker/model-selector.ts` consults `config.modelDefaults` to look up the model alias for a given stage.
 
-- Stage-to-config mapping: `planning` → `modelDefaults.planning`, `implementing` → `modelDefaults.implementation`, `review_spec` → `modelDefaults.reviewSpec`, `review_code` → `modelDefaults.reviewCode`
-- Implementation always uses Opus (hardcoded in `stages/implementer.ts`, bypassing `selectModel`) — deliberate choice for maximum code quality
-- High-risk tasks escalate `review_spec` and `review_code` to Opus regardless of config
+- High-risk tasks escalate `review_panel` to Opus regardless of config
+- Implementation typically uses Opus for maximum code quality
 - Planning and standard-risk reviews respect the per-project config
+
+For the full stage-to-model mapping table, see [Agent Orchestration → Model Selection](agent-orchestration.md#model-selection).
 
 ## Consequences
 
@@ -23,8 +24,6 @@ Different pipeline stages have different quality/cost tradeoffs. Only four stage
 
 ### Negative
 - Implementation always using Opus means no cost savings on the most expensive stage
-- `selectModel` maps `checks` and `pr_creation` to the implementation config key, but neither stage calls it — this dead mapping could cause confusion
 
 ### Risks
-- Model names evolve — the Opus hardcoding in `implementer.ts` needs updating when new models are released
-- The risk escalation override is the only hardcoded model name in `selectModel` — changes to model naming could break it
+- Model names evolve — hardcoded model overrides need updating when new models are released
