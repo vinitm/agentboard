@@ -4,11 +4,11 @@ import { Column } from './Column';
 import { TaskCard } from './TaskCard';
 import { TaskDetail } from './TaskDetail';
 import { TaskForm } from './TaskForm';
-import type { Task, TaskStatus, RiskLevel } from '../types';
+import type { Task, TaskStatus, RiskLevel, PlanReviewAction } from '../types';
 import type { FilterState } from './TopBar';
 
 const MAIN_COLUMNS: TaskStatus[] = [
-  'backlog', 'ready', 'spec', 'planning', 'implementing', 'checks',
+  'backlog', 'ready', 'planning', 'needs_plan_review', 'implementing', 'checks',
   'review_panel', 'needs_human_review', 'done',
 ];
 
@@ -18,12 +18,14 @@ const MOVABLE_COLUMNS: TaskStatus[] = ['backlog', 'ready', 'cancelled', 'done'];
 interface Props {
   tasks: Task[];
   loading: boolean;
+  projectId: string;
   createTask: (data: { title: string; description?: string; spec?: string; riskLevel?: RiskLevel; priority?: number }) => Promise<Task>;
   updateTask: (id: string, data: Partial<Task>) => Promise<Task>;
   moveTask: (id: string, column: TaskStatus) => Promise<Task>;
   deleteTask: (id: string) => Promise<void>;
   answerTask: (id: string, answers: string) => Promise<Task>;
   retryTask: (id: string) => Promise<Task>;
+  reviewPlan: (id: string, action: PlanReviewAction) => Promise<Task>;
   showNewTask?: boolean;
   onCloseNewTask?: () => void;
   filters?: FilterState;
@@ -100,7 +102,7 @@ const EmptyBoard: React.FC<{ onNewTask?: () => void }> = ({ onNewTask }) => (
 );
 
 export const Board: React.FC<Props> = ({
-  tasks, loading, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask,
+  tasks, loading, projectId, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask, reviewPlan,
   showNewTask, onCloseNewTask, filters,
 }) => {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -214,6 +216,7 @@ export const Board: React.FC<Props> = ({
         {(editingTask !== undefined || showNewTask) && (
           <TaskForm
             initial={editingTask}
+            projectId={projectId}
             onSubmit={handleCreateOrEdit}
             onCancel={() => { setEditingTask(undefined); onCloseNewTask?.(); }}
           />
@@ -289,12 +292,14 @@ export const Board: React.FC<Props> = ({
       {selectedTask && (
         <TaskDetail task={selectedTask} onClose={() => setSelectedTaskId(null)} onUpdate={updateTask}
           onAnswer={answerTask} onRetry={retryTask} onDelete={deleteTask} onMove={moveTask}
+          onReviewPlan={reviewPlan}
           onEdit={(t) => { setSelectedTaskId(null); setEditingTask(t); }} />
       )}
 
       {(editingTask !== undefined || showNewTask) && (
         <TaskForm
           initial={editingTask}
+          projectId={projectId}
           onSubmit={handleCreateOrEdit}
           onCancel={() => { setEditingTask(undefined); onCloseNewTask?.(); }}
         />

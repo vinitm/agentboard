@@ -1,196 +1,478 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { api } from '../api/client';
-import type { Task, RiskLevel, SpecTemplate, DecisionPoint } from '../types';
+import { SpecField } from './SpecField';
+import type { Task, RiskLevel, SpecDocument, ChatMessage, ChatResponse } from '../types';
 
 interface Props {
   initial?: Task | null;
+  projectId: string;
   onSubmit: (data: { title: string; description: string; spec: string; riskLevel: RiskLevel; priority: number }) => Promise<void>;
   onCancel: () => void;
 }
 
-function parseSpec(spec: string | null): SpecTemplate {
-  const empty: SpecTemplate = { context: '', acceptanceCriteria: '', constraints: '', verification: '', riskLevel: 'low', infrastructureAllowed: '' };
-  if (!spec) return empty;
-  try { return { ...empty, ...(JSON.parse(spec) as Partial<SpecTemplate>) }; } catch { return empty; }
+const SPEC_LABELS: Record<keyof SpecDocument, string> = {
+  goal: 'Goal',
+  userScenarios: 'User Scenarios',
+  successCriteria: 'Success Criteria',
+};
+
+const RISK_LABELS: Record<RiskLevel, string> = { low: 'Low', medium: 'Medium', high: 'High' };
+
+function emptySpec(): SpecDocument {
+  return { goal: '', userScenarios: '', successCriteria: '' };
 }
 
-type Phase = 'describe' | 'decisions' | 'preview';
+function parseSpec(spec: string | null): SpecDocument {
+  if (!spec) return emptySpec();
+  try {
+    const parsed = JSON.parse(spec) as Record<string, unknown>;
+    return {
+      goal: (parsed.goal as string) || (parsed.problemStatement as string) || (parsed.context as string) || '',
+      userScenarios: (parsed.userScenarios as string) || (parsed.userStories as string) || '',
+      successCriteria: (parsed.successCriteria as string) || (parsed.acceptanceCriteria as string) || '',
+    };
+  } catch {
+    return emptySpec();
+  }
+}
 
-const inputClasses = 'w-full rounded-md bg-bg-tertiary border border-border-default px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-transparent resize-y';
-const btnClasses = 'px-4 py-2 rounded-md text-sm font-semibold transition-colors duration-150 cursor-pointer';
+function makeId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
-export const TaskForm: React.FC<Props> = ({ initial, onSubmit, onCancel }) => {
+function filledCount(spec: SpecDocument): number {
+  return (Object.keys(SPEC_LABELS) as Array<keyof SpecDocument>).filter((k) => spec[k].trim().length > 0).length;
+}
+
+type Phase = 'chatting' | 'confirming';
+
+export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCancel }) => {
   const isEditing = !!initial;
-  const [phase, setPhase] = useState<Phase>(isEditing ? 'preview' : 'describe');
-  const [shortDescription, setShortDescription] = useState('');
-  const [parsing, setParsing] = useState(false);
+
+  // Meta fields
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [riskLevel, setRiskLevel] = useState<RiskLevel>(initial?.riskLevel ?? 'low');
   const [priority, setPriority] = useState(initial?.priority ?? 0);
-  const [spec, setSpec] = useState<SpecTemplate>(() => parseSpec(initial?.spec ?? null));
-  const [decisionPoints, setDecisionPoints] = useState<DecisionPoint[]>([]);
-  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
+  const [spec, setSpec] = useState<SpecDocument>(() => parseSpec(initial?.spec ?? null));
+
+  // Chat state
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const welcome: ChatMessage = {
+      id: makeId(),
+      role: 'assistant',
+      content: isEditing
+        ? `Here's the current spec for **${initial?.title}**. What would you like to change?`
+        : 'Describe what you want to build. I\'ll draft an initial spec and then ask a few rounds of clarifying questions to make sure we have a solid, unambiguous specification before the AI starts working.',
+      timestamp: Date.now(),
+    };
+    return [welcome];
+  });
+  const [inputValue, setInputValue] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [roundNumber, setRoundNumber] = useState(isEditing ? 2 : 1);
+  const [phase, setPhase] = useState<Phase>('chatting');
+  const [recentFields, setRecentFields] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const handleParse = async () => {
-    if (!shortDescription.trim()) { setError('Please describe the task'); return; }
-    setError(''); setParsing(true);
+  // Refs
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
+
+  // Focus input on mount
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Clear recent field highlights after 2s
+  useEffect(() => {
+    if (recentFields.size === 0) return;
+    const timer = setTimeout(() => setRecentFields(new Set()), 2000);
+    return () => clearTimeout(timer);
+  }, [recentFields]);
+
+  const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
+    const msg: ChatMessage = { id: makeId(), role, content, timestamp: Date.now() };
+    setMessages((prev) => [...prev, msg]);
+    return msg;
+  }, []);
+
+  const handleSend = useCallback(async () => {
+    const text = inputValue.trim();
+    if (!text || loading) return;
+
+    setInputValue('');
+    addMessage('user', text);
+    setLoading(true);
+    setError('');
+
     try {
-      const parsed = await api.post<{ title: string; description: string; riskLevel: RiskLevel; priority: number; spec: { context: string; acceptanceCriteria: string; constraints: string; verification: string; infrastructureAllowed: string }; decisionPoints?: DecisionPoint[] }>('/api/tasks/parse', { description: shortDescription.trim() });
-      setTitle(parsed.title || ''); setDescription(parsed.description || '');
-      setRiskLevel(parsed.riskLevel || 'low'); setPriority(parsed.priority || 0);
-      if (parsed.spec) setSpec({ context: parsed.spec.context || '', acceptanceCriteria: parsed.spec.acceptanceCriteria || '', constraints: parsed.spec.constraints || '', verification: parsed.spec.verification || '', riskLevel: parsed.riskLevel || 'low', infrastructureAllowed: parsed.spec.infrastructureAllowed || '' });
-      if (Array.isArray(parsed.decisionPoints) && parsed.decisionPoints.length > 0) {
-        setDecisionPoints(parsed.decisionPoints);
-        setSelectedOptions(parsed.decisionPoints.map((dp: { defaultIndex: number }) => dp.defaultIndex));
-        setPhase('decisions');
-      } else {
-        setPhase('preview');
+      // All messages go through /api/tasks/chat with round tracking (spec-kit specify→clarify loop)
+      const chatMessages = messages.map((m) => ({ role: m.role, content: m.content }));
+      chatMessages.push({ role: 'user', content: text });
+
+      const result = await api.post<ChatResponse>('/api/tasks/chat', {
+        messages: chatMessages,
+        currentSpec: { title, description, ...spec },
+        roundNumber,
+        projectId,
+      });
+
+      // Apply spec updates (never regress — don't overwrite filled with empty)
+      if (result.specUpdates && typeof result.specUpdates === 'object') {
+        const updated = { ...spec };
+        const changedFields: string[] = [];
+        for (const [key, val] of Object.entries(result.specUpdates)) {
+          if (key in updated && typeof val === 'string' && (val.trim().length > 0 || !updated[key as keyof SpecDocument].trim())) {
+            (updated as Record<string, string>)[key] = val;
+            changedFields.push(key);
+          }
+        }
+        setSpec(updated);
+        setRecentFields(new Set(changedFields));
       }
-    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to parse task'); } finally { setParsing(false); }
+
+      // Apply meta updates
+      if (result.titleUpdate) setTitle(result.titleUpdate);
+      if (result.descriptionUpdate) setDescription(result.descriptionUpdate);
+      if (result.riskLevelUpdate) setRiskLevel(result.riskLevelUpdate);
+      if (result.priorityUpdate !== undefined && result.priorityUpdate !== null) setPriority(result.priorityUpdate);
+
+      addMessage('assistant', result.message);
+      setRoundNumber((prev) => prev + 1);
+
+      // Auto-transition to confirming when AI says spec is complete
+      if (result.isComplete) {
+        setPhase('confirming');
+      }
+    } catch (err) {
+      addMessage('assistant', `Something went wrong: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`);
+    } finally {
+      setLoading(false);
+      inputRef.current?.focus();
+    }
+  }, [inputValue, loading, roundNumber, messages, title, description, spec, addMessage]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setError('');
-    if (!title.trim()) { setError('Title is required'); return; }
+  const handleSubmit = async () => {
+    if (!title.trim()) {
+      setError('Title is required');
+      return;
+    }
     setSubmitting(true);
-    try { await onSubmit({ title: title.trim(), description: description.trim(), spec: JSON.stringify({ ...spec, riskLevel }), riskLevel, priority }); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Failed to save'); }
-    finally { setSubmitting(false); }
+    setError('');
+    try {
+      await onSubmit({
+        title: title.trim(),
+        description: description.trim(),
+        spec: JSON.stringify(spec),
+        riskLevel,
+        priority,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const specFields = Object.keys(SPEC_LABELS) as Array<keyof SpecDocument>;
+  const filled = filledCount(spec);
 
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[1000]" />
-        <Dialog.Content className="fixed top-[10vh] left-1/2 -translate-x-1/2 bg-bg-elevated rounded-xl p-6 w-[90%] max-w-[600px] max-h-[80vh] overflow-y-auto z-[1001] shadow-2xl border border-border-default">
-          {phase === 'describe' && (
-            <>
-              <Dialog.Title className="text-lg font-semibold text-white mb-1">New Task</Dialog.Title>
-              <p className="text-xs text-text-secondary mb-3">Describe what you need done. Fields will be auto-filled.</p>
-              {error && <div className="text-accent-red text-sm mb-3">{error}</div>}
-              <textarea
-                value={shortDescription} onChange={(e) => setShortDescription(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleParse(); } }}
-                className={`${inputClasses} min-h-[80px]`}
-                placeholder='e.g. "Add rate limiting to the /api/upload endpoint, max 10 req/min per user"'
-                autoFocus disabled={parsing}
-              />
-              <div className="flex gap-2 mt-4">
-                <button onClick={handleParse} disabled={parsing} className={`${btnClasses} bg-accent-blue text-white ${parsing ? 'opacity-60' : 'hover:bg-blue-600'}`}>
-                  {parsing ? 'Parsing...' : 'Auto-fill'}
-                </button>
-                <button onClick={() => setPhase('preview')} className={`${btnClasses} text-text-secondary border border-border-default hover:bg-bg-tertiary`}>Fill manually</button>
-                <button onClick={onCancel} className={`${btnClasses} bg-text-tertiary text-white hover:bg-gray-600`}>Cancel</button>
-              </div>
-            </>
-          )}
+        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[1000]" />
+        <Dialog.Content className="fixed inset-0 bg-bg-elevated z-[1001] shadow-2xl animate-fade-in flex flex-col overflow-hidden">
 
-          {phase === 'decisions' && (
-            <>
-              <Dialog.Title className="text-lg font-semibold text-white mb-1">Quick Decisions</Dialog.Title>
-              <p className="text-xs text-text-secondary mb-4">These help the AI make better choices. Defaults are pre-selected — just click Continue if they look right.</p>
-              {error && <div className="text-accent-red text-sm mb-3">{error}</div>}
-              {decisionPoints.map((dp, i) => (
-                <div key={i} className="mb-4 pb-3 border-b border-border-default last:border-0">
-                  <div className="text-sm font-medium text-text-primary mb-2">{dp.question}</div>
-                  <div className="flex flex-col gap-1.5">
-                    {dp.options.map((opt, j) => (
-                      <label key={j} className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer hover:text-text-primary">
-                        <input
-                          type="radio"
-                          name={`decision-${i}`}
-                          checked={selectedOptions[i] === j}
-                          onChange={() => {
-                            const next = [...selectedOptions];
-                            next[i] = j;
-                            setSelectedOptions(next);
-                          }}
-                          className="accent-accent-blue"
-                        />
-                        {opt}
-                        {j === dp.defaultIndex && <span className="text-[10px] text-accent-blue">(recommended)</span>}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <div className="flex gap-2 mt-4">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border-default flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <Dialog.Title className="text-base font-semibold text-white">
+                {isEditing ? 'Edit Task' : 'New Task'}
+              </Dialog.Title>
+              {title && (
+                <span className="text-xs text-text-secondary truncate max-w-[200px]">
+                  {title}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {phase === 'chatting' && filled > 0 && (
                 <button
-                  onClick={() => {
-                    const updatedSpec = { ...spec };
-                    for (let i = 0; i < decisionPoints.length; i++) {
-                      const dp = decisionPoints[i];
-                      const answer = dp.options[selectedOptions[i]];
-                      const field = dp.specField as keyof typeof updatedSpec;
-                      if (field in updatedSpec && field !== 'riskLevel') {
-                        const existing = updatedSpec[field] as string;
-                        (updatedSpec as Record<string, string>)[field] = existing
-                          ? `${existing}\n- Decision: ${dp.question} → ${answer}`
-                          : `- Decision: ${dp.question} → ${answer}`;
-                      }
-                    }
-                    setSpec(updatedSpec);
-                    setPhase('preview');
-                  }}
-                  className={`${btnClasses} bg-accent-blue text-white hover:bg-blue-600`}
+                  onClick={() => setPhase('confirming')}
+                  className="px-3 py-1.5 rounded-md text-xs font-semibold bg-accent-green text-white hover:bg-green-600 transition-colors cursor-pointer"
                 >
-                  Continue
+                  Review & Create ({filled}/3)
                 </button>
-                <button onClick={() => setPhase('preview')} className={`${btnClasses} text-text-secondary border border-border-default hover:bg-bg-tertiary`}>Skip</button>
-                <button onClick={() => setPhase('describe')} className={`${btnClasses} text-text-secondary border border-border-default hover:bg-bg-tertiary`}>← Back</button>
-              </div>
-            </>
-          )}
+              )}
+              {phase === 'confirming' && (
+                <button
+                  onClick={() => setPhase('chatting')}
+                  className="px-3 py-1.5 rounded-md text-xs font-semibold text-accent-blue hover:bg-accent-blue/10 transition-colors cursor-pointer"
+                >
+                  Keep editing
+                </button>
+              )}
+              <Dialog.Close className="text-text-tertiary hover:text-text-primary transition-colors p-1 rounded-md hover:bg-bg-tertiary">
+                <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </Dialog.Close>
+            </div>
+          </div>
 
-          {phase === 'preview' && (
-            <form onSubmit={handleSubmit}>
-              <div className="flex items-center justify-between mb-4">
-                <Dialog.Title className="text-lg font-semibold text-white">{isEditing ? 'Edit Task' : 'Review & Create'}</Dialog.Title>
-                {!isEditing && <button type="button" onClick={() => setPhase('describe')} className="text-xs text-accent-blue hover:underline">← Back</button>}
+          {phase === 'chatting' ? (
+            /* ======== Chat Phase ======== */
+            <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
+              {/* Chat panel */}
+              <div className="flex-1 flex flex-col min-w-0 border-r border-border-default">
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                  {messages.map((msg) => (
+                    <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+                          msg.role === 'user'
+                            ? 'bg-accent-blue/20 border border-accent-blue/30 text-text-primary'
+                            : 'bg-bg-tertiary border border-border-default text-text-primary'
+                        }`}
+                      >
+                        <MessageContent content={msg.content} />
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Typing indicator */}
+                  {loading && (
+                    <div className="flex justify-start">
+                      <div className="bg-bg-tertiary border border-border-default rounded-xl px-4 py-3">
+                        <div className="flex gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '0ms' }} />
+                          <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '150ms' }} />
+                          <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Input area */}
+                <div className="flex-shrink-0 px-4 py-3 border-t border-border-default">
+                  <div className="flex gap-2 items-end">
+                    <textarea
+                      ref={inputRef}
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder={roundNumber === 1 ? 'Describe what you need built...' : 'Answer the question or type "done" to finalize...'}
+                      disabled={loading}
+                      rows={1}
+                      className="flex-1 rounded-lg bg-bg-tertiary border border-border-default px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-transparent resize-none min-h-[38px] max-h-[120px]"
+                      style={{ height: 'auto', overflow: 'hidden' }}
+                      onInput={(e) => {
+                        const target = e.target as HTMLTextAreaElement;
+                        target.style.height = 'auto';
+                        target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+                      }}
+                    />
+                    <button
+                      onClick={handleSend}
+                      disabled={loading || !inputValue.trim()}
+                      className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                        loading || !inputValue.trim()
+                          ? 'text-text-tertiary bg-bg-tertiary'
+                          : 'text-white bg-accent-blue hover:bg-blue-600'
+                      }`}
+                      title="Send (Enter)"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                      </svg>
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-text-tertiary mt-1">
+                    Enter to send, Shift+Enter for new line
+                  </p>
+                </div>
               </div>
+
+              {/* Spec preview panel */}
+              <div className="w-full md:w-[420px] flex-shrink-0 overflow-y-auto px-5 py-4 bg-bg-secondary/50">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">
+                    Spec Preview
+                  </h3>
+                  <span className="text-[10px] font-medium text-accent-green">
+                    {filled}/3 filled
+                  </span>
+                </div>
+
+                {/* Title & description preview */}
+                {title && (
+                  <div className="mb-3 rounded-md border-l-[3px] border-l-accent-blue bg-accent-blue/5 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary mb-0.5">Title</div>
+                    <p className="text-[12px] text-text-primary font-medium">{title}</p>
+                    {description && (
+                      <p className="text-[11px] text-text-secondary mt-1">{description}</p>
+                    )}
+                    <div className="flex gap-2 mt-1.5">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full bg-bg-tertiary font-medium ${
+                        riskLevel === 'high' ? 'text-accent-red' : riskLevel === 'medium' ? 'text-accent-amber' : 'text-accent-green'
+                      }`}>
+                        {RISK_LABELS[riskLevel]} risk
+                      </span>
+                      {priority > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-tertiary text-text-secondary font-medium">
+                          P{priority}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Spec fields */}
+                {specFields.map((key) => (
+                  <SpecField
+                    key={key}
+                    label={SPEC_LABELS[key]}
+                    value={spec[key]}
+                    isNew={recentFields.has(key)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* ======== Confirmation Phase ======== */
+            <div className="flex-1 overflow-y-auto px-6 py-4">
               {error && <div className="text-accent-red text-sm mb-3">{error}</div>}
 
-              <label className="block text-[11px] font-semibold text-text-tertiary uppercase tracking-wide mb-1">Title</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClasses} placeholder="Task title" />
-
-              <label className="block text-[11px] font-semibold text-text-tertiary uppercase tracking-wide mb-1 mt-3">Description</label>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} className={`${inputClasses} min-h-[60px]`} placeholder="Brief description" />
-
-              <div className="flex gap-3 mt-3">
-                <div className="flex-1">
-                  <label className="block text-[11px] font-semibold text-text-tertiary uppercase tracking-wide mb-1">Risk Level</label>
-                  <select value={riskLevel} onChange={(e) => setRiskLevel(e.target.value as RiskLevel)} className={inputClasses}>
-                    <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-                  </select>
+              {/* Task basics */}
+              <div className="mb-5 pb-5 border-b border-border-default">
+                <div className="flex items-center gap-3 mb-2">
+                  <h3 className="text-base font-semibold text-white">{title || 'Untitled Task'}</h3>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full bg-bg-tertiary font-medium ${
+                    riskLevel === 'high' ? 'text-accent-red' : riskLevel === 'medium' ? 'text-accent-amber' : 'text-accent-green'
+                  }`}>
+                    {RISK_LABELS[riskLevel]} risk
+                  </span>
+                  {priority > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-bg-tertiary text-text-secondary font-medium">
+                      P{priority}
+                    </span>
+                  )}
                 </div>
-                <div className="flex-1">
-                  <label className="block text-[11px] font-semibold text-text-tertiary uppercase tracking-wide mb-1">Priority</label>
-                  <input type="number" value={priority} onChange={(e) => setPriority(parseInt(e.target.value) || 0)} className={inputClasses} min={0} />
-                </div>
+                {description && (
+                  <p className="text-sm text-text-secondary">{description}</p>
+                )}
               </div>
 
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-tertiary mt-5 mb-2">Spec Template</h3>
-              {(['context', 'acceptanceCriteria', 'constraints', 'verification', 'infrastructureAllowed'] as const).map((field) => (
-                <div key={field} className="mb-3">
-                  <label className="block text-[11px] font-semibold text-text-tertiary capitalize mb-1">{field.replace(/([A-Z])/g, ' $1')}</label>
-                  <textarea value={spec[field]} onChange={(e) => setSpec({ ...spec, [field]: e.target.value })} className={`${inputClasses} min-h-[60px]`} />
-                </div>
-              ))}
-
-              <div className="flex gap-2 mt-4">
-                <button type="submit" disabled={submitting} className={`${btnClasses} bg-accent-blue text-white ${submitting ? 'opacity-60' : 'hover:bg-blue-600'}`}>
-                  {submitting ? 'Saving...' : isEditing ? 'Update' : 'Create'}
-                </button>
-                <button type="button" onClick={onCancel} className={`${btnClasses} bg-text-tertiary text-white hover:bg-gray-600`}>Cancel</button>
+              {/* Full spec display */}
+              <div className="space-y-4 mb-5">
+                {specFields.map((key) => (
+                  <div key={key} className={`rounded-lg border p-4 ${
+                    spec[key].trim() ? 'border-accent-green/30 bg-accent-green/5' : 'border-border-default bg-bg-tertiary/50'
+                  }`}>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-text-tertiary mb-1.5">
+                      {SPEC_LABELS[key]}
+                    </div>
+                    {spec[key].trim() ? (
+                      <p className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed">{spec[key]}</p>
+                    ) : (
+                      <p className="text-sm text-text-tertiary italic">Not filled</p>
+                    )}
+                  </div>
+                ))}
               </div>
-            </form>
+            </div>
           )}
+
+          {/* Footer */}
+          <div className="flex items-center justify-between px-5 py-3 border-t border-border-default flex-shrink-0 bg-bg-elevated">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 rounded-md text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <div className="flex gap-2">
+              {phase === 'confirming' && (
+                <button
+                  onClick={() => setPhase('chatting')}
+                  className="px-4 py-2 rounded-md text-sm font-semibold text-text-secondary border border-border-default hover:bg-bg-tertiary transition-colors cursor-pointer"
+                >
+                  Keep Editing
+                </button>
+              )}
+              {(phase === 'confirming' || filled > 0) && (
+                <button
+                  onClick={phase === 'confirming' ? handleSubmit : () => setPhase('confirming')}
+                  disabled={submitting}
+                  className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer ${
+                    submitting
+                      ? 'bg-accent-blue/50 text-white/60'
+                      : 'bg-accent-blue text-white hover:bg-blue-600'
+                  }`}
+                >
+                  {submitting ? 'Saving...' : phase === 'confirming' ? (isEditing ? 'Update Task' : 'Create Task') : `Review & Create (${filled}/3)`}
+                </button>
+              )}
+            </div>
+          </div>
+
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+};
+
+/** Render markdown-like content (bold, bullets, line breaks) */
+const MessageContent: React.FC<{ content: string }> = ({ content }) => {
+  const lines = content.split('\n');
+
+  return (
+    <div className="space-y-1">
+      {lines.map((line, i) => {
+        if (!line.trim()) return <div key={i} className="h-1" />;
+
+        // Bold: **text**
+        const parts = line.split(/(\*\*[^*]+\*\*)/g);
+        const rendered = parts.map((part, j) => {
+          const boldMatch = part.match(/^\*\*(.+)\*\*$/);
+          if (boldMatch) {
+            return <strong key={j} className="font-semibold">{boldMatch[1]}</strong>;
+          }
+          return <span key={j}>{part}</span>;
+        });
+
+        // Bullet point
+        const bulletMatch = line.match(/^[-*]\s+(.*)$/);
+        if (bulletMatch) {
+          return (
+            <div key={i} className="flex gap-1.5 pl-1">
+              <span className="text-text-tertiary mt-0.5">&#8226;</span>
+              <span>{rendered}</span>
+            </div>
+          );
+        }
+
+        return <div key={i}>{rendered}</div>;
+      })}
+    </div>
   );
 };

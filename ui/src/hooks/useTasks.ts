@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { useSocket } from './useSocket';
-import type { Task, TaskStatus, RiskLevel } from '../types';
+import type { Task, TaskStatus, RiskLevel, PlanReviewAction } from '../types';
 
 export function useTasks(projectId: string) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -108,6 +108,12 @@ export function useTasks(projectId: string) {
     return retried;
   }, []);
 
+  const reviewPlan = useCallback(async (id: string, action: PlanReviewAction) => {
+    const updated = await api.post<Task>(`/api/tasks/${id}/review-plan`, action);
+    setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    return updated;
+  }, []);
+
   return {
     tasks,
     loading,
@@ -117,5 +123,6 @@ export function useTasks(projectId: string) {
     deleteTask,
     answerTask,
     retryTask,
+    reviewPlan,
   };
 }

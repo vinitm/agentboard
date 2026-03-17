@@ -234,7 +234,7 @@ function collectAssumptions(db: Database.Database, task: Task): string[] {
 
 /**
  * Format the spec JSON into readable markdown sections.
- * Handles both SpecResult format and the alternate format with context/constraints.
+ * Handles SpecDocument (goal/userScenarios/successCriteria), SpecResult, and legacy formats.
  */
 function formatSpec(spec: string): string {
   const lines: string[] = [];
@@ -242,21 +242,39 @@ function formatSpec(spec: string): string {
   try {
     const parsed = JSON.parse(spec) as Record<string, unknown>;
 
-    // Context (alternate format)
-    if (typeof parsed.context === 'string' && parsed.context) {
-      lines.push('> ' + parsed.context.replace(/\n/g, '\n> '));
+    // New spec-kit format: goal, userScenarios, successCriteria
+    if (typeof parsed.goal === 'string' && parsed.goal) {
+      lines.push('**Goal:**');
+      lines.push('> ' + parsed.goal.replace(/\n/g, '\n> '));
       lines.push('');
     }
 
-    // Acceptance criteria — may be string (alternate) or string[] (SpecResult)
+    if (typeof parsed.userScenarios === 'string' && parsed.userScenarios) {
+      lines.push('**User Scenarios:**');
+      lines.push(parsed.userScenarios);
+      lines.push('');
+    }
+
+    if (typeof parsed.successCriteria === 'string' && parsed.successCriteria) {
+      lines.push('**Success Criteria:**');
+      const items = (parsed.successCriteria as string)
+        .split('\n')
+        .map(l => l.replace(/^-\s*/, '').trim())
+        .filter(Boolean);
+      for (const item of items) {
+        lines.push(`- [ ] ${item}`);
+      }
+      lines.push('');
+    }
+
+    // SpecResult format: acceptanceCriteria array
     const criteria = parsed.acceptanceCriteria;
-    if (criteria) {
+    if (criteria && !parsed.goal) {
       if (Array.isArray(criteria)) {
         for (const item of criteria as string[]) {
           lines.push(`- [ ] ${item}`);
         }
       } else if (typeof criteria === 'string') {
-        // Split on newlines or "- " prefixed lines
         const items = (criteria as string)
           .split('\n')
           .map(l => l.replace(/^-\s*/, '').trim())
@@ -275,35 +293,6 @@ function formatSpec(spec: string): string {
       for (const f of fileScope) {
         lines.push(`- \`${f}\``);
       }
-      lines.push('');
-    }
-
-    // Out of scope (SpecResult format)
-    const outOfScope = parsed.outOfScope as string[] | undefined;
-    if (Array.isArray(outOfScope) && outOfScope.length > 0) {
-      lines.push('**Out of scope:**');
-      for (const item of outOfScope) {
-        lines.push(`- ${item}`);
-      }
-      lines.push('');
-    }
-
-    // Constraints (alternate format)
-    if (typeof parsed.constraints === 'string' && parsed.constraints) {
-      lines.push('**Constraints:**');
-      const items = (parsed.constraints as string)
-        .split('\n')
-        .map(l => l.replace(/^-\s*/, '').trim())
-        .filter(Boolean);
-      for (const item of items) {
-        lines.push(`- ${item}`);
-      }
-      lines.push('');
-    }
-
-    // Verification (alternate format)
-    if (typeof parsed.verification === 'string' && parsed.verification) {
-      lines.push(`**Verification:** ${parsed.verification}`);
       lines.push('');
     }
 

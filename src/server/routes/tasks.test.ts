@@ -176,7 +176,7 @@ describe('POST /api/tasks/:id/move', () => {
   it('rejects moves to agent-controlled columns', async () => {
     const task = queries.createTask(db, { projectId, title: 'Agent Move', status: 'ready' });
 
-    for (const col of ['spec', 'planning', 'implementing', 'checks', 'review_panel']) {
+    for (const col of ['planning', 'needs_plan_review', 'implementing', 'checks', 'review_panel']) {
       const res = await request(app)
         .post(`/api/tasks/${task.id}/move`)
         .send({ column: col });
@@ -383,5 +383,107 @@ describe('Subtask autonomy guardrails', () => {
     // that the subtask2 stays in backlog since we haven't triggered terminal
     const sub2 = queries.getTaskById(db, subtask2.id);
     expect(sub2).toBeTruthy();
+  });
+});
+
+describe('AI endpoint spawn patterns', () => {
+  it('all spawn calls use -p flag (not stdin) for prompt delivery', () => {
+    const fs = require('node:fs');
+    const routesSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, 'tasks.ts'),
+      'utf-8',
+    );
+
+    // Should have 3 spawn('claude' calls (parse, refine-field, chat)
+    const spawnCount = (routesSource.match(/spawn\('claude'/g) || []).length;
+    expect(spawnCount).toBeGreaterThanOrEqual(3);
+
+    // All should use '-p' flag for prompt delivery
+    expect(routesSource).toContain("'--print', '-p', prompt");
+
+    // No stdin.write patterns should exist (prompts go via -p flag)
+    expect(routesSource).not.toContain('child.stdin.write');
+    expect(routesSource).not.toContain('child.stdin.end');
+
+    // All stdio configs should use 'ignore' for stdin
+    expect(routesSource).toContain("stdio: ['ignore', 'pipe', 'pipe']");
+    expect(routesSource).not.toContain("stdio: ['pipe', 'pipe', 'pipe']");
+  });
+});
+
+describe('POST /api/tasks/:id/review-plan', () => {
+  it('rejects if task is not in needs_plan_review', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Not reviewing', status: 'ready' });
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/review-plan`)
+      .send({ action: 'approve' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not awaiting plan review/i);
+  });
+
+  it('rejects invalid action', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Bad action', status: 'needs_plan_review' });
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/review-plan`)
+      .send({ action: 'maybe' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/approve.*reject/i);
+  });
+
+  it('approves plan and moves task to ready', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Approve me', status: 'needs_plan_review' });
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/review-plan`)
+      .send({ action: 'approve' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+
+    const events = queries.listEventsByTask(db, task.id);
+    expect(events.some((e) => e.type === 'plan_review_approved')).toBe(true);
+  });
+
+  it('approves plan with edits and stores them', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Approve with edits', status: 'needs_plan_review' });
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/review-plan`)
+      .send({
+        action: 'approve',
+        edits: {
+          planSummary: 'Revised approach',
+          subtasks: [{ title: 'Step 1', description: 'Do first thing' }],
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+
+    const events = queries.listEventsByTask(db, task.id);
+    const approvalEvent = events.find((e) => e.type === 'plan_review_approved');
+    expect(approvalEvent).toBeDefined();
+    const payload = JSON.parse(approvalEvent!.payload) as { edits: { planSummary: string } };
+    expect(payload.edits.planSummary).toBe('Revised approach');
+  });
+
+  it('rejects plan without reason and returns 400', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Reject no reason', status: 'needs_plan_review' });
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/review-plan`)
+      .send({ action: 'reject' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/reason is required/i);
+  });
+
+  it('rejects plan with reason and moves back to ready for re-planning', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Reject me', status: 'needs_plan_review' });
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/review-plan`)
+      .send({ action: 'reject', reason: 'Approach is too complex' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+
+    const events = queries.listEventsByTask(db, task.id);
+    const rejectionEvent = events.find((e) => e.type === 'plan_review_rejected');
+    expect(rejectionEvent).toBeDefined();
+    const payload = JSON.parse(rejectionEvent!.payload) as { reason: string };
+    expect(payload.reason).toBe('Approach is too complex');
   });
 });

@@ -62,6 +62,7 @@ export default async function init(): Promise<void> {
       implementation: 'opus',
       review: 'sonnet',
       security: 'haiku',
+      learning: 'haiku',
     },
     commands,
     notifications: {

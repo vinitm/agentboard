@@ -7,9 +7,10 @@ import * as queries from '../../db/queries.js';
 import { broadcast } from '../ws.js';
 import { cleanupWorktree } from '../../worker/git.js';
 
+
 const AGENT_CONTROLLED_COLUMNS: TaskStatus[] = [
-  'spec',
   'planning',
+  'needs_plan_review',
   'implementing',
   'checks',
   'review_panel',
@@ -76,7 +77,7 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
       return;
     }
 
-    const prompt = `You are a task parser. Given a short task description, extract structured fields for a software engineering task. Also anticipate likely ambiguities and generate decision points the implementer would need answered.
+    const prompt = `You are a spec-driven task planner (inspired by spec-kit). Given a short task description, extract structured fields and build a focused specification.
 
 Return ONLY valid JSON with no markdown fences or extra text.
 
@@ -87,38 +88,25 @@ The JSON must have this exact shape:
   "riskLevel": "low" | "medium" | "high",
   "priority": 0-10 (0=lowest, 10=highest),
   "spec": {
-    "context": "what is the context/background for this task",
-    "acceptanceCriteria": "when is this task considered done",
-    "constraints": "technical constraints or limitations",
-    "verification": "how to verify this task is correct",
-    "infrastructureAllowed": "what infrastructure changes are allowed"
-  },
-  "decisionPoints": [
-    {
-      "question": "A specific implementation question the developer would face",
-      "options": ["Option A", "Option B", "Option C"],
-      "defaultIndex": 0,
-      "specField": "constraints"
-    }
-  ]
+    "goal": "What problem does this solve? Who is affected? What is the desired end state? What is explicitly NOT part of this task?",
+    "userScenarios": "P1/P2/P3 prioritized user scenarios in Given/When/Then format. Each scenario should be independently testable and deliver standalone value. One scenario per line.",
+    "successCriteria": "Measurable outcomes that define done. Performance targets, business metrics, user satisfaction benchmarks. Each criterion must be independently verifiable."
+  }
 }
 
-Guidelines for decision points:
-- Generate 0-5 decision points for genuine ambiguities only
-- Each must have 2-4 concrete options with one recommended as defaultIndex
-- specField must be one of: context, acceptanceCriteria, constraints, verification, infrastructureAllowed
-- Focus on product behavior decisions, not implementation details
-- If the task is clear and unambiguous, return an empty decisionPoints array
-
-Guidelines for field inference:
+Guidelines:
 - riskLevel: "high" for DB migrations, auth changes, infra; "medium" for API changes, refactors; "low" for UI tweaks, docs, tests
 - priority: higher for bugs, security fixes, blockers; lower for nice-to-haves, cleanup
-- Leave spec fields as empty strings if not inferable from the description
+- Focus on the WHAT and WHY, not the HOW — no implementation details
+- userScenarios should use Given/When/Then format with priority levels (P1 = must-have, P2 = important, P3 = nice-to-have)
+- successCriteria should be measurable and verifiable, not vague
+- Include scope boundaries in the goal (what this is NOT)
+- Leave spec fields as empty strings only if truly not inferable
 
 Task description: ${description.trim()}`;
 
-    const child = spawn('claude', ['--print'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const child = spawn('claude', ['--print', '-p', prompt], {
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, CLAUDECODE: undefined },
     });
 
@@ -127,7 +115,7 @@ Task description: ${description.trim()}`;
 
     const timer = setTimeout(() => {
       child.kill();
-    }, 30_000);
+    }, 60_000);
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -139,7 +127,8 @@ Task description: ${description.trim()}`;
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code !== 0) {
-        res.status(500).json({ error: `AI parsing failed: ${stderr || 'unknown error'}` });
+        console.log(`[http] /api/tasks/parse failed: code=${code} stderr=${stderr} stdout=${stdout}`);
+        res.status(500).json({ error: `AI parsing failed: ${stderr || stdout || 'unknown error'}` });
         return;
       }
       // Extract JSON from the response (handle possible markdown fences)
@@ -150,22 +139,9 @@ Task description: ${description.trim()}`;
       }
       try {
         const parsed = JSON.parse(jsonStr);
-        // Validate and cap decision points
-        if (Array.isArray(parsed.decisionPoints)) {
-          parsed.decisionPoints = parsed.decisionPoints
-            .filter((dp: Record<string, unknown>) =>
-              typeof dp.question === 'string' &&
-              Array.isArray(dp.options) &&
-              dp.options.length >= 2 &&
-              typeof dp.defaultIndex === 'number' &&
-              typeof dp.specField === 'string'
-            )
-            .slice(0, 5);
-        } else {
-          parsed.decisionPoints = [];
-        }
         res.json(parsed);
       } catch {
+        console.log(`[http] /api/tasks/parse JSON parse failed: ${stdout}`);
         res.status(500).json({ error: 'Failed to parse AI response as JSON', raw: stdout });
       }
     });
@@ -174,9 +150,6 @@ Task description: ${description.trim()}`;
       clearTimeout(timer);
       res.status(500).json({ error: `Failed to spawn claude: ${err.message}` });
     });
-
-    child.stdin.write(prompt);
-    child.stdin.end();
   });
 
   // POST /api/tasks — create task
@@ -384,6 +357,344 @@ Task description: ${description.trim()}`;
       blockedReason: null,
       status: 'ready',
     });
+    broadcast(io, 'task:updated', updated);
+    res.json(updated);
+  });
+
+  // POST /api/tasks/refine-field — AI-assisted per-field spec refinement
+  router.post('/refine-field', (req, res) => {
+    const { field, currentValue, fullSpec } = req.body as {
+      field?: string;
+      currentValue?: string;
+      fullSpec?: Record<string, string>;
+    };
+    if (!field || typeof currentValue !== 'string') {
+      res.status(400).json({ error: 'field and currentValue are required' });
+      return;
+    }
+
+    const specContext = fullSpec
+      ? Object.entries(fullSpec)
+          .filter(([k, v]) => k !== field && v)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('\n')
+      : '';
+
+    const prompt = `You are a spec refinement assistant. Improve the following specification field.
+
+Field: ${field}
+Current value: ${currentValue || '(empty)'}
+
+Other spec context:
+${specContext || '(none yet)'}
+
+Instructions:
+1. If the current value is empty, generate a thorough draft based on the task context.
+2. If it has content, improve it: add missing details, clarify ambiguities, make criteria more testable.
+3. Identify gaps — things that should be addressed but aren't mentioned.
+
+Return ONLY valid JSON:
+{
+  "refined": "the improved field content",
+  "gaps": ["gap 1 that should be addressed", "gap 2"]
+}
+
+Return an empty gaps array if no gaps found. The refined text should be plain text, not JSON.`;
+
+    const child = spawn('claude', ['--print', '-p', prompt], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, CLAUDECODE: undefined },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    const timer = setTimeout(() => { child.kill(); }, 60_000);
+
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        console.log(`[http] /api/tasks/refine-field failed: code=${code} stderr=${stderr}`);
+        res.status(500).json({ error: `AI refinement failed: ${stderr || stdout || 'unknown error'}` });
+        return;
+      }
+      let jsonStr = stdout.trim();
+      const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch) { jsonStr = fenceMatch[1].trim(); }
+      try {
+        const parsed = JSON.parse(jsonStr) as { refined: string; gaps?: string[] };
+        res.json({
+          refined: typeof parsed.refined === 'string' ? parsed.refined : currentValue,
+          gaps: Array.isArray(parsed.gaps) ? parsed.gaps.filter((g): g is string => typeof g === 'string') : [],
+        });
+      } catch {
+        console.log(`[http] /api/tasks/refine-field JSON parse failed: ${stdout}`);
+        res.status(500).json({ error: 'Failed to parse AI response', raw: stdout });
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      res.status(500).json({ error: `Failed to spawn claude: ${err.message}` });
+    });
+  });
+
+  // POST /api/tasks/chat — spec-kit specify→clarify conversational loop
+  router.post('/chat', (req, res) => {
+    const { messages, currentSpec, roundNumber, projectId } = req.body as {
+      messages?: Array<{ role: string; content: string }>;
+      currentSpec?: Record<string, string>;
+      roundNumber?: number;
+      projectId?: string;
+    };
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      res.status(400).json({ error: 'messages array is required and must not be empty' });
+      return;
+    }
+    if (!currentSpec || typeof currentSpec !== 'object') {
+      res.status(400).json({ error: 'currentSpec object is required' });
+      return;
+    }
+
+    // Look up project path so Claude runs in the project's repo (picks up CLAUDE.md automatically)
+    let projectPath: string | undefined;
+    if (projectId) {
+      const project = queries.getProjectById(db, projectId);
+      if (project) {
+        projectPath = project.path;
+      }
+    }
+
+    const round = roundNumber ?? 1;
+
+    const specState = [
+      `Title: ${currentSpec.title || '(empty)'}`,
+      `Description: ${currentSpec.description || '(empty)'}`,
+      `Goal: ${currentSpec.goal || '(empty)'}`,
+      `User Scenarios: ${currentSpec.userScenarios || '(empty)'}`,
+      `Success Criteria: ${currentSpec.successCriteria || '(empty)'}`,
+    ].join('\n');
+
+    const conversationHistory = messages
+      .slice(-10)
+      .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n\n');
+
+    // Round 1: spec-kit SPECIFY phase — generate initial draft with clarification markers
+    // Round 2+: spec-kit CLARIFY phase — ask one question at a time, update spec incrementally
+    const prompt = round === 1
+      ? `You are a spec-driven specification agent (following GitHub's spec-kit methodology).
+
+Given a feature description from a product manager, create an initial specification draft.
+You are running inside the project's repository — use the project's CLAUDE.md, AGENTS.md, and codebase context to make your spec and questions highly relevant to this specific project.
+
+CRITICAL RULES:
+- Focus on WHAT users need and WHY. Avoid HOW to implement (no tech stack, APIs, code structure).
+- Only fill spec fields with information the user EXPLICITLY stated. Do NOT infer or guess.
+- For unclear or missing aspects, add [NEEDS CLARIFICATION] markers in the goal field.
+- Maximum 3 [NEEDS CLARIFICATION] markers. Only for decisions that significantly impact scope or UX.
+- Make informed guesses for minor details and document them as assumptions.
+- User scenarios MUST use Given/When/Then format with P1/P2/P3 priority levels.
+- Each user scenario should be independently testable and deliver standalone value.
+- Success criteria must be measurable, technology-agnostic, and verifiable.
+
+After generating the draft spec, you MUST ask 2-3 clarifying questions about the most critical gaps.
+Present each question with:
+- Context: what part of the spec this affects
+- Recommended answer based on best practices
+- 2-3 options as a simple list
+
+Feature description from user:
+${conversationHistory}
+
+Return ONLY valid JSON with no markdown fences:
+{
+  "message": "Your response: summarize what you understood, then ask 2-3 clarifying questions with recommended answers and options",
+  "specUpdates": {
+    "goal": "What was explicitly stated about the problem and desired end state. Include [NEEDS CLARIFICATION: question] markers for critical unknowns.",
+    "userScenarios": "Only scenarios clearly implied by the description. Leave empty if not enough info.",
+    "successCriteria": "Only criteria explicitly stated or clearly implied. Leave empty if not enough info."
+  },
+  "titleUpdate": "short imperative title",
+  "descriptionUpdate": "1-2 sentence description",
+  "riskLevelUpdate": "low|medium|high",
+  "priorityUpdate": 0,
+  "isComplete": false,
+  "gaps": ["critical gap 1", "critical gap 2"]
+}`
+      : `You are a spec clarification agent (following GitHub's spec-kit clarify methodology).
+
+You are in round ${round} of a specification clarification session. Your goal is to reduce ambiguity and fill gaps in the spec through targeted questions.
+You are running inside the project's repository — use the project's CLAUDE.md, AGENTS.md, and codebase context to ask questions specific to this project.
+
+Current spec state:
+${specState}
+
+Conversation so far:
+${conversationHistory}
+
+CLARIFICATION RULES:
+1. Based on the user's latest answer, update the relevant spec fields. Remove any [NEEDS CLARIFICATION] markers that are now resolved.
+2. Perform a structured ambiguity scan across these categories:
+   - Functional scope & behavior (user goals, out-of-scope declarations)
+   - User roles & personas
+   - Edge cases & error handling
+   - Non-functional attributes (performance, security, scalability)
+   - Success criteria completeness
+3. Ask EXACTLY ONE follow-up question at a time. Present it with:
+   - **Context**: What part of the spec this affects
+   - **Recommended**: Your suggested answer with brief reasoning
+   - **Options**: 2-4 concrete options (A/B/C/D) the user can pick from, or "provide your own"
+4. Focus on questions whose answers materially impact scope, user experience, or test design.
+5. Do NOT ask about implementation details, tech stack, or architecture.
+6. User scenarios should use Given/When/Then format with P1/P2/P3 priorities.
+7. Success criteria must be measurable and technology-agnostic.
+8. You may also update title, description, riskLevel, priority if the conversation reveals better values.
+9. Set isComplete to true ONLY when:
+   - All 3 spec fields have substantive content
+   - No [NEEDS CLARIFICATION] markers remain
+   - You have asked at least 3 questions total across all rounds
+   - You have no remaining high-impact concerns
+10. If the user says "done", "good enough", "proceed", or similar, set isComplete to true regardless of round.
+
+Return ONLY valid JSON with no markdown fences:
+{
+  "message": "Your response: acknowledge the answer, update context, then ask ONE focused question with recommended answer and options",
+  "specUpdates": { "goal": "...", "userScenarios": "...", "successCriteria": "..." },
+  "titleUpdate": "updated title if changed, omit if not",
+  "descriptionUpdate": "updated description if changed, omit if not",
+  "riskLevelUpdate": "low|medium|high if changed, omit if not",
+  "priorityUpdate": 0,
+  "isComplete": false,
+  "gaps": ["remaining gap 1"]
+}`;
+
+    const spawnOpts: { stdio: ['ignore', 'pipe', 'pipe']; env: Record<string, string | undefined>; cwd?: string } = {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, CLAUDECODE: undefined },
+    };
+    if (projectPath) {
+      spawnOpts.cwd = projectPath;
+      console.log(`[http] /api/tasks/chat spawning claude in project dir: ${projectPath}`);
+    } else {
+      console.log(`[http] /api/tasks/chat WARNING: no projectPath resolved (projectId=${projectId ?? 'none'})`);
+    }
+
+    const child = spawn('claude', ['--print', '-p', prompt], spawnOpts);
+
+    let stdout = '';
+    let stderr = '';
+
+    const timer = setTimeout(() => { child.kill(); }, 60_000);
+
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        console.log(`[http] /api/tasks/chat failed: code=${code} stderr=${stderr}`);
+        res.status(500).json({ error: `AI chat failed: ${stderr || stdout || 'unknown error'}` });
+        return;
+      }
+      let jsonStr = stdout.trim();
+      const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch) { jsonStr = fenceMatch[1].trim(); }
+      try {
+        const parsed = JSON.parse(jsonStr) as {
+          message: string;
+          specUpdates?: Record<string, string>;
+          titleUpdate?: string;
+          descriptionUpdate?: string;
+          riskLevelUpdate?: string;
+          priorityUpdate?: number;
+          isComplete?: boolean;
+          gaps?: string[];
+        };
+        res.json({
+          message: typeof parsed.message === 'string' ? parsed.message : 'I updated the spec based on your input.',
+          specUpdates: parsed.specUpdates && typeof parsed.specUpdates === 'object' ? parsed.specUpdates : {},
+          titleUpdate: typeof parsed.titleUpdate === 'string' ? parsed.titleUpdate : undefined,
+          descriptionUpdate: typeof parsed.descriptionUpdate === 'string' ? parsed.descriptionUpdate : undefined,
+          riskLevelUpdate: typeof parsed.riskLevelUpdate === 'string' ? parsed.riskLevelUpdate : undefined,
+          priorityUpdate: typeof parsed.priorityUpdate === 'number' ? parsed.priorityUpdate : undefined,
+          isComplete: !!parsed.isComplete,
+          gaps: Array.isArray(parsed.gaps) ? parsed.gaps.filter((g): g is string => typeof g === 'string') : [],
+        });
+      } catch {
+        console.log(`[http] /api/tasks/chat JSON parse failed: ${stdout}`);
+        res.status(500).json({ error: 'Failed to parse AI response', raw: stdout });
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      res.status(500).json({ error: `Failed to spawn claude: ${err.message}` });
+    });
+  });
+
+  // POST /api/tasks/:id/review-plan — engineer approves or rejects AI-generated plan
+  router.post('/:id/review-plan', (req, res) => {
+    const task = queries.getTaskById(db, req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (task.status !== 'needs_plan_review') {
+      res.status(400).json({ error: 'Task is not awaiting plan review' });
+      return;
+    }
+
+    const { action, reason, edits } = req.body as {
+      action?: 'approve' | 'reject';
+      reason?: string;
+      edits?: { planSummary?: string; subtasks?: Array<{ title: string; description: string }> };
+    };
+
+    if (action !== 'approve' && action !== 'reject') {
+      res.status(400).json({ error: 'action must be "approve" or "reject"' });
+      return;
+    }
+
+    if (action === 'reject') {
+      if (!reason?.trim()) {
+        res.status(400).json({ error: 'reason is required when rejecting a plan' });
+        return;
+      }
+      // Store rejection as event for context in next planning run
+      queries.createEvent(db, {
+        taskId: task.id,
+        type: 'plan_review_rejected',
+        payload: JSON.stringify({ reason: reason.trim() }),
+      });
+      // Move back to ready — worker will re-run planning with rejection feedback
+      const updated = queries.updateTask(db, task.id, { status: 'ready' });
+      broadcast(io, 'task:updated', updated);
+      res.json(updated);
+      return;
+    }
+
+    // Approve: store edits if provided, then move to ready for implementation
+    if (edits) {
+      queries.createEvent(db, {
+        taskId: task.id,
+        type: 'plan_review_approved',
+        payload: JSON.stringify({ edits }),
+      });
+    } else {
+      queries.createEvent(db, {
+        taskId: task.id,
+        type: 'plan_review_approved',
+        payload: JSON.stringify({}),
+      });
+    }
+
+    // Move to ready — worker will detect existing planning run and skip to implementation
+    const updated = queries.updateTask(db, task.id, { status: 'ready' });
     broadcast(io, 'task:updated', updated);
     res.json(updated);
   });

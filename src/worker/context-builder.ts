@@ -103,6 +103,23 @@ export function buildTaskPacket(
         }
       }
     }
+
+    // ── Plan rejection feedback ─────────────────────────────────────
+    const rejections = events.filter((e) => e.type === 'plan_review_rejected');
+    if (rejections.length > 0) {
+      sections.push('## Plan Review Feedback');
+      sections.push('The previous plan was rejected by an engineer. Address the following feedback:');
+      for (const rejection of rejections) {
+        try {
+          const payload = JSON.parse(rejection.payload) as { reason?: string };
+          if (payload.reason) {
+            sections.push(`- ${payload.reason}`);
+          }
+        } catch {
+          sections.push(rejection.payload);
+        }
+      }
+    }
   }
 
   return sections.join('\n\n');

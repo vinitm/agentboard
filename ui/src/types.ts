@@ -3,8 +3,8 @@
 export type TaskStatus =
   | 'backlog'
   | 'ready'
-  | 'spec'
   | 'planning'
+  | 'needs_plan_review'
   | 'implementing'
   | 'checks'
   | 'review_panel'
@@ -15,7 +15,6 @@ export type TaskStatus =
   | 'cancelled';
 
 export type Stage =
-  | 'spec'
   | 'planning'
   | 'implementing'
   | 'checks'
@@ -66,6 +65,15 @@ export interface Run {
   finishedAt: string | null;
 }
 
+export interface Artifact {
+  id: string;
+  runId: string;
+  type: string;
+  name: string;
+  content: string;
+  createdAt: string;
+}
+
 export interface SpecResult {
   acceptanceCriteria: string[];
   fileScope: string[];
@@ -73,18 +81,45 @@ export interface SpecResult {
   riskAssessment: string;
 }
 
-export interface SpecTemplate {
-  context: string;
-  acceptanceCriteria: string;
-  constraints: string;
-  verification: string;
-  riskLevel: RiskLevel;
-  infrastructureAllowed: string;
+// Spec document shape (PM-authored, spec-kit inspired)
+export interface SpecDocument {
+  goal: string;
+  userScenarios: string;
+  successCriteria: string;
 }
 
-export interface DecisionPoint {
-  question: string;
-  options: string[];
-  defaultIndex: number;
-  specField: string;
+// Conversational task builder types
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
+export interface ChatResponse {
+  message: string;
+  specUpdates: Partial<SpecDocument>;
+  titleUpdate?: string;
+  descriptionUpdate?: string;
+  riskLevelUpdate?: RiskLevel;
+  priorityUpdate?: number;
+  isComplete: boolean;
+  gaps: string[];
+}
+
+export interface PlanReviewAction {
+  action: 'approve' | 'reject';
+  reason?: string;
+  edits?: {
+    planSummary?: string;
+    subtasks?: Array<{ title: string; description: string }>;
+  };
+}
+
+export interface PlanReviewData {
+  planSummary: string;
+  subtasks: Array<{ title: string; description: string }>;
+  assumptions: string[];
+  fileHints: string[];
+  riskAssessment?: string;
 }

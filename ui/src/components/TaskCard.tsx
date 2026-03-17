@@ -20,6 +20,7 @@ function leftBorderClass(task: Task): string {
   if (task.status === 'blocked') return 'border-l-accent-amber';
   if (task.status === 'failed') return 'border-l-accent-red';
   if (task.status === 'needs_human_review') return 'border-l-accent-pink';
+  if (task.status === 'needs_plan_review') return 'border-l-accent-amber';
   if (task.claimedBy) return 'border-l-accent-purple';
   return 'border-l-transparent';
 }
@@ -36,9 +37,9 @@ function timeAgo(dateStr: string): string {
 }
 
 // Pipeline stages in order
-const PIPELINE_STAGES = ['spec', 'planning', 'implementing', 'checks', 'review_panel'] as const;
+const PIPELINE_STAGES = ['planning', 'needs_plan_review', 'implementing', 'checks', 'review_panel'] as const;
 const STAGE_LABELS: Record<string, string> = {
-  spec: 'S', planning: 'P', implementing: 'I', checks: 'C', review_panel: 'R',
+  planning: 'P', needs_plan_review: 'R', implementing: 'I', checks: 'C', review_panel: 'V',
 };
 
 function getStageIndex(status: string): number {
@@ -63,7 +64,9 @@ const PipelineIndicator: React.FC<{ status: string }> = ({ status }) => {
         } else if (isFailed && currentIdx >= 0 && i === currentIdx) {
           dotClass = 'bg-accent-red'; // failed at this stage
         } else if (i === currentIdx) {
-          dotClass = 'bg-accent-purple animate-pulse-dot'; // current
+          dotClass = stage === 'needs_plan_review'
+            ? 'bg-accent-amber animate-pulse-dot' // human checkpoint
+            : 'bg-accent-purple animate-pulse-dot'; // current
         }
         return (
           <div key={stage} className="flex items-center gap-0.5">

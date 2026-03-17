@@ -20,7 +20,6 @@ interface Props {
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'backlog', label: 'Backlog' },
   { value: 'ready', label: 'Ready' },
-  { value: 'spec', label: 'Spec' },
   { value: 'planning', label: 'Planning' },
   { value: 'implementing', label: 'Implementing' },
   { value: 'checks', label: 'Checks' },

@@ -5,8 +5,9 @@ import { api } from '../api/client';
 import { LogViewer } from './LogViewer';
 import { BlockedPanel } from './BlockedPanel';
 import { PRPanel } from './PRPanel';
+import { PlanReviewPanel } from './PlanReviewPanel';
 import { RunHistory } from './RunHistory';
-import type { Task, TaskStatus, Run, SpecTemplate } from '../types';
+import type { Task, TaskStatus, Run, SpecDocument, PlanReviewAction } from '../types';
 
 interface Props {
   task: Task;
@@ -17,13 +18,14 @@ interface Props {
   onDelete: (id: string) => Promise<void>;
   onEdit: (task: Task) => void;
   onMove: (id: string, column: TaskStatus) => Promise<Task>;
+  onReviewPlan: (id: string, action: PlanReviewAction) => Promise<Task>;
 }
 
 interface EventRecord { id: string; taskId: string; runId: string | null; type: string; payload: string; createdAt: string }
 
-const PIPELINE_STAGES = ['spec', 'planning', 'implementing', 'checks', 'review_panel'] as const;
+const PIPELINE_STAGES = ['planning', 'needs_plan_review', 'implementing', 'checks', 'review_panel'] as const;
 const STAGE_LABELS: Record<string, string> = {
-  spec: 'Spec', planning: 'Planning', implementing: 'Implementing', checks: 'Checks', review_panel: 'Review',
+  planning: 'Planning', needs_plan_review: 'Plan Review', implementing: 'Implementing', checks: 'Checks', review_panel: 'Review',
 };
 
 function getStageIndex(status: string): number {
@@ -44,7 +46,9 @@ const PipelineProgress: React.FC<{ status: string }> = ({ status }) => {
         } else if (isFailed && i === currentIdx) {
           stateClass = 'bg-accent-red/15 text-accent-red border-accent-red/30'; // failed
         } else if (i === currentIdx) {
-          stateClass = 'bg-accent-purple/15 text-accent-purple border-accent-purple/30'; // active
+          stateClass = stage === 'needs_plan_review'
+            ? 'bg-accent-amber/15 text-accent-amber border-accent-amber/30' // human checkpoint
+            : 'bg-accent-purple/15 text-accent-purple border-accent-purple/30'; // active
         }
         return (
           <React.Fragment key={stage}>
@@ -158,6 +162,7 @@ const AssumptionsPanel: React.FC<{ runs: Run[] }> = ({ runs }) => {
 
 const statusBadgeColor: Record<string, string> = {
   backlog: 'text-text-tertiary', ready: 'text-accent-blue', spec: 'text-accent-purple', planning: 'text-accent-purple',
+  needs_plan_review: 'text-accent-amber',
   implementing: 'text-accent-purple', checks: 'text-accent-purple', review_panel: 'text-accent-purple',
   needs_human_review: 'text-accent-pink', done: 'text-accent-green',
   blocked: 'text-accent-amber', failed: 'text-accent-red', cancelled: 'text-text-tertiary',
@@ -167,7 +172,7 @@ const riskTextColor: Record<string, string> = {
   high: 'text-accent-red', medium: 'text-accent-amber', low: 'text-accent-green',
 };
 
-export const TaskDetail: React.FC<Props> = ({ task, onClose, onUpdate, onAnswer, onRetry, onDelete, onEdit, onMove }) => {
+export const TaskDetail: React.FC<Props> = ({ task, onClose, onUpdate, onAnswer, onRetry, onDelete, onEdit, onMove, onReviewPlan }) => {
   const [runs, setRuns] = useState<Run[]>([]);
   const [events, setEvents] = useState<EventRecord[]>([]);
 
@@ -176,14 +181,14 @@ export const TaskDetail: React.FC<Props> = ({ task, onClose, onUpdate, onAnswer,
     api.get<EventRecord[]>(`/api/events?taskId=${task.id}`).then(setEvents).catch(console.error);
   }, [task.id]);
 
-  let spec: Partial<SpecTemplate> | null = null;
+  let spec: Partial<SpecDocument> | null = null;
   if (task.spec) {
-    try { spec = JSON.parse(task.spec) as Partial<SpecTemplate>; } catch {}
+    try { spec = JSON.parse(task.spec) as Partial<SpecDocument>; } catch {}
   }
 
-  const isAgentActive = ['spec', 'planning', 'implementing', 'checks', 'review_panel'].includes(task.status);
+  const isAgentActive = ['planning', 'implementing', 'checks', 'review_panel'].includes(task.status);
   const isSubtask = !!task.parentTaskId;
-  const showPipeline = !isSubtask && (isAgentActive || task.status === 'done' || task.status === 'needs_human_review' || task.status === 'failed');
+  const showPipeline = !isSubtask && (isAgentActive || task.status === 'needs_plan_review' || task.status === 'done' || task.status === 'needs_human_review' || task.status === 'failed');
 
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -254,6 +259,9 @@ export const TaskDetail: React.FC<Props> = ({ task, onClose, onUpdate, onAnswer,
           <ReviewPanelResults events={events} />
 
           {/* Status-specific panels */}
+          {task.status === 'needs_plan_review' && (
+            <PlanReviewPanel task={task} onReview={onReviewPlan} />
+          )}
           {task.status === 'blocked' && task.blockedReason && (
             <BlockedPanel taskId={task.id} blockedReason={task.blockedReason} onAnswer={onAnswer} />
           )}

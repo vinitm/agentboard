@@ -234,52 +234,71 @@ describe('Worker loop: no blocking transitions', () => {
   });
 });
 
-// ── Parse endpoint: decision points ─────────────────────────────────
+// ── Parse endpoint: spec-driven parsing ──────────────────────────────
 
-describe('Parse endpoint: decision points validation', () => {
-  it('POST /api/tasks/parse prompt requests decisionPoints', () => {
+describe('Parse endpoint: spec-driven fields', () => {
+  it('POST /api/tasks/parse prompt requests spec-kit inspired fields', () => {
     const fs = require('node:fs');
     const routesSource = fs.readFileSync(repoRoot('src/server/routes/tasks.ts'), 'utf-8');
 
-    expect(routesSource).toContain('decisionPoints');
-    expect(routesSource).toContain('specField');
-    expect(routesSource).toContain('.slice(0, 5)');
+    expect(routesSource).toContain('goal');
+    expect(routesSource).toContain('userScenarios');
+    expect(routesSource).toContain('successCriteria');
   });
 });
 
-// ── Types: DecisionPoint exists ─────────────────────────────────────
+// ── Types: SpecDocument and PlanReviewAction exist ───────────────────
 
-describe('Shared types: DecisionPoint', () => {
-  it('DecisionPoint interface exists in backend types', () => {
+describe('Shared types: SpecDocument and PlanReviewAction', () => {
+  it('SpecDocument interface exists in backend types with spec-kit fields', () => {
     const fs = require('node:fs');
     const typesSource = fs.readFileSync(repoRoot('src/types/index.ts'), 'utf-8');
 
-    expect(typesSource).toContain('export interface DecisionPoint');
-    expect(typesSource).toContain('question: string');
-    expect(typesSource).toContain('options: string[]');
-    expect(typesSource).toContain('defaultIndex: number');
-    expect(typesSource).toContain('specField: string');
+    expect(typesSource).toContain('export interface SpecDocument');
+    expect(typesSource).toContain('goal: string');
+    expect(typesSource).toContain('userScenarios: string');
+    expect(typesSource).toContain('successCriteria: string');
   });
 
-  it('DecisionPoint interface exists in frontend types', () => {
+  it('PlanReviewAction interface exists in backend types', () => {
+    const fs = require('node:fs');
+    const typesSource = fs.readFileSync(repoRoot('src/types/index.ts'), 'utf-8');
+
+    expect(typesSource).toContain('export interface PlanReviewAction');
+    expect(typesSource).toContain("'approve' | 'reject'");
+  });
+
+  it('SpecDocument interface exists in frontend types', () => {
     const fs = require('node:fs');
     const typesSource = fs.readFileSync(repoRoot('ui/src/types.ts'), 'utf-8');
 
-    expect(typesSource).toContain('export interface DecisionPoint');
+    expect(typesSource).toContain('export interface SpecDocument');
+    expect(typesSource).toContain('export interface PlanReviewAction');
   });
 });
 
-// ── UI: TaskForm has decisions phase ────────────────────────────────
+// ── UI: TaskForm has spec editor phase ───────────────────────────────
 
-describe('UI: TaskForm decisions phase', () => {
-  it('TaskForm has decisions phase in its source', () => {
+describe('UI: TaskForm spec editor', () => {
+  it('TaskForm uses SpecField and spec-kit chat API with round tracking', () => {
     const fs = require('node:fs');
     const formSource = fs.readFileSync(repoRoot('ui/src/components/TaskForm.tsx'), 'utf-8');
 
-    expect(formSource).toContain("'decisions'");
-    expect(formSource).toContain('DecisionPoint');
-    expect(formSource).toContain('Quick Decisions');
-    expect(formSource).toContain('specField');
+    expect(formSource).toContain('SpecField');
+    expect(formSource).toContain('goal');
+    expect(formSource).toContain('/api/tasks/chat');
+    expect(formSource).toContain('roundNumber');
+    // Should NOT use /api/tasks/parse anymore
+    expect(formSource).not.toContain('/api/tasks/parse');
+  });
+
+  it('SpecField component renders read-only spec preview', () => {
+    const fs = require('node:fs');
+    const specFieldSource = fs.readFileSync(repoRoot('ui/src/components/SpecField.tsx'), 'utf-8');
+
+    expect(specFieldSource).toContain('label');
+    expect(specFieldSource).toContain('value');
+    expect(specFieldSource).toContain('Not yet filled');
   });
 });
 

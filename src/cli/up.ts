@@ -65,6 +65,7 @@ export default async function up(opts: {
       implementation: 'opus',
       review: 'sonnet',
       security: 'haiku',
+      learning: 'haiku',
     },
     commands: {
       test: null,

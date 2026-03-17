@@ -123,6 +123,7 @@ const AppContent: React.FC = () => {
                     <Board
                       tasks={tasks}
                       loading={loading}
+                      projectId={projectId}
                       createTask={createTask}
                       updateTask={updateTask}
                       moveTask={moveTask}

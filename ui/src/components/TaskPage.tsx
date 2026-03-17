@@ -9,7 +9,7 @@ import { SubtaskMiniCard } from './SubtaskMiniCard';
 import type { Task, Run, TaskStatus } from '../types';
 
 type Tab = 'logs' | 'events' | 'runs';
-const ACTIVE_STATUSES: TaskStatus[] = ['spec', 'planning', 'implementing', 'checks', 'review_panel'];
+const ACTIVE_STATUSES: TaskStatus[] = ['planning', 'implementing', 'checks', 'review_panel'];
 
 /** For subtasks, collapse internal pipeline states into simplified labels. */
 function getSubtaskDisplayStatus(task: Task): string {
