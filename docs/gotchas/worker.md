@@ -15,3 +15,19 @@
 **Cause:** Four stages (planner, implementer, review-spec, review-code) invoke Claude Code through the same `executeClaudeCode()` function in `executor.ts`. A change to spawn arguments, timeout handling, or output parsing affects all four stages.
 
 **Fix:** Test changes to executor.ts against multiple stages, not just the one you're working on. Note: checks and pr-creator do NOT use `executeClaudeCode()` — they run shell commands directly.
+
+## Stage logs are additive; cleanup may leave orphaned files
+
+**Symptom:** After re-running a failed stage, the log file from the previous attempt is still present at `.agentboard/logs/{taskId}/{stage}.log`.
+
+**Cause:** `StageRunner` writes to `{stage}.log` for attempt 1, then `{stage}-2.log`, `{stage}-3.log`, etc. for retries. Log cleanup runs on worker startup and removes files older than 30 days — it does not clean up task-specific logs when a task is manually re-run.
+
+**Fix:** Log cleanup is automatic on startup. If you need to clean logs for a specific task immediately, manually remove `.agentboard/logs/{taskId}`. Be aware that deleting the directory will delete all stages' logs for that task.
+
+## Stage logs and run logs are separate systems
+
+**Symptom:** A stage completes but the UI shows no log content, or `run:log` events are received but the database has no corresponding `stage_logs` record.
+
+**Cause:** `stage_logs` table tracks metadata (start time, duration, status, summary); the actual log file content is written separately. If `StageRunner.execute()` is called with `onOutput` callback but the callback crashes, the DB record may be created but the file might not have content. Conversely, if the DB write fails but the file write succeeds, logs exist on disk but aren't indexed.
+
+**Fix:** Always use `StageRunner.execute()` with proper error handling. The `onOutput` callback should be a simple append operation. For debugging, check both the `stage_logs` table (via `listStageLogsByTask()`) and the actual files in `.agentboard/logs/`.
