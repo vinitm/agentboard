@@ -559,7 +559,7 @@ describe('StageRunner', () => {
   });
 
   it('creates stage_logs row, file, and emits events', async () => {
-    const runner = createStageRunner({ taskId, projectId, io, db, logsDir });
+    const runner = createStageRunner({ taskId, projectId, io, db, logsDir, projectRoot: logsDir });
 
     const result = await runner.execute('planning', (onOutput) => {
       onOutput('chunk 1');
@@ -590,7 +590,7 @@ describe('StageRunner', () => {
   });
 
   it('marks stage as failed when function throws', async () => {
-    const runner = createStageRunner({ taskId, projectId, io, db, logsDir });
+    const runner = createStageRunner({ taskId, projectId, io, db, logsDir, projectRoot: logsDir });
 
     await expect(
       runner.execute('implementing', () => { throw new Error('boom'); })
@@ -602,7 +602,7 @@ describe('StageRunner', () => {
 
   it('handles subtaskId for nested stages', async () => {
     const subtaskId = 'st-1';
-    const runner = createStageRunner({ taskId, projectId, subtaskId, io, db, logsDir });
+    const runner = createStageRunner({ taskId, projectId, subtaskId, io, db, logsDir, projectRoot: logsDir });
 
     await runner.execute('implementing', (onOutput) => {
       onOutput('impl output');
@@ -618,7 +618,7 @@ describe('StageRunner', () => {
   });
 
   it('handles retry attempts with suffixed filenames', async () => {
-    const runner = createStageRunner({ taskId, projectId, io, db, logsDir });
+    const runner = createStageRunner({ taskId, projectId, io, db, logsDir, projectRoot: logsDir });
 
     await runner.execute('planning', (onOutput) => {
       onOutput('attempt 1');
@@ -664,7 +664,10 @@ export interface StageRunnerOptions {
   subtaskId?: string;
   io: Server;
   db: Database.Database;
+  /** Absolute path to the logs directory, e.g., /repo/.agentboard/logs */
   logsDir: string;
+  /** Absolute path to the project root — used to compute relative file paths for DB storage */
+  projectRoot: string;
 }
 
 export interface ExecuteOptions {
@@ -689,7 +692,7 @@ export interface StageRunner {
 }
 
 export function createStageRunner(opts: StageRunnerOptions): StageRunner {
-  const { taskId, projectId, subtaskId, io, db, logsDir } = opts;
+  const { taskId, projectId, subtaskId, io, db, logsDir, projectRoot } = opts;
 
   function getFilePath(stage: StageLogStage, attempt: number): string {
     const dir = subtaskId
@@ -710,7 +713,7 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
     ): Promise<T> {
       const attempt = options?.attempt ?? 1;
       const filePath = getFilePath(stage, attempt);
-      const relativeFilePath = path.relative(path.resolve(logsDir, '..', '..'), filePath);
+      const relativeFilePath = path.relative(projectRoot, filePath);
       const startedAt = new Date().toISOString();
       const startTime = Date.now();
 
@@ -876,6 +879,7 @@ const stageRunner = createStageRunner({
   io,
   db,
   logsDir: path.join(configDir, 'logs'),
+  projectRoot: project.path,
 });
 ```
 
@@ -938,6 +942,7 @@ const stageRunner = createStageRunner({
   io,
   db,
   logsDir: path.join(configDir, 'logs'),
+  projectRoot: project.path,
 });
 ```
 
@@ -1188,11 +1193,18 @@ import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
+import type { StageLog } from '../../types/index.js';
 import { getStageLogById, listStageLogsByTask } from '../../db/stage-log-queries.js';
 import { getTaskById, getProjectById } from '../../db/queries.js';
 
 export function createStageLogRoutes(db: Database.Database): Router {
   const router = Router({ mergeParams: true });
+
+  /** Strip server-internal fields before sending to client. */
+  function toClientStageLog(log: StageLog): Omit<StageLog, 'filePath' | 'projectId' | 'createdAt'> {
+    const { filePath, projectId, createdAt, ...clientLog } = log;
+    return clientLog;
+  }
 
   // GET /api/tasks/:id/stages
   router.get('/', (req, res) => {
@@ -1200,7 +1212,7 @@ export function createStageLogRoutes(db: Database.Database): Router {
     const task = getTaskById(db, id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
 
-    const stages = listStageLogsByTask(db, id);
+    const stages = listStageLogsByTask(db, id).map(toClientStageLog);
     res.json({ stages });
   });
 
@@ -1317,6 +1329,8 @@ getStageLogContent(taskId: string, stageLogId: string): Promise<string> {
 ```
 
 Note: `getStages` uses the existing `request<T>()` function (not `this.get`). `getStageLogContent` uses raw `fetch` because it returns `text/plain`, not JSON.
+
+**Follow-up:** The initial `getStageLogContent` fetches full content. For large log files (5000+ lines), a future enhancement should add `getStageLogContentRange(taskId, stageLogId, start, end)` that sends a `Range` header for incremental loading. The server already supports byte-range requests — the client method is the gap.
 
 - [ ] **Step 2: Verify build**
 
