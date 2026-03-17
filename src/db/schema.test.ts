@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe('schema initialization', () => {
   describe('tables', () => {
-    const expectedTables = ['projects', 'tasks', 'runs', 'artifacts', 'git_refs', 'events', 'task_logs'];
+    const expectedTables = ['projects', 'tasks', 'runs', 'artifacts', 'git_refs', 'events', 'task_logs', 'chat_messages', 'stage_logs'];
 
     it.each(expectedTables)('creates table: %s', (tableName) => {
       const row = db
@@ -24,7 +24,7 @@ describe('schema initialization', () => {
       expect(row!.name).toBe(tableName);
     });
 
-    it('creates exactly 7 tables', () => {
+    it('creates exactly 9 tables', () => {
       const rows = db
         .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
         .all() as { name: string }[];
@@ -46,7 +46,11 @@ describe('schema initialization', () => {
       'idx_events_task_id',
       'idx_events_run_id',
       'idx_events_type',
+      'idx_chat_messages_task_id',
       'idx_projects_path',
+      'idx_stage_logs_task_id',
+      'idx_stage_logs_project_id',
+      'idx_stage_logs_status',
     ];
 
     it.each(expectedIndexes)('creates index: %s', (indexName) => {
