@@ -71,6 +71,7 @@ Subtask pipeline: backlog → ready → ralph loop → done|failed (fully autono
 
 - **Spec authoring** — PM writes detailed spec via UI (6 sections: problem, user stories, acceptance criteria, constraints, out of scope, verification). Per-field AI refinement via `POST /api/tasks/refine-field`.
 - **Plan review** — after AI planning, task pauses at `needs_plan_review`. Engineer reviews/edits plan via `POST /api/tasks/:id/review-plan` (approve with optional edits, or reject with required reason). Rejection feedback flows into re-planning context.
+- **Learnings UI** — `/learnings` page displays: extracted skills from `.claude/skills/learned/` (with frontmatter parsing), analytics on pipeline performance (first-pass check rate, avg attempts, avg review cycles, common failures), and task history with metrics (duration, tokens, outcome). Backed by `GET /api/projects/:projectId/learning`, `GET /api/projects/:projectId/learning/history`, and `GET /api/projects/:projectId/learning/skills`.
 - **Stages** (`src/worker/stages/`) — planner, implementer, checks, review-panel, pr-creator, learner
 - **Ralph loop** (`src/worker/ralph-loop.ts`) — implement→checks loop with fresh context per iteration. Fallback prompt on 3rd+ failure. Max 5 iterations.
 - **Review panel** (`src/worker/stages/review-panel.ts`) — 3 parallel reviewers (Architect, QA, Security). Unanimous pass required.
