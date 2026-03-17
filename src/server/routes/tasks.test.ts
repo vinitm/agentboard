@@ -411,6 +411,306 @@ describe('AI endpoint spawn patterns', () => {
   });
 });
 
+describe('POST /api/tasks/chat — validation', () => {
+  it('returns 400 when messages is missing', async () => {
+    const res = await request(app)
+      .post('/api/tasks/chat')
+      .send({ currentSpec: { title: 'x' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/messages/i);
+  });
+
+  it('returns 400 when messages is empty array', async () => {
+    const res = await request(app)
+      .post('/api/tasks/chat')
+      .send({ messages: [], currentSpec: { title: 'x' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/messages/i);
+  });
+
+  it('returns 400 when currentSpec is missing', async () => {
+    const res = await request(app)
+      .post('/api/tasks/chat')
+      .send({ messages: [{ role: 'user', content: 'hello' }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/currentSpec/i);
+  });
+
+  it('returns 400 when messages is not an array', async () => {
+    const res = await request(app)
+      .post('/api/tasks/chat')
+      .send({ messages: 'not an array', currentSpec: { title: 'x' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/messages/i);
+  });
+
+  it('returns 400 when currentSpec is not an object', async () => {
+    const res = await request(app)
+      .post('/api/tasks/chat')
+      .send({ messages: [{ role: 'user', content: 'hello' }], currentSpec: 'not an object' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/currentSpec/i);
+  });
+});
+
+describe('POST /api/tasks/parse — validation', () => {
+  it('returns 400 when description is missing', async () => {
+    const res = await request(app)
+      .post('/api/tasks/parse')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/description/i);
+  });
+
+  it('returns 400 when description is empty string', async () => {
+    const res = await request(app)
+      .post('/api/tasks/parse')
+      .send({ description: '   ' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/description/i);
+  });
+});
+
+describe('POST /api/tasks/refine-field — validation', () => {
+  it('returns 400 when field is missing', async () => {
+    const res = await request(app)
+      .post('/api/tasks/refine-field')
+      .send({ currentValue: 'something' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/field/i);
+  });
+
+  it('returns 400 when currentValue is missing', async () => {
+    const res = await request(app)
+      .post('/api/tasks/refine-field')
+      .send({ field: 'goal' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/currentValue/i);
+  });
+});
+
+describe('POST /api/tasks/chat — spec-kit specify→clarify prompts', () => {
+  it('round 1 prompt uses specify phase (initial spec draft)', () => {
+    const fs = require('node:fs');
+    const routesSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, 'tasks.ts'),
+      'utf-8',
+    );
+
+    // Round 1 should use the specify prompt
+    expect(routesSource).toContain('spec-driven specification agent');
+    expect(routesSource).toContain('[NEEDS CLARIFICATION]');
+    expect(routesSource).toContain('Given/When/Then');
+    expect(routesSource).toContain('P1/P2/P3');
+    // Should tell AI to only fill explicitly stated info
+    expect(routesSource).toContain('EXPLICITLY stated');
+  });
+
+  it('round 2+ prompt uses clarify phase (one question at a time)', () => {
+    const fs = require('node:fs');
+    const routesSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, 'tasks.ts'),
+      'utf-8',
+    );
+
+    // Round 2+ should use the clarify prompt
+    expect(routesSource).toContain('spec clarification agent');
+    expect(routesSource).toContain('EXACTLY ONE follow-up question');
+    expect(routesSource).toContain('Recommended');
+    expect(routesSource).toContain('Options');
+    // Should enforce minimum rounds before completion
+    expect(routesSource).toContain('at least 3 questions');
+  });
+
+  it('chat endpoint resolves project cwd for Claude context', () => {
+    const fs = require('node:fs');
+    const routesSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, 'tasks.ts'),
+      'utf-8',
+    );
+
+    // Should look up project path and set cwd
+    expect(routesSource).toContain('getProjectById');
+    expect(routesSource).toContain('projectPath');
+    expect(routesSource).toContain('spawnOpts.cwd = projectPath');
+    // Should tell Claude it's running in the project's repo
+    expect(routesSource).toContain("project's repository");
+    expect(routesSource).toContain('CLAUDE.md');
+  });
+
+  it('chat endpoint differentiates round 1 vs round 2+ prompts', () => {
+    const fs = require('node:fs');
+    const routesSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, 'tasks.ts'),
+      'utf-8',
+    );
+
+    // Should branch on roundNumber
+    expect(routesSource).toContain('round === 1');
+    expect(routesSource).toContain('roundNumber');
+  });
+});
+
+describe('Spec format: 3-field spec-kit structure', () => {
+  it('tasks can be created with the new 3-field spec format', async () => {
+    const spec = JSON.stringify({
+      goal: 'Send payment reminders to all channels',
+      userScenarios: 'P1 — Given unpaid players exist, When reminder fires, Then all channels receive it',
+      successCriteria: 'Reminders reach 100% of bound channels within the same time window',
+    });
+
+    const res = await request(app)
+      .post('/api/tasks')
+      .send({ projectId, title: 'Payment reminders', spec });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('ready');
+
+    const parsed = JSON.parse(res.body.spec);
+    expect(parsed.goal).toContain('payment reminders');
+    expect(parsed.userScenarios).toContain('P1');
+    expect(parsed.successCriteria).toContain('100%');
+  });
+
+  it('task spec can be updated with new spec fields', async () => {
+    const task = queries.createTask(db, {
+      projectId,
+      title: 'Update spec test',
+      spec: JSON.stringify({ goal: 'initial', userScenarios: '', successCriteria: '' }),
+    });
+
+    const newSpec = JSON.stringify({
+      goal: 'Updated goal with more detail',
+      userScenarios: 'P1 — Given X, When Y, Then Z',
+      successCriteria: 'Measurable outcome A',
+    });
+
+    const res = await request(app)
+      .put(`/api/tasks/${task.id}`)
+      .send({ spec: newSpec });
+
+    expect(res.status).toBe(200);
+    const parsed = JSON.parse(res.body.spec);
+    expect(parsed.goal).toBe('Updated goal with more detail');
+    expect(parsed.userScenarios).toContain('Given X');
+    expect(parsed.successCriteria).toBe('Measurable outcome A');
+  });
+
+  it('backend SpecDocument type has exactly 3 fields', () => {
+    const fs = require('node:fs');
+    const typesSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../types/index.ts'),
+      'utf-8',
+    );
+
+    expect(typesSource).toContain('goal: string');
+    expect(typesSource).toContain('userScenarios: string');
+    expect(typesSource).toContain('successCriteria: string');
+    // Old SpecDocument fields should NOT exist (SpecResult's outOfScope: string[] is fine)
+    expect(typesSource).not.toContain('problemStatement: string');
+    expect(typesSource).not.toContain('userStories: string');
+    expect(typesSource).not.toContain('constraints: string');
+    expect(typesSource).not.toContain('verificationStrategy: string');
+    expect(typesSource).not.toContain('outOfScope: string;');
+  });
+
+  it('frontend SpecDocument type mirrors backend', () => {
+    const fs = require('node:fs');
+    const typesSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/types.ts'),
+      'utf-8',
+    );
+
+    expect(typesSource).toContain('goal: string');
+    expect(typesSource).toContain('userScenarios: string');
+    expect(typesSource).toContain('successCriteria: string');
+    expect(typesSource).not.toContain('problemStatement: string');
+    expect(typesSource).not.toContain('verificationStrategy: string');
+  });
+});
+
+describe('Frontend: TaskForm conversational UI', () => {
+  it('TaskForm always uses /api/tasks/chat (never /api/tasks/parse)', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    expect(formSource).toContain('/api/tasks/chat');
+    expect(formSource).not.toContain('/api/tasks/parse');
+  });
+
+  it('TaskForm tracks roundNumber and sends it to chat endpoint', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    expect(formSource).toContain('roundNumber');
+    expect(formSource).toContain('setRoundNumber');
+    // Should increment round after each response
+    expect(formSource).toContain('prev + 1');
+  });
+
+  it('TaskForm passes projectId to chat endpoint', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    expect(formSource).toContain('projectId');
+    // Should be in the Props interface
+    expect(formSource).toContain('projectId: string');
+    // Should be sent in the API call
+    expect(formSource).toContain('projectId,');
+  });
+
+  it('TaskForm uses spec-kit 3-field spec labels', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    expect(formSource).toContain("goal: 'Goal'");
+    expect(formSource).toContain("userScenarios: 'User Scenarios'");
+    expect(formSource).toContain("successCriteria: 'Success Criteria'");
+    // Old labels should not exist
+    expect(formSource).not.toContain('Problem Statement');
+    expect(formSource).not.toContain('Verification Strategy');
+  });
+
+  it('TaskForm auto-transitions to confirming phase on isComplete', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    expect(formSource).toContain('result.isComplete');
+    expect(formSource).toContain("setPhase('confirming')");
+  });
+
+  it('SpecField is read-only preview (no textarea or refine)', () => {
+    const fs = require('node:fs');
+    const specFieldSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/SpecField.tsx'),
+      'utf-8',
+    );
+
+    expect(specFieldSource).toContain('label');
+    expect(specFieldSource).toContain('value');
+    expect(specFieldSource).toContain('Not yet filled');
+    // Should NOT have edit/refine functionality
+    expect(specFieldSource).not.toContain('textarea');
+    expect(specFieldSource).not.toContain('onChange');
+    expect(specFieldSource).not.toContain('onRefine');
+  });
+});
+
 describe('POST /api/tasks/:id/review-plan', () => {
   it('rejects if task is not in needs_plan_review', async () => {
     const task = queries.createTask(db, { projectId, title: 'Not reviewing', status: 'ready' });
