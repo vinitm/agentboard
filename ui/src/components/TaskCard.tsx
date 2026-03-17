@@ -37,9 +37,9 @@ function timeAgo(dateStr: string): string {
 }
 
 // Pipeline stages in order
-const PIPELINE_STAGES = ['planning', 'needs_plan_review', 'implementing', 'checks', 'review_panel'] as const;
+const PIPELINE_STAGES = ['spec_review', 'planning', 'needs_plan_review', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'] as const;
 const STAGE_LABELS: Record<string, string> = {
-  planning: 'P', needs_plan_review: 'R', implementing: 'I', checks: 'C', review_panel: 'V',
+  spec_review: 'S', planning: 'P', needs_plan_review: 'R', implementing: 'I', checks: 'C', code_quality: 'Q', final_review: 'F', pr_creation: 'PR',
 };
 
 function getStageIndex(status: string): number {

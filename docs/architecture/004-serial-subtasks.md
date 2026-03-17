@@ -12,7 +12,8 @@ Serial execution with automatic promotion.
 - First child task starts as `ready`, rest are `backlog`
 - On completion, `checkAndUpdateParentStatus()` promotes the next sibling to `ready` and emits `task:ready` to wake the worker immediately
 - On failure, remaining `backlog` siblings are cancelled automatically so the parent can resolve to `failed`
-- Subtasks skip the review panel and PR creation — the parent creates a single PR after all subtasks succeed
+- Each subtask goes through: implement → checks → (inline fix) → code_quality review
+- Subtasks skip planning and PR creation — the parent creates a single PR after all subtasks succeed and final review passes
 
 For the full subtask pipeline and cascading execution model, see [Agent Orchestration → Subtask Pipeline](agent-orchestration.md#subtask-pipeline).
 

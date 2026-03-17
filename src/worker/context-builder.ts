@@ -42,11 +42,13 @@ export function buildTaskPacket(
     try {
       const planOutput = JSON.parse(planningRun.output) as {
         fileHints?: string[];
+        fileMap?: string[];
         planSummary?: string;
       };
-      if (planOutput.fileHints && planOutput.fileHints.length > 0) {
+      const fileList = planOutput.fileMap ?? planOutput.fileHints;
+      if (fileList && fileList.length > 0) {
         sections.push('## File Hints');
-        sections.push(planOutput.fileHints.map((f) => `- ${f}`).join('\n'));
+        sections.push(fileList.map((f) => `- ${f}`).join('\n'));
       }
       if (planOutput.planSummary) {
         sections.push('## Plan Summary');

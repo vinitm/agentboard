@@ -6,10 +6,11 @@ import { LogViewer } from './LogViewer';
 import { RunHistory } from './RunHistory';
 import { EventsTimeline } from './EventsTimeline';
 import { SubtaskMiniCard } from './SubtaskMiniCard';
+import { StageAccordion } from './StageAccordion';
 import type { Task, Run, TaskStatus } from '../types';
 
-type Tab = 'logs' | 'events' | 'runs';
-const ACTIVE_STATUSES: TaskStatus[] = ['planning', 'implementing', 'checks', 'review_panel'];
+type Tab = 'stages' | 'events' | 'runs';
+const ACTIVE_STATUSES: TaskStatus[] = ['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'];
 
 /** For subtasks, collapse internal pipeline states into simplified labels. */
 function getSubtaskDisplayStatus(task: Task): string {
@@ -24,13 +25,14 @@ function getSubtaskDisplayStatus(task: Task): string {
 
 function getInitialTab(): Tab {
   const hash = window.location.hash.slice(1);
-  if (hash === 'logs' || hash === 'events' || hash === 'runs') return hash;
-  return 'logs';
+  if (hash === 'stages' || hash === 'events' || hash === 'runs') return hash;
+  return 'stages';
 }
 
 const statusBadgeColor: Record<string, string> = {
-  backlog: 'bg-text-tertiary', ready: 'bg-accent-blue', spec: 'bg-accent-purple', planning: 'bg-accent-purple',
-  implementing: 'bg-accent-purple', checks: 'bg-accent-purple', review_panel: 'bg-accent-purple',
+  backlog: 'bg-text-tertiary', ready: 'bg-accent-blue', spec_review: 'bg-[#3b82f6]', planning: 'bg-accent-purple',
+  implementing: 'bg-accent-purple', checks: 'bg-accent-purple', code_quality: 'bg-[#8b5cf6]',
+  final_review: 'bg-[#14b8a6]', pr_creation: 'bg-[#22c55e]',
   needs_human_review: 'bg-accent-pink', done: 'bg-accent-green',
   blocked: 'bg-accent-amber', failed: 'bg-accent-red', cancelled: 'bg-text-tertiary',
 };
@@ -111,14 +113,10 @@ export const TaskPage: React.FC = () => {
   const isActive = ACTIVE_STATUSES.includes(task.status);
   const displayStatus = isSubtask ? getSubtaskDisplayStatus(task) : task.status.replace(/_/g, ' ');
   const tabs: { key: Tab; label: string; count?: number }[] = [
-    { key: 'logs', label: 'Live Logs' },
+    { key: 'stages', label: 'Stages' },
     { key: 'events', label: 'Events', count: events.length },
     { key: 'runs', label: 'Runs', count: runs.length },
   ];
-
-  const lastRun = runs.length > 0
-    ? runs.slice().sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0]
-    : null;
 
   return (
     <div className="flex flex-col h-full animate-fade-in">
@@ -184,8 +182,8 @@ export const TaskPage: React.FC = () => {
           <button key={key} onClick={() => changeTab(key)}
             className={`flex items-center gap-1.5 px-5 py-2.5 text-sm border-b-2 transition-colors ${tab === key ? 'border-accent-blue text-accent-blue font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>
             {label}
-            {key === 'logs' && isActive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse-dot" />}
-            {count !== undefined && count > 0 && key !== 'logs' && (
+            {key === 'stages' && isActive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse-dot" />}
+            {count !== undefined && count > 0 && key !== 'stages' && (
               <span className="text-[10px] text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full font-medium">{count}</span>
             )}
           </button>
@@ -194,33 +192,11 @@ export const TaskPage: React.FC = () => {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-5">
-        {tab === 'logs' && (isActive
-          ? <LogViewer taskId={task.id} />
-          : lastRun?.output
-            ? (
-              <div className="relative">
-                <div className="absolute top-2 right-2 z-10">
-                  <CopyButton text={lastRun.output} />
-                </div>
-                <div className="bg-bg-secondary font-mono text-xs text-text-primary p-3 rounded-lg max-h-[400px] overflow-y-auto border border-border-default">
-                  <div className="text-text-tertiary text-[11px] mb-2 flex items-center gap-2">
-                    <span>Last run: {lastRun.stage} ({lastRun.status})</span>
-                    <span className="text-text-tertiary">·</span>
-                    <span>{new Date(lastRun.startedAt).toLocaleString()}</span>
-                  </div>
-                  <pre className="whitespace-pre-wrap break-all m-0">{lastRun.output}</pre>
-                </div>
-              </div>
-            )
-            : (
-              <div className="flex flex-col items-center justify-center py-16 text-text-secondary">
-                <svg className="w-10 h-10 text-text-tertiary mb-3 opacity-50" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                </svg>
-                <p className="text-sm">No logs available</p>
-                <p className="text-xs text-text-tertiary mt-1">Task status: {task.status.replace(/_/g, ' ')}</p>
-              </div>
-            )
+        {tab === 'stages' && (
+          <StageAccordion
+            taskId={task.id}
+            subtasks={subtasks.map(s => ({ id: s.id, title: s.title, status: s.status }))}
+          />
         )}
         {tab === 'events' && <EventsTimeline taskId={task.id} events={events} />}
         {tab === 'runs' && <RunHistory runs={runs} />}

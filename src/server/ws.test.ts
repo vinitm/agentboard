@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Server } from 'socket.io';
-import { broadcast, broadcastLog } from './ws.js';
+import { broadcast, broadcastLog, broadcastStageTransition } from './ws.js';
 
 describe('broadcast', () => {
   it('emits event to all clients via io.emit', () => {
@@ -57,5 +57,81 @@ describe('broadcastLog', () => {
 
     const [eventName] = (io.emit as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(eventName).toBe('run:log');
+  });
+
+  it('includes optional stage and subtaskId when provided', () => {
+    const io = { emit: vi.fn() } as unknown as Server;
+    const logData = {
+      taskId: 'task-123',
+      runId: 'run-456',
+      stage: 'implementing',
+      subtaskId: 'subtask-789',
+      chunk: 'implementing feature',
+      timestamp: '2024-01-01T00:00:00.000Z',
+    };
+
+    broadcastLog(io, logData);
+
+    expect(io.emit).toHaveBeenCalledWith('run:log', logData);
+  });
+
+  it('omits stage and subtaskId when not provided', () => {
+    const io = { emit: vi.fn() } as unknown as Server;
+    const logData = {
+      taskId: 'task-123',
+      runId: 'run-456',
+      chunk: 'some output',
+      timestamp: '2024-01-01T00:00:00.000Z',
+    };
+
+    broadcastLog(io, logData);
+
+    const [, emittedData] = (io.emit as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(emittedData.stage).toBeUndefined();
+    expect(emittedData.subtaskId).toBeUndefined();
+  });
+});
+
+describe('broadcastStageTransition', () => {
+  it('emits stage:transition event with the provided data', () => {
+    const io = { emit: vi.fn() } as unknown as Server;
+    const transitionData = {
+      taskId: 'task-123',
+      stage: 'implementing' as const,
+      status: 'running' as const,
+      summary: 'Starting implementation',
+    };
+
+    broadcastStageTransition(io, transitionData);
+
+    expect(io.emit).toHaveBeenCalledTimes(1);
+    expect(io.emit).toHaveBeenCalledWith('stage:transition', transitionData);
+  });
+
+  it('includes optional subtaskId when provided', () => {
+    const io = { emit: vi.fn() } as unknown as Server;
+    const transitionData = {
+      taskId: 'task-123',
+      stage: 'code_quality' as const,
+      subtaskId: 'subtask-456',
+      status: 'completed' as const,
+    } as const;
+
+    broadcastStageTransition(io, transitionData);
+
+    expect(io.emit).toHaveBeenCalledWith('stage:transition', transitionData);
+  });
+
+  it('always uses stage:transition as the event name', () => {
+    const io = { emit: vi.fn() } as unknown as Server;
+
+    broadcastStageTransition(io, {
+      taskId: 't1',
+      stage: 'planning' as const,
+      status: 'running' as const,
+    });
+
+    const [eventName] = (io.emit as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(eventName).toBe('stage:transition');
   });
 });

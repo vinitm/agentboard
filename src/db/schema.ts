@@ -93,6 +93,38 @@ CREATE INDEX IF NOT EXISTS idx_events_task_id ON events(task_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 
+CREATE TABLE IF NOT EXISTS stage_logs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+  stage TEXT NOT NULL,
+  subtask_id TEXT,
+  attempt INTEGER NOT NULL DEFAULT 1,
+  file_path TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  summary TEXT,
+  tokens_used INTEGER,
+  duration_ms INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  started_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_stage_logs_task_id ON stage_logs(task_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_stage_logs_project_id ON stage_logs(project_id);
+CREATE INDEX IF NOT EXISTS idx_stage_logs_status ON stage_logs(status);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_task_id ON chat_messages(task_id);
+
 -- Deduplicate projects by path (keep oldest)
 DELETE FROM projects WHERE id NOT IN (
   SELECT id FROM (
@@ -109,6 +141,8 @@ export function initSchema(db: Database.Database): void {
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(DDL);
   migrateReviewStages(db);
+  migrateToSuperpowersWorkflow(db);
+  migrateChatSessionId(db);
 }
 
 export function migrateReviewStages(db: Database.Database): void {
@@ -120,5 +154,33 @@ export function migrateReviewStages(db: Database.Database): void {
     .run();
   if (migrated.changes > 0 || migratedRuns.changes > 0) {
     console.log(`[db] Migrated ${migrated.changes} tasks and ${migratedRuns.changes} runs from review_spec/review_code to review_panel`);
+  }
+}
+
+export function migrateChatSessionId(db: Database.Database): void {
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN chat_session_id TEXT');
+    console.log('[db] Added chat_session_id column to tasks');
+  } catch {
+    // Column already exists — ignore
+  }
+}
+
+export function migrateToSuperpowersWorkflow(db: Database.Database): void {
+  const migratedTasks = db
+    .prepare(`UPDATE tasks SET status = 'code_quality' WHERE status = 'review_panel'`)
+    .run();
+  const migratedRuns = db
+    .prepare(`UPDATE runs SET stage = 'code_quality' WHERE stage = 'review_panel'`)
+    .run();
+  const migratedSpecTasks = db
+    .prepare(`UPDATE tasks SET status = 'backlog' WHERE status = 'spec'`)
+    .run();
+  const migratedSpecRuns = db
+    .prepare(`UPDATE runs SET stage = 'spec_review' WHERE stage = 'spec'`)
+    .run();
+  const totalChanges = migratedTasks.changes + migratedRuns.changes + migratedSpecTasks.changes + migratedSpecRuns.changes;
+  if (totalChanges > 0) {
+    console.log(`[db] Superpowers migration: ${totalChanges} rows updated (review_panel→code_quality, spec→spec_review/backlog)`);
   }
 }

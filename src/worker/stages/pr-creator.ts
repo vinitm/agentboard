@@ -391,7 +391,7 @@ function buildPRBody(db: Database.Database, task: Task): string {
   // Review panel results
   const allRuns = listRunsByTask(db, task.id);
   const panelRuns = allRuns
-    .filter(r => r.stage === 'review_panel')
+    .filter(r => r.stage === 'final_review')
     .slice(-3);
 
   if (panelRuns.length > 0) {

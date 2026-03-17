@@ -1,6 +1,6 @@
 # Agent Orchestration Architecture
 
-This document describes how agentboard orchestrates AI coding agents through its autonomous pipeline — from task creation through spec generation, planning, implementation, review, and PR creation.
+This document describes how agentboard orchestrates AI coding agents through its autonomous pipeline — from conversational spec building through planning, per-subtask implementation with inline fixes, code quality review, and PR creation.
 
 ## System Overview
 
@@ -84,7 +84,7 @@ Per-project config is loaded at task processing time from each project's `.agent
 
 ## Task State Machine
 
-A task moves through 14 possible states. The happy path is linear; failures and human input create branches.
+A task moves through the pipeline stages below. The happy path is linear; failures, blocked status, and human input create branches.
 
 ```
                                     ┌──────────┐
@@ -94,70 +94,80 @@ A task moves through 14 possible states. The happy path is linear; failures and 
                                          │ (user cancels or
                                          │  sibling fails)
                                          │
-┌─────────┐    ┌───────┐    ┌──────┐    │    ┌──────────┐
-│ backlog │───▶│ ready │───▶│ spec │────┼───▶│ planning │
-└─────────┘    └───────┘    └──────┘    │    └────┬─────┘
-                                        │         │
-                                        │    ┌────▼─────┐
-                                        │    │ blocked  │ (clarifying questions)
-                                        │    └────┬─────┘
-                                        │         │ (user answers)
-                                        │         ▼
-                              ┌─────────┼───────────────────────────┐
-                              │         │    Ralph Loop              │
-                              │         │                            │
-                              │    ┌────▼────────┐   ┌────────┐    │
-                              │    │implementing │──▶│ checks │    │
-                              │    └─────▲───────┘   └───┬────┘    │
-                              │          │               │          │
-                              │          └───────────────┘          │
-                              │       (retry on failure,            │
-                              │        max 5 iterations)            │
-                              └─────────┬───────────────────────────┘
-                                        │
-                                        ▼
-                              ┌──────────────┐
-                              │ review_panel │ (3 parallel reviewers)
-                              └──────┬───────┘
+┌─────────┐    ┌───────┐    ┌───────────┐    ┌──────────┐
+│ backlog │───▶│ ready │───▶│spec_review│───▶│ planning │
+└─────────┘    └───────┘    └───────────┘    └────┬─────┘
+                                                   │
+                                              ┌────▼─────────────┐
+                                              │needs_plan_review │
+                                              └────┬─────────────┘
+                                                   │ (engineer approves)
+                                                   ▼
+                                              ┌──────────────┐
+                                              │ implementing │
+                                              └──────┬───────┘
+                                                     │
+                              ┌───────────────────────┼──────────────────┐
+                              │  Per-Subtask Loop     │                  │
+                              │                       ▼                  │
+                              │              ┌────────────────┐          │
+                              │              │   implement    │          │
+                              │              └───────┬────────┘          │
+                              │                      │                   │
+                              │              ┌───────▼────────┐          │
+                              │              │    checks      │          │
+                              │              └───────┬────────┘          │
+                              │                      │                   │
+                              │           ┌──────────┼──────────┐        │
+                              │           │ pass     │ fail     │        │
+                              │           │          ▼          │        │
+                              │           │   (inline fix →     │        │
+                              │           │    re-check)        │        │
+                              │           │                     │        │
+                              │           ▼                     ▼        │
+                              │  ┌────────────────┐     ┌────────┐      │
+                              │  │  code_quality  │     │blocked/│      │
+                              │  │ (single review)│     │failed  │      │
+                              │  └────────┬───────┘     └────────┘      │
+                              │           │                              │
+                              └───────────┼──────────────────────────────┘
+                                          │
+                                          ▼
+                              ┌──────────────────┐
+                              │  final_review    │ (full changeset review)
+                              └────────┬─────────┘
+                                       │
+                                       ▼
+                              ┌─────────────┐
+                              │ pr_creation │
+                              └──────┬──────┘
                                      │
-                         ┌───────────┼────────────┐
-                         │           │            │
-                         ▼           ▼            ▼
-                    (all pass)  (any fail)   (max cycles)
-                         │           │            │
-                         │      back to       ┌───▼───┐
-                         │    implementing    │failed │
-                         │                    └───────┘
-                         ▼
-                  ┌─────────────┐
-                  │ pr_creation │
-                  └──────┬──────┘
-                         │
-              ┌──────────┼──────────┐
-              │                     │
-              ▼                     ▼
-    ┌───────────────────┐     ┌──────┐
-    │needs_human_review │────▶│ done │
-    └───────────────────┘     └──────┘
-              │
-              ▼ (auto-merge gate passes)
-          ┌──────┐
-          │ done │
-          └──────┘
+                          ┌──────────┼──────────┐
+                          │                     │
+                          ▼                     ▼
+                ┌───────────────────┐     ┌──────┐
+                │needs_human_review │────▶│ done │
+                └───────────────────┘     └──────┘
+                          │
+                          ▼ (auto-merge gate passes)
+                      ┌──────┐
+                      │ done │
+                      └──────┘
 ```
 
 ### Subtask Pipeline
 
-Subtasks follow a simplified pipeline — no spec, no review panel:
+Subtasks follow a per-subtask pipeline with inline fixes instead of a separate retry loop:
 
 ```
-backlog → ready → implementing ↔ checks (ralph loop) → done | failed
+backlog → ready → implement → checks → (inline fix on failure) → code_quality → done | failed | blocked
 ```
 
 - Subtasks execute serially (first = `ready`, rest = `backlog`)
 - On completion, the next backlog sibling is promoted to `ready`
 - On failure, remaining backlog siblings are cancelled
-- Parent creates a single PR after all subtasks complete
+- Implementer returns structured status: DONE, NEEDS_CONTEXT, or BLOCKED
+- Parent creates a single PR after all subtasks complete, preceded by a final review of the full changeset
 
 ## Pipeline Stages
 
@@ -169,30 +179,22 @@ Each stage is an async function with the contract:
 
 Every stage spawns a fresh Claude Code subprocess, records a `Run` in the database, and streams output to the UI via Socket.IO.
 
-### Stage 1: Spec Generation
+### Stage 1: Conversational Spec Building
 
-**File:** `src/worker/stages/spec-generator.ts`
-**Prompt:** `prompts/spec-generator.md`
-**Model:** `config.modelDefaults.planning`
+Spec authoring happens conversationally via the chat UI. The PM describes the task and AI assists through a specify→clarify loop, asking follow-up questions to refine requirements. The result is a structured specification with acceptance criteria, file scope, out-of-scope items, and risk assessment.
 
-Transforms the user's task description into a structured specification:
+### Stage 2: Spec Review
 
-```typescript
-{
-  acceptanceCriteria: string[];   // What "done" looks like
-  fileScope: string[];            // Files likely to be touched
-  outOfScope: string[];           // Explicitly excluded work
-  riskAssessment: string;         // Low/medium/high with reasoning
-}
-```
+**File:** `src/worker/stages/spec-review.ts`
+**Model:** opus
 
-Stored as an artifact (`type='spec'`) and attached to the task.
+Reviews the finalized spec for completeness, clarity, and feasibility before planning begins. Catches ambiguities and missing requirements early.
 
-### Stage 2: Planning
+### Stage 3: Planning
 
 **File:** `src/worker/stages/planner.ts`
 **Prompt:** `prompts/planner.md`
-**Model:** `config.modelDefaults.planning`
+**Model:** opus
 
 Analyzes the spec and produces an implementation plan:
 
@@ -209,35 +211,22 @@ If subtasks are returned, the worker creates child tasks. The first gets status 
 
 If the planner has clarifying questions, the task moves to `blocked` and the user answers via the UI.
 
-### Stage 3: Ralph Loop (Implement ↔ Checks)
+### Stage 4: Per-Subtask Implementation (Implement → Checks → Inline Fix)
 
-**File:** `src/worker/ralph-loop.ts`
 **Stages:** `src/worker/stages/implementer.ts`, `src/worker/stages/checks.ts`
 
-The core retry loop that writes and validates code:
-
-```
-for iteration = 1 to maxRalphIterations (default 5):
-    1. Run implementer (fallback prompt if iteration >= 3)
-    2. Run checks (secrets → test → lint → format → typecheck → security)
-    3. If all checks pass → commit → return success
-    4. If checks fail → commit WIP → feed failures into next iteration
-```
-
-**Key design: fresh sessions per iteration.** Each iteration spawns a new Claude Code subprocess. Context between iterations is carried by:
-
-- **Git commits** — partial work is committed each iteration
-- **`.agentboard-progress.md`** — append-only log in the worktree
-- **Task packet** — includes "Previous Failure" section with error output
-
-**Fallback strategy:** On iteration 3+, switches from `implementer.md` to `implementer-fallback.md`, instructing the agent to try a fundamentally different approach.
+Each subtask goes through implement → checks in sequence. There is no separate retry loop orchestrator (the old "ralph loop" has been removed).
 
 #### Implementer
 
-**Prompt:** `prompts/implementer.md` (or `implementer-fallback.md`)
-**Model:** `config.modelDefaults.implementation` (typically `opus`)
+**Prompt:** `prompts/implementer.md`
+**Model:** opus
 
-Free-form implementation — no structured JSON output. The agent writes code directly in the worktree using Claude Code's file editing capabilities. Success is determined by exit code.
+The implementer writes code directly in the worktree using Claude Code's file editing capabilities. It returns a structured status:
+
+- **DONE** — implementation is complete, proceed to checks
+- **NEEDS_CONTEXT** — missing information needed to continue
+- **BLOCKED** — cannot proceed due to an external dependency or issue
 
 #### Checks
 
@@ -256,47 +245,38 @@ Executes project check commands in order:
 
 Secret detection scans the git diff for patterns like AWS keys (`AKIA...`), PEM markers, `sk-` prefixes, and generic `password|secret|token = "..."` assignments.
 
-### Stage 4: Review Panel
+#### Inline Fix
 
-**File:** `src/worker/stages/review-panel.ts`
-**Prompts:** `prompts/review-architect.md`, `review-qa.md`, `review-security.md`
-**Model:** `config.modelDefaults.review` (or `opus` if `riskLevel === 'high'`)
+When checks fail, the implementer is re-invoked with failure context to fix the issues inline. This replaces the old ralph loop's separate iteration mechanism — fixes happen within the same flow rather than as numbered retry iterations.
 
-Three specialized reviewers run **in parallel** via `Promise.allSettled`:
+### Stage 5: Code Quality Review (Per-Subtask)
 
-| Reviewer | Focus |
-|----------|-------|
-| **Architect** | Design patterns, modularity, API contracts, technical debt |
-| **QA Engineer** | Test coverage, edge cases, error handling, acceptance criteria |
-| **Security** | Injection, secrets, auth, input validation, OWASP Top 10 |
+**File:** `src/worker/stages/code-quality.ts`
+**Model:** opus
 
-Each returns:
-```typescript
-{ passed: boolean; feedback: string; issues: string[] }
-```
+A single reviewer evaluates code quality for each subtask after checks pass. This replaces the old 3-reviewer panel (Architect, QA, Security) that required unanimous approval. The code quality reviewer covers design, testing, and security concerns in a single pass.
 
-**Unanimous pass required.** If any reviewer fails:
-1. Feedback is formatted and attached to the task
-2. Task cycles back to `implementing` with review feedback as context
-3. Ralph loop runs again with the feedback
-4. Up to `config.maxReviewCycles` attempts (default 3)
+### Stage 6: Final Review
 
-Each reviewer's output is captured by a `BufferedWriter` to prevent log interleaving, then flushed sequentially to the task log.
+**File:** `src/worker/stages/final-review.ts`
+**Model:** opus
 
-### Stage 5: PR Creation
+After all subtasks complete, a final review examines the full changeset holistically before PR creation. This catches cross-cutting concerns that per-subtask reviews might miss.
+
+### Stage 7: PR Creation
 
 **File:** `src/worker/stages/pr-creator.ts`
-**Model:** `config.modelDefaults.implementation`
+**Model:** opus
 
 1. Push branch to `config.githubRemote`
 2. Create labels: `agentboard`, `risk:{level}`
-3. Build PR body (summary, assumptions, acceptance criteria, check results, review panel results)
+3. Build PR body (summary, assumptions, acceptance criteria, check results, code quality + final review results)
 4. Run `gh pr create` (draft if `config.prDraft`)
 5. Store PR URL and number as artifacts
 
-For parent tasks with subtasks, a single PR is created after all subtasks complete.
+For parent tasks with subtasks, a single PR is created after all subtasks complete (after final review).
 
-### Stage 6: Auto-Merge Gate
+### Stage 8: Auto-Merge Gate
 
 **File:** `src/worker/auto-merge.ts`
 
@@ -305,13 +285,13 @@ Evaluates whether the task can skip human review. **All criteria must pass:**
 1. `config.autoMerge` is enabled
 2. `task.riskLevel === 'low'`
 3. No security-sensitive files touched (`.env`, `secret`, `credential`, `auth`, `password`, `token`, `.pem`, `.key`)
-4. All 3 reviewers passed with zero total issues
+4. Code quality and final review passed with no blocking issues
 5. Task is not a parent with subtasks
 
 If the gate passes → task moves directly to `done`.
 Otherwise → task moves to `needs_human_review`.
 
-### Stage 7: Learner
+### Stage 9: Learner
 
 **File:** `src/worker/stages/learner.ts`
 
@@ -321,10 +301,8 @@ Runs after every task completion (success or failure). Collects metrics:
 {
   totalTokensUsed: number;
   implementationAttempts: number;
-  reviewCycles: number;
   checksPassedFirst: boolean;
   failedCheckNames: string[];
-  reviewerFeedbackThemes: string[];
 }
 ```
 
@@ -364,19 +342,21 @@ Spawns: `claude --print --model <model> --permission-mode acceptEdits`
 
 **File:** `src/worker/model-selector.ts`
 
-```
-┌────────────────┬──────────────────────┬──────────────────────────┐
-│ Stage          │ Config Key           │ Default                  │
-├────────────────┼──────────────────────┼──────────────────────────┤
-│ spec           │ modelDefaults.planning│ sonnet                  │
-│ planning       │ modelDefaults.planning│ sonnet                  │
-│ implementing   │ modelDefaults.implementation│ opus              │
-│ checks         │ modelDefaults.implementation│ opus              │
-│ review_panel   │ modelDefaults.review │ sonnet                  │
-│ pr_creation    │ modelDefaults.implementation│ opus              │
-└────────────────┴──────────────────────┴──────────────────────────┘
+Simplified: all stages use **opus** for consistent quality. The old multi-model strategy (sonnet for planning/review, opus for implementation) has been replaced with a single-model approach.
 
-Exception: high-risk tasks + review_panel → always opus
+```
+┌──────────────────┬─────────┐
+│ Stage            │ Model   │
+├──────────────────┼─────────┤
+│ spec_review      │ opus    │
+│ planning         │ opus    │
+│ implementing     │ opus    │
+│ checks           │ opus    │
+│ code_quality     │ opus    │
+│ final_review     │ opus    │
+│ pr_creation      │ opus    │
+│ learner          │ opus    │
+└──────────────────┴─────────┘
 ```
 
 ## Git Worktree Isolation
@@ -449,7 +429,7 @@ Claude Code ──(stdout chunks)──▶ onOutput callback
 | `task:event` | `{ type, payload }` | Stage milestones |
 | `run:log` | `{ taskId, runId, chunk, timestamp }` | Claude output chunks |
 
-**Task Event Types:** `status_changed`, `spec_generated`, `assumptions_made`, `subtasks_created`, `ralph_iteration_passed`, `ralph_iteration_failed`, `ralph_loop_completed`, `review_panel_completed`, `review_panel_failed`, `pr_created`, `auto_merged`, `task_error`
+**Task Event Types:** `status_changed`, `spec_generated`, `assumptions_made`, `subtasks_created`, `checks_passed`, `checks_failed`, `inline_fix_applied`, `code_quality_passed`, `code_quality_failed`, `final_review_completed`, `pr_created`, `auto_merged`, `task_error`
 
 ## Task Logging
 
@@ -463,34 +443,32 @@ TASK: Add user authentication
 ID: abc123 | Risk: medium | Started: 2026-03-17T10:00:00Z
 ════════════════════════════════════════════════════════
 
-── STAGE: spec (run: spec-abc123, attempt: 1) ──────────
-[10:00:01] [start] model=sonnet-4
-[10:00:05] Extracted 4 acceptance criteria...
+── STAGE: spec_review (run: specrev-abc123, attempt: 1) ──
+[10:00:01] [start] model=opus
+[10:00:05] Spec reviewed: 4 acceptance criteria validated...
 [10:00:08] [end] status=success tokens=1234 duration=7000ms
 
 ── STAGE: planning (run: plan-abc123, attempt: 1) ──────
-[10:00:10] [start] model=sonnet-4
+[10:00:10] [start] model=opus
 [10:00:15] Decomposed into 3 subtasks...
 [10:00:18] [end] status=success tokens=2100 duration=8000ms
 
 ── SUBTASK 1/3: Create JWT middleware (sub-001) ────────
 
-  ── STAGE: implementing (run: impl-sub001, attempt: 1) ──
+  ── STAGE: implement (run: impl-sub001, attempt: 1) ──
   [10:00:20] [start] model=opus
-  ...
+  [10:01:30] [end] status=DONE
 
-  ── REVIEWER: Architect ────────────────────────────────
-    [10:02:00] [start] model=sonnet-4
-    [10:02:10] [end] status=passed
-  ── REVIEWER: QA Engineer ──────────────────────────────
-    [10:02:00] [start] model=sonnet-4
-    [10:02:12] [end] status=passed
-  ── REVIEWER: Security ─────────────────────────────────
-    [10:02:00] [start] model=sonnet-4
-    [10:02:15] [end] status=passed
+  ── STAGE: checks (run: chk-sub001, attempt: 1) ──────
+  [10:01:32] [start] tests=pass lint=pass typecheck=pass
+  [10:01:45] [end] status=passed
+
+  ── STAGE: code_quality (run: cq-sub001, attempt: 1) ──
+  [10:01:47] [start] model=opus
+  [10:02:10] [end] status=passed
 ```
 
-Subtask logs are indented under the parent. Parallel reviewers use `BufferedWriter` to prevent interleaving.
+Subtask logs are indented under the parent. Each subtask shows implement → checks → code_quality stages sequentially.
 
 Log retention: 30 days (cleaned on worker startup).
 
@@ -500,7 +478,7 @@ Log retention: 30 days (cleaned on worker startup).
 
 On worker startup:
 
-1. **Stale task recovery** — tasks claimed >30 minutes ago in an agent-controlled status (`spec`, `planning`, `implementing`, `checks`, `review_panel`) are reset to `ready` with claims cleared
+1. **Stale task recovery** — tasks claimed >30 minutes ago in an agent-controlled status (`spec_review`, `planning`, `implementing`, `checks`, `code_quality`, `final_review`) are reset to `ready` with claims cleared
 2. **Stalled subtask chain recovery** — parents in `implementing` with backlog children but no active children get their next backlog child promoted to `ready`
 
 ## Worker Memory
@@ -548,12 +526,14 @@ The database is accessed by:
 
 | Pattern | Where | Why |
 |---------|-------|-----|
-| **Fresh sessions per iteration** | Ralph loop | Prevents context buildup; progress persists via git + files |
-| **Unanimous review** | Review panel | All 3 reviewers must pass to prevent low-quality merges |
+| **Inline fix on failure** | Implementer + checks | Fixes happen in-flow rather than numbered retry iterations; simpler orchestration |
+| **Structured implementer status** | Implementer | DONE/NEEDS_CONTEXT/BLOCKED enables graceful handling of edge cases |
+| **Per-subtask code quality** | Code quality stage | Catches issues at the subtask level before they compound |
+| **Full-changeset final review** | Final review stage | Catches cross-cutting concerns that per-subtask reviews miss |
+| **Single model (opus)** | All stages | Consistent quality, simpler configuration |
 | **Append-only logs** | Log writer, learning log | Safe concurrent writes without locking |
 | **Atomic task claiming** | Worker loop | Conditional DB update prevents double-pickup |
 | **Cascading subtask execution** | Worker loop | Serial execution via promote-on-complete without extra orchestration |
-| **Buffered parallel output** | Review panel | Prevents log interleaving from concurrent reviewers |
 | **Event-driven UI** | Socket.IO | No frontend polling; all state changes broadcast immediately |
 | **Immutable task updates** | Worker loop | New DB records, re-fetch after mutations to avoid stale objects |
 

@@ -1,14 +1,16 @@
 import type Database from 'better-sqlite3';
 import type { TaskStatus } from '../types/index.js';
+import { listStaleRunningLogs, markStageLogFailed } from '../db/stage-log-queries.js';
 
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
 const AGENT_CONTROLLED_STATUSES: TaskStatus[] = [
-  'spec',
+  'spec_review',
   'planning',
   'implementing',
   'checks',
-  'review_panel',
+  'code_quality',
+  'final_review',
 ];
 
 /**
@@ -57,6 +59,14 @@ export function recoverStaleTasks(db: Database.Database): number {
   // This happens if a crash occurs between completing a subtask and promoting
   // the next one.
   recovered += recoverStalledSubtaskChains(db);
+
+  // Mark stale stage_logs as failed: stage_logs left in 'running' state from
+  // a previous crash are marked failed so the UI doesn't show a spinner forever.
+  const staleLogs = listStaleRunningLogs(db);
+  for (const log of staleLogs) {
+    markStageLogFailed(db, log.id);
+    console.log(`[recovery] Marked stale stage_log ${log.id} (${log.stage}) as failed`);
+  }
 
   return recovered;
 }

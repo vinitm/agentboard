@@ -41,20 +41,24 @@ describe('Planner: PlanningResult parsing', () => {
 
 // ── Implementer: no needsUserInput field ────────────────────────────
 
-describe('Implementer: ImplementationResult has no needsUserInput', () => {
-  it('ImplementationResult type has only success and output', async () => {
+describe('Implementer: ImplementationResult uses structured status', () => {
+  it('ImplementationResult type has status and output fields', async () => {
     // Import the type and verify it at runtime via a conforming object
-    const result = { success: true, output: 'done' };
-    // If needsUserInput existed as required, this would fail type-check at build
-    // At runtime, we verify no parsing for needs_user_input exists
-    expect(result).toHaveProperty('success');
+    const result = { status: 'DONE' as const, output: 'done' };
+    expect(result).toHaveProperty('status');
     expect(result).toHaveProperty('output');
     expect(result).not.toHaveProperty('needsUserInput');
+    expect(result).not.toHaveProperty('success');
   });
 
   it('implementer.ts does not export parseNeedsUserInput', async () => {
     const implementer = await import('./implementer.js');
     expect(implementer).not.toHaveProperty('parseNeedsUserInput');
+  });
+
+  it('implementer.ts exports parseStructuredOutput', async () => {
+    const implementer = await import('./implementer.js');
+    expect(implementer).toHaveProperty('parseStructuredOutput');
   });
 });
 
@@ -280,14 +284,14 @@ describe('Shared types: SpecDocument and PlanReviewAction', () => {
 // ── UI: TaskForm has spec editor phase ───────────────────────────────
 
 describe('UI: TaskForm spec editor', () => {
-  it('TaskForm uses SpecField and spec-kit chat API with round tracking', () => {
+  it('TaskForm uses SpecField and SSE streaming chat API', () => {
     const fs = require('node:fs');
     const formSource = fs.readFileSync(repoRoot('ui/src/components/TaskForm.tsx'), 'utf-8');
 
     expect(formSource).toContain('SpecField');
     expect(formSource).toContain('goal');
-    expect(formSource).toContain('/api/tasks/chat');
-    expect(formSource).toContain('roundNumber');
+    expect(formSource).toContain('/chat/stream');
+    expect(formSource).toContain('streamingContent');
     // Should NOT use /api/tasks/parse anymore
     expect(formSource).not.toContain('/api/tasks/parse');
   });

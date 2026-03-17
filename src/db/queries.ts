@@ -13,6 +13,7 @@ import type {
   GitRefStatus,
   Event,
   TaskLog,
+  ChatMessage,
 } from '../types/index.js';
 
 // ── Helper: snake_case row → camelCase object ────────────────────────
@@ -43,6 +44,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     blockedReason: (row.blocked_reason as string) ?? null,
     claimedAt: (row.claimed_at as string) ?? null,
     claimedBy: (row.claimed_by as string) ?? null,
+    chatSessionId: (row.chat_session_id as string) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -246,6 +248,7 @@ export interface UpdateTaskData {
   spec?: string | null;
   blockedReason?: string | null;
   parentTaskId?: string | null;
+  chatSessionId?: string | null;
 }
 
 export function updateTask(
@@ -265,6 +268,7 @@ export function updateTask(
   if (data.spec !== undefined) { fields.push('spec = ?'); values.push(data.spec); }
   if (data.blockedReason !== undefined) { fields.push('blocked_reason = ?'); values.push(data.blockedReason); }
   if (data.parentTaskId !== undefined) { fields.push('parent_task_id = ?'); values.push(data.parentTaskId); }
+  if (data.chatSessionId !== undefined) { fields.push('chat_session_id = ?'); values.push(data.chatSessionId); }
 
   if (fields.length === 0) return getTaskById(db, id);
 
@@ -688,4 +692,53 @@ export function updateTaskLogSize(
   sizeBytes: number
 ): void {
   db.prepare('UPDATE task_logs SET size_bytes = ? WHERE id = ?').run(sizeBytes, id);
+}
+
+// ── Chat Messages ─────────────────────────────────────────────────────
+
+function rowToChatMessage(row: Record<string, unknown>): ChatMessage {
+  return {
+    id: row.id as string,
+    taskId: row.task_id as string,
+    role: row.role as 'user' | 'assistant',
+    content: row.content as string,
+    createdAt: row.created_at as string,
+  };
+}
+
+export interface CreateChatMessageData {
+  taskId: string;
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export function createChatMessage(
+  db: Database.Database,
+  data: CreateChatMessageData
+): ChatMessage {
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO chat_messages (id, task_id, role, content, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(id, data.taskId, data.role, data.content, now);
+  const row = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id) as Record<string, unknown>;
+  return rowToChatMessage(row);
+}
+
+export function listChatMessagesByTask(
+  db: Database.Database,
+  taskId: string
+): ChatMessage[] {
+  const rows = db
+    .prepare('SELECT * FROM chat_messages WHERE task_id = ? ORDER BY created_at ASC')
+    .all(taskId) as Record<string, unknown>[];
+  return rows.map(rowToChatMessage);
+}
+
+export function deleteChatMessagesByTask(
+  db: Database.Database,
+  taskId: string
+): void {
+  db.prepare('DELETE FROM chat_messages WHERE task_id = ?').run(taskId);
 }

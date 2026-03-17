@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { api } from '../api/client';
 import { SpecField } from './SpecField';
-import type { Task, RiskLevel, SpecDocument, ChatMessage, ChatResponse } from '../types';
+import type { Task, RiskLevel, SpecDocument, ChatMessage, SSEEvent, PersistedChatMessage } from '../types';
 
 interface Props {
   initial?: Task | null;
@@ -57,6 +57,9 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   const [priority, setPriority] = useState(initial?.priority ?? 0);
   const [spec, setSpec] = useState<SpecDocument>(() => parseSpec(initial?.spec ?? null));
 
+  // Task ID for streaming (set on first create, or from initial)
+  const [taskId, setTaskId] = useState<string | null>(initial?.id ?? null);
+
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const welcome: ChatMessage = {
@@ -71,7 +74,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   });
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const [roundNumber, setRoundNumber] = useState(isEditing ? 2 : 1);
+  const [streamingContent, setStreamingContent] = useState('');
   const [phase, setPhase] = useState<Phase>('chatting');
   const [recentFields, setRecentFields] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -80,16 +83,37 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  }, [messages, loading, streamingContent]);
 
   // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Load persisted chat history on mount if editing
+  useEffect(() => {
+    if (!taskId) return;
+    api.get<PersistedChatMessage[]>(`/api/tasks/${taskId}/chat/messages`)
+      .then((persisted) => {
+        if (persisted.length > 0) {
+          const restored: ChatMessage[] = persisted.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: new Date(m.createdAt).getTime(),
+          }));
+          setMessages(restored);
+        }
+      })
+      .catch(() => {
+        // Silently ignore — fresh chat is fine
+      });
+  }, [taskId]);
 
   // Clear recent field highlights after 2s
   useEffect(() => {
@@ -97,6 +121,13 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
     const timer = setTimeout(() => setRecentFields(new Set()), 2000);
     return () => clearTimeout(timer);
   }, [recentFields]);
+
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
     const msg: ChatMessage = { id: makeId(), role, content, timestamp: Date.now() };
@@ -111,54 +142,121 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
     setInputValue('');
     addMessage('user', text);
     setLoading(true);
+    setStreamingContent('');
     setError('');
 
     try {
-      // All messages go through /api/tasks/chat with round tracking (spec-kit specify→clarify loop)
-      const chatMessages = messages.map((m) => ({ role: m.role, content: m.content }));
-      chatMessages.push({ role: 'user', content: text });
+      // If no taskId yet (new task), create a minimal task first
+      let currentTaskId = taskId;
+      if (!currentTaskId) {
+        const created = await api.post<Task>('/api/tasks', {
+          projectId,
+          title: text.slice(0, 80),
+        });
+        currentTaskId = created.id;
+        setTaskId(currentTaskId);
+      }
 
-      const result = await api.post<ChatResponse>('/api/tasks/chat', {
-        messages: chatMessages,
-        currentSpec: { title, description, ...spec },
-        roundNumber,
-        projectId,
+      // Start SSE stream
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      const response = await fetch(`/api/tasks/${currentTaskId}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+        signal: abortController.signal,
       });
 
-      // Apply spec updates (never regress — don't overwrite filled with empty)
-      if (result.specUpdates && typeof result.specUpdates === 'object') {
-        const updated = { ...spec };
-        const changedFields: string[] = [];
-        for (const [key, val] of Object.entries(result.specUpdates)) {
-          if (key in updated && typeof val === 'string' && (val.trim().length > 0 || !updated[key as keyof SpecDocument].trim())) {
-            (updated as Record<string, string>)[key] = val;
-            changedFields.push(key);
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({ error: response.statusText })) as { error?: string };
+        throw new Error(errBody.error || response.statusText);
+      }
+
+      if (!response.body) {
+        throw new Error('No response body for streaming');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulated = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events from buffer
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event = JSON.parse(jsonStr) as SSEEvent;
+
+            if (event.type === 'chunk') {
+              accumulated += event.content;
+              setStreamingContent(accumulated);
+            } else if (event.type === 'done') {
+              // Apply spec updates (never regress — don't overwrite filled with empty)
+              if (event.specUpdates && typeof event.specUpdates === 'object') {
+                setSpec((prevSpec) => {
+                  const updated = { ...prevSpec };
+                  const changedFields: string[] = [];
+                  for (const [key, val] of Object.entries(event.specUpdates)) {
+                    if (key in updated && typeof val === 'string' && (val.trim().length > 0 || !updated[key as keyof SpecDocument].trim())) {
+                      (updated as Record<string, string>)[key] = val;
+                      changedFields.push(key);
+                    }
+                  }
+                  if (changedFields.length > 0) {
+                    setRecentFields(new Set(changedFields));
+                  }
+                  return updated;
+                });
+              }
+
+              // Apply meta updates
+              if (event.titleUpdate) setTitle(event.titleUpdate);
+              if (event.descriptionUpdate) setDescription(event.descriptionUpdate);
+              if (event.riskLevelUpdate) setRiskLevel(event.riskLevelUpdate);
+
+              // Use the message from done event as the final message
+              // Strip any JSON block from the displayed message
+              const displayMessage = stripJsonBlock(event.message || accumulated);
+              addMessage('assistant', displayMessage);
+              setStreamingContent('');
+
+              // Auto-transition to confirming when AI says spec is complete
+              if (event.isComplete) {
+                setPhase('confirming');
+              }
+            }
+          } catch {
+            // Skip malformed SSE events
           }
         }
-        setSpec(updated);
-        setRecentFields(new Set(changedFields));
-      }
-
-      // Apply meta updates
-      if (result.titleUpdate) setTitle(result.titleUpdate);
-      if (result.descriptionUpdate) setDescription(result.descriptionUpdate);
-      if (result.riskLevelUpdate) setRiskLevel(result.riskLevelUpdate);
-      if (result.priorityUpdate !== undefined && result.priorityUpdate !== null) setPriority(result.priorityUpdate);
-
-      addMessage('assistant', result.message);
-      setRoundNumber((prev) => prev + 1);
-
-      // Auto-transition to confirming when AI says spec is complete
-      if (result.isComplete) {
-        setPhase('confirming');
       }
     } catch (err) {
-      addMessage('assistant', `Something went wrong: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // User cancelled — not an error
+        setStreamingContent('');
+      } else {
+        addMessage('assistant', `Something went wrong: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`);
+        setStreamingContent('');
+      }
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
       inputRef.current?.focus();
     }
-  }, [inputValue, loading, roundNumber, messages, title, description, spec, addMessage]);
+  }, [inputValue, loading, taskId, projectId, addMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -256,15 +354,19 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
                     </div>
                   ))}
 
-                  {/* Typing indicator */}
+                  {/* Streaming indicator — show content being built in real-time */}
                   {loading && (
                     <div className="flex justify-start">
-                      <div className="bg-bg-tertiary border border-border-default rounded-xl px-4 py-3">
-                        <div className="flex gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '0ms' }} />
-                          <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '150ms' }} />
-                          <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '300ms' }} />
-                        </div>
+                      <div className="max-w-[85%] bg-bg-tertiary border border-border-default rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed text-text-primary">
+                        {streamingContent ? (
+                          <MessageContent content={stripJsonBlock(streamingContent)} />
+                        ) : (
+                          <div className="flex gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '0ms' }} />
+                            <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '150ms' }} />
+                            <span className="w-2 h-2 rounded-full bg-text-tertiary animate-pulse-dot" style={{ animationDelay: '300ms' }} />
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -280,7 +382,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder={roundNumber === 1 ? 'Describe what you need built...' : 'Answer the question or type "done" to finalize...'}
+                      placeholder={messages.length <= 1 ? 'Describe what you need built...' : 'Answer the question or type "done" to finalize...'}
                       disabled={loading}
                       rows={1}
                       className="flex-1 rounded-lg bg-bg-tertiary border border-border-default px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-transparent resize-none min-h-[38px] max-h-[120px]"
@@ -440,6 +542,21 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
     </Dialog.Root>
   );
 };
+
+/** Strip JSON block from displayed content so user doesn't see raw JSON */
+function stripJsonBlock(content: string): string {
+  // Remove ```json ... ``` blocks from the end of content
+  const fenceStart = content.lastIndexOf('```json');
+  if (fenceStart >= 0) {
+    return content.substring(0, fenceStart).trim();
+  }
+  // Also try ``` with a { on the next line
+  const altFenceStart = content.lastIndexOf('```\n{');
+  if (altFenceStart >= 0) {
+    return content.substring(0, altFenceStart).trim();
+  }
+  return content;
+}
 
 /** Render markdown-like content (bold, bullets, line breaks) */
 const MessageContent: React.FC<{ content: string }> = ({ content }) => {

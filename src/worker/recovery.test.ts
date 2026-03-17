@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createTestDb } from '../test/helpers.js';
 import * as queries from '../db/queries.js';
+import { createStageLog, listStageLogsByTask } from '../db/stage-log-queries.js';
 import { recoverStaleTasks } from './recovery.js';
 
 function makeStaleTime(): string {
@@ -76,6 +77,31 @@ describe('recoverStaleTasks', () => {
     // First backlog child should be promoted to ready
     const updatedChild1 = queries.getTaskById(db, child1.id)!;
     expect(updatedChild1.status).toBe('ready');
+  });
+
+  it('marks stale stage_logs as failed', () => {
+    const db = createTestDb();
+    const project = queries.createProject(db, { name: 'p', path: '/p', configPath: '/p/.agentboard/config.json' });
+    const task = queries.createTask(db, { projectId: project.id, title: 'stale-log-task', status: 'planning' });
+
+    // Set claimed_at so the task recovery also runs cleanly
+    db.prepare(`UPDATE tasks SET claimed_at = ?, claimed_by = 'worker-1' WHERE id = ?`).run(makeStaleTime(), task.id);
+
+    const staleTime = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
+    createStageLog(db, {
+      taskId: task.id,
+      projectId: project.id,
+      stage: 'planning',
+      filePath: 'test.log',
+      startedAt: staleTime,
+    });
+
+    recoverStaleTasks(db);
+
+    const logs = listStageLogsByTask(db, task.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0].status).toBe('failed');
+    expect(logs[0].completedAt).not.toBeNull();
   });
 
   it('does NOT promote when an active child exists', () => {
