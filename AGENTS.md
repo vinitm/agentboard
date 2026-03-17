@@ -30,7 +30,7 @@ agentboard doctor      # Verify prerequisites + show registered projects
 
 **Global state:** `~/.agentboard/` stores `server.json` (port, host, concurrency), `agentboard.db` (shared database), `repos.json` (project registry), and `shutdown` (IPC signal).
 
-**Per-project state:** `<repo>/.agentboard/config.json` stores project-specific settings (models, commands, review rules).
+**Per-project state:** `<repo>/.agentboard/config.json` stores project-specific settings (models, commands, review rules). Stage logs at `.agentboard/logs/{taskId}/{stage}.log` (per-stage) and `.agentboard/logs/{taskId}/subtask-{subtaskId}/{stage}.log` (per-subtask).
 
 ## Code Style & Conventions
 
@@ -79,7 +79,7 @@ Subtask pipeline: backlog → ready → implement → checks → (inline fix) �
 - **Code quality** (`src/worker/stages/code-quality.ts`) — single reviewer that evaluates code quality per subtask after checks pass. Replaces the old 3-reviewer panel.
 - **Final review** (`src/worker/stages/final-review.ts`) — runs after all subtasks complete, reviewing the full changeset before PR creation.
 - **Auto-merge** (`src/worker/auto-merge.ts`) — skip human review when low risk + reviewer passes + no security-sensitive files.
-- **Task logging** (`src/worker/log-writer.ts`) — single append-only log per task. `BufferedWriter` for parallel writes.
+- **Task logging** (`src/worker/log-writer.ts`, `src/worker/stage-runner.ts`) — stage-wise logs at `.agentboard/logs/{taskId}/{stage}.log` (per-stage) or `.agentboard/logs/{taskId}/subtask-{subtaskId}/{stage}.log` (per-subtask with retries). `StageRunner` wraps each stage execution with DB indexing and Socket.IO broadcasting. New `stage_logs` table tracks stage execution metadata (attempt, duration, tokens, status).
 - **Model selection** — simplified: uses opus everywhere for consistent quality across all stages.
 - **Learning extraction** (`src/worker/stages/learner.ts`) — after each task reaches a terminal state (done/failed), fire-and-forget `extractLearnings()` spawns `claude --print` with learner prompt to analyze execution and save project-specific patterns to `.claude/skills/learned/`. Non-blocking. Collects quantitative metrics (`recordLearning()`) and qualitative patterns (`extractLearnings()`).
 

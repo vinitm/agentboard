@@ -338,6 +338,78 @@ Spawns: `claude --print --model <model> --permission-mode acceptEdits`
 - Chunks broadcast to UI via Socket.IO (`run:log` event)
 - Token usage parsed from output via regex; fallback: `output.length / 4`
 
+## Stage Logs API
+
+**File:** `src/server/routes/stage-logs.ts`
+
+New REST endpoints for stage-wise log viewing:
+
+### GET /api/tasks/:id/stages
+
+Lists all stages executed for a task (including subtasks):
+
+```typescript
+{
+  stages: [
+    {
+      id: "sl-001",
+      taskId: "task-abc123",
+      stage: "spec_review",
+      subtaskId: null,
+      attempt: 1,
+      status: "completed",
+      summary: "Spec validated: 4 acceptance criteria...",
+      tokensUsed: 1234,
+      durationMs: 7000,
+      startedAt: "2026-03-17T10:00:01Z",
+      completedAt: "2026-03-17T10:00:08Z"
+    },
+    {
+      id: "sl-002",
+      taskId: "task-abc123",
+      stage: "planning",
+      subtaskId: null,
+      attempt: 1,
+      status: "completed",
+      summary: "Decomposed into 3 subtasks...",
+      tokensUsed: 2100,
+      durationMs: 8000,
+      startedAt: "2026-03-17T10:00:10Z",
+      completedAt: "2026-03-17T10:00:18Z"
+    },
+    {
+      id: "sl-003",
+      taskId: "task-abc123",
+      stage: "implement",
+      subtaskId: "sub-001",
+      attempt: 1,
+      status: "completed",
+      summary: null,
+      tokensUsed: 4567,
+      durationMs: 70000,
+      startedAt: "2026-03-17T10:00:20Z",
+      completedAt: "2026-03-17T10:01:30Z"
+    }
+  ]
+}
+```
+
+Sorted by `startedAt`. Subtasks appear in the same list, identified by `subtaskId` field.
+
+### GET /api/tasks/:id/stages/:stageLogId/logs
+
+Streams the log file content for a specific stage execution. Supports HTTP Range requests for efficient tailing:
+
+```bash
+curl "http://localhost:3000/api/tasks/task-abc123/stages/sl-001/logs"
+curl -H "Range: bytes=1000-2000" "http://localhost:3000/api/tasks/task-abc123/stages/sl-001/logs"
+```
+
+Returns:
+- **200 OK** with full log content
+- **206 Partial Content** if Range header provided
+- **404** if stage log not found
+
 ## Model Selection
 
 **File:** `src/worker/model-selector.ts`
@@ -427,48 +499,85 @@ Claude Code ──(stdout chunks)──▶ onOutput callback
 | `task:created` | `{ task }` | New task created |
 | `task:updated` | `{ taskId, status }` | Status change |
 | `task:event` | `{ type, payload }` | Stage milestones |
-| `run:log` | `{ taskId, runId, chunk, timestamp }` | Claude output chunks |
+| `run:log` | `{ taskId, runId, stage, subtaskId, chunk, timestamp }` | Claude output chunks (now with stage context) |
+| `stage:transition` | `{ taskId, stage, subtaskId, status, summary, durationMs, tokensUsed }` | Stage lifecycle (running → completed/failed) |
 
 **Task Event Types:** `status_changed`, `spec_generated`, `assumptions_made`, `subtasks_created`, `checks_passed`, `checks_failed`, `inline_fix_applied`, `code_quality_passed`, `code_quality_failed`, `final_review_completed`, `pr_created`, `auto_merged`, `task_error`
 
-## Task Logging
+## Task Logging & Stage Runner
 
-**File:** `src/worker/log-writer.ts`
+**Files:** `src/worker/log-writer.ts`, `src/worker/stage-runner.ts`
 
-Each task gets a single append-only log file at `.agentboard/logs/{taskId}.log`:
+### Per-Stage Log Files
 
+Each stage execution writes to its own log file:
+- **Task-level stages:** `.agentboard/logs/{taskId}/{stage}.log` (e.g., `spec_review.log`)
+- **Subtask-level stages:** `.agentboard/logs/{taskId}/subtask-{subtaskId}/{stage}.log`
+- **Retries:** Attempts > 1 append to `{stage}-{attempt}.log` (e.g., `implement-2.log`)
+
+Example structure:
 ```
-════════════════════════════════════════════════════════
-TASK: Add user authentication
-ID: abc123 | Risk: medium | Started: 2026-03-17T10:00:00Z
-════════════════════════════════════════════════════════
-
-── STAGE: spec_review (run: specrev-abc123, attempt: 1) ──
-[10:00:01] [start] model=opus
-[10:00:05] Spec reviewed: 4 acceptance criteria validated...
-[10:00:08] [end] status=success tokens=1234 duration=7000ms
-
-── STAGE: planning (run: plan-abc123, attempt: 1) ──────
-[10:00:10] [start] model=opus
-[10:00:15] Decomposed into 3 subtasks...
-[10:00:18] [end] status=success tokens=2100 duration=8000ms
-
-── SUBTASK 1/3: Create JWT middleware (sub-001) ────────
-
-  ── STAGE: implement (run: impl-sub001, attempt: 1) ──
-  [10:00:20] [start] model=opus
-  [10:01:30] [end] status=DONE
-
-  ── STAGE: checks (run: chk-sub001, attempt: 1) ──────
-  [10:01:32] [start] tests=pass lint=pass typecheck=pass
-  [10:01:45] [end] status=passed
-
-  ── STAGE: code_quality (run: cq-sub001, attempt: 1) ──
-  [10:01:47] [start] model=opus
-  [10:02:10] [end] status=passed
+.agentboard/logs/
+└── task-abc123/
+    ├── spec_review.log        # Spec review stage
+    ├── planning.log           # Planning stage
+    ├── subtask-sub001/
+    │   ├── implement.log      # First attempt
+    │   ├── implement-2.log    # Retry after inline fix
+    │   ├── checks.log
+    │   └── code_quality.log
+    ├── subtask-sub002/
+    │   ├── implement.log
+    │   ├── checks.log
+    │   └── code_quality.log
+    ├── final_review.log
+    └── pr_creation.log
 ```
 
-Subtask logs are indented under the parent. Each subtask shows implement → checks → code_quality stages sequentially.
+### StageRunner Lifecycle
+
+**File:** `src/worker/stage-runner.ts`
+
+Wraps each stage execution with:
+1. **Stage log creation** — record in `stage_logs` DB table with metadata (stage, subtaskId, attempt, filePath, startedAt)
+2. **onOutput streaming** — append to log file + broadcast `run:log` event with stage/subtaskId context
+3. **Stage transition** — broadcast `stage:transition` event when stage starts/completes
+4. **Metadata capture** — optionally extract summary and token usage via `summarize()` callback
+
+```typescript
+const runner = createStageRunner({ taskId, projectId, subtaskId, io, db, logsDir, projectRoot });
+const result = await runner.execute(
+  'implement',
+  (onOutput) => implementStage(onOutput),
+  { attempt: 1, summarize: (result) => ({ summary, tokensUsed }) }
+);
+```
+
+### Database Indexing
+
+New `stage_logs` table provides fast stage lookup:
+
+```sql
+CREATE TABLE stage_logs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT,
+  project_id TEXT,
+  run_id TEXT,
+  stage TEXT,
+  subtask_id TEXT,
+  attempt INTEGER,
+  file_path TEXT,
+  status TEXT,           -- 'running' | 'completed' | 'failed' | 'skipped'
+  summary TEXT,
+  tokens_used INTEGER,
+  duration_ms INTEGER,
+  started_at TEXT,
+  completed_at TEXT,
+  created_at TEXT
+);
+```
+
+Enables **stage-wise log streaming** in UI: list all stages for a task, click to view per-stage logs.
 
 Log retention: 30 days (cleaned on worker startup).
 
@@ -511,9 +620,11 @@ Tracks recurring failure patterns and project conventions to improve future agen
 | `tasks` | Task state, spec, ownership, parent-child relationships (cross-project) |
 | `runs` | Stage execution records (model, tokens, input/output, timing) |
 | `artifacts` | Structured outputs (specs, plans, review results, PR URLs) |
+| `stage_logs` | Per-stage execution metadata (stage, subtaskId, attempt, file path, status, duration, tokens) — enables stage-wise log streaming in UI |
 | `git_refs` | Branch and worktree tracking per task |
 | `events` | Task lifecycle events for timeline reconstruction |
 | `task_logs` | Log file metadata (path, size) |
+| `chat_messages` | Conversational spec building messages (role, content, task_id) |
 
 All queries use prepared statements via `src/db/queries.ts`. Row conversion functions handle `snake_case` DB columns to `camelCase` TypeScript.
 

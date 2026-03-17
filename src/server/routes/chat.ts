@@ -269,6 +269,8 @@ function buildSpawnArgs(isFirstMessage: boolean, sessionId: string): string[] {
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
+    // Guardrails: read-only tools, no writes/edits/bash
+    '--tools', 'Read,Glob,Grep',
   ];
 
   if (isFirstMessage) {
@@ -401,6 +403,7 @@ function spawnFallbackSession(
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
+    '--tools', 'Read,Glob,Grep',
     '--system-prompt', systemPrompt,
     '--session-id', newSessionId,
   ];
