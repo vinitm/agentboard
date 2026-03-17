@@ -8,8 +8,8 @@ import type { Task, TaskStatus, RiskLevel, PlanReviewAction } from '../types';
 import type { FilterState } from './TopBar';
 
 const MAIN_COLUMNS: TaskStatus[] = [
-  'backlog', 'ready', 'planning', 'needs_plan_review', 'implementing', 'checks',
-  'review_panel', 'needs_human_review', 'done',
+  'backlog', 'ready', 'spec_review', 'planning', 'needs_plan_review', 'implementing', 'checks',
+  'code_quality', 'final_review', 'pr_creation', 'needs_human_review', 'done',
 ];
 
 const EXTRA_COLUMNS: TaskStatus[] = ['blocked', 'failed', 'cancelled'];

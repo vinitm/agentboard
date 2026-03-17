@@ -23,9 +23,9 @@ interface Props {
 
 interface EventRecord { id: string; taskId: string; runId: string | null; type: string; payload: string; createdAt: string }
 
-const PIPELINE_STAGES = ['planning', 'needs_plan_review', 'implementing', 'checks', 'review_panel'] as const;
+const PIPELINE_STAGES = ['spec_review', 'planning', 'needs_plan_review', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'] as const;
 const STAGE_LABELS: Record<string, string> = {
-  planning: 'Planning', needs_plan_review: 'Plan Review', implementing: 'Implementing', checks: 'Checks', review_panel: 'Review',
+  spec_review: 'Spec Review', planning: 'Planning', needs_plan_review: 'Plan Review', implementing: 'Implementing', checks: 'Checks', code_quality: 'Code Quality', final_review: 'Final Review', pr_creation: 'PR Creation',
 };
 
 function getStageIndex(status: string): number {
@@ -161,9 +161,10 @@ const AssumptionsPanel: React.FC<{ runs: Run[] }> = ({ runs }) => {
 };
 
 const statusBadgeColor: Record<string, string> = {
-  backlog: 'text-text-tertiary', ready: 'text-accent-blue', spec: 'text-accent-purple', planning: 'text-accent-purple',
+  backlog: 'text-text-tertiary', ready: 'text-accent-blue', spec_review: 'text-[#3b82f6]', planning: 'text-accent-purple',
   needs_plan_review: 'text-accent-amber',
-  implementing: 'text-accent-purple', checks: 'text-accent-purple', review_panel: 'text-accent-purple',
+  implementing: 'text-accent-purple', checks: 'text-accent-purple', code_quality: 'text-[#8b5cf6]',
+  final_review: 'text-[#14b8a6]', pr_creation: 'text-[#22c55e]',
   needs_human_review: 'text-accent-pink', done: 'text-accent-green',
   blocked: 'text-accent-amber', failed: 'text-accent-red', cancelled: 'text-text-tertiary',
 };
@@ -186,7 +187,7 @@ export const TaskDetail: React.FC<Props> = ({ task, onClose, onUpdate, onAnswer,
     try { spec = JSON.parse(task.spec) as Partial<SpecDocument>; } catch {}
   }
 
-  const isAgentActive = ['planning', 'implementing', 'checks', 'review_panel'].includes(task.status);
+  const isAgentActive = ['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'].includes(task.status);
   const isSubtask = !!task.parentTaskId;
   const showPipeline = !isSubtask && (isAgentActive || task.status === 'needs_plan_review' || task.status === 'done' || task.status === 'needs_human_review' || task.status === 'failed');
 

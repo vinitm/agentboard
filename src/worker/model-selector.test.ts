@@ -5,35 +5,18 @@ import { createTestConfig } from '../test/helpers.js';
 describe('selectModel', () => {
   const config = createTestConfig();
 
-  it('planning → config.modelDefaults.planning (sonnet)', () => {
-    expect(selectModel('planning', 'low', config)).toBe('sonnet');
-  });
-
-  it('implementing → config.modelDefaults.implementation (opus)', () => {
+  it('returns opus for all stages', () => {
+    expect(selectModel('planning', 'low', config)).toBe('opus');
     expect(selectModel('implementing', 'low', config)).toBe('opus');
-  });
-
-  it('checks → config.modelDefaults.implementation (opus)', () => {
     expect(selectModel('checks', 'low', config)).toBe('opus');
-  });
-
-  it('review_panel → config.modelDefaults.review (sonnet)', () => {
-    expect(selectModel('review_panel', 'low', config)).toBe('sonnet');
-  });
-
-  it('pr_creation → config.modelDefaults.implementation (opus)', () => {
+    expect(selectModel('code_quality', 'low', config)).toBe('opus');
+    expect(selectModel('final_review', 'low', config)).toBe('opus');
     expect(selectModel('pr_creation', 'low', config)).toBe('opus');
+    expect(selectModel('spec_review', 'low', config)).toBe('opus');
   });
 
-  it('high risk overrides review_panel → opus', () => {
-    expect(selectModel('review_panel', 'high', config)).toBe('opus');
-  });
-
-  it('high risk does NOT override planning', () => {
-    expect(selectModel('planning', 'high', config)).toBe('sonnet');
-  });
-
-  it('medium risk does NOT override review_panel', () => {
-    expect(selectModel('review_panel', 'medium', config)).toBe('sonnet');
+  it('returns opus regardless of risk level', () => {
+    expect(selectModel('planning', 'high', config)).toBe('opus');
+    expect(selectModel('implementing', 'medium', config)).toBe('opus');
   });
 });

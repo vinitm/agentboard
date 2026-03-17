@@ -36,37 +36,15 @@ export function evaluateAutoMerge(
 
   // Check 3: Parent task check — parent tasks with subtasks always need human review
   // If parentTaskId is null this is a root task. Root tasks that went through
-  // review_panel themselves (not via subtasks) are fine — subtask parents never
-  // reach review_panel directly.
+  // final_review themselves (not via subtasks) are fine — subtask parents never
+  // reach final_review directly.
 
-  // Check 4: Review panel results — all must pass with zero issues
+  // Check 4: Final review results — must have a successful final review
   const runs = listRunsByTask(db, task.id);
-  const reviewRuns = runs.filter(r => r.stage === 'review_panel' && r.status === 'success');
+  const finalReviewRuns = runs.filter(r => r.stage === 'final_review' && r.status === 'success');
 
-  if (reviewRuns.length === 0) {
-    reasons.push('No successful review panel runs found');
-  } else {
-    // Check the latest review panel run's artifacts for zero issues
-    const latestReviewRun = reviewRuns[reviewRuns.length - 1];
-    const artifacts = listArtifactsByRun(db, latestReviewRun.id);
-    const reviewArtifacts = artifacts.filter(a => a.type === 'review_result');
-
-    let totalIssues = 0;
-    for (const artifact of reviewArtifacts) {
-      try {
-        const result = JSON.parse(artifact.content) as { passed: boolean; issues: string[] };
-        if (!result.passed) {
-          reasons.push(`Reviewer '${artifact.name}' did not pass`);
-        }
-        totalIssues += (result.issues?.length ?? 0);
-      } catch {
-        reasons.push(`Could not parse review result for '${artifact.name}'`);
-      }
-    }
-
-    if (totalIssues > 0) {
-      reasons.push(`Review panel reported ${totalIssues} issue(s) (must be 0)`);
-    }
+  if (finalReviewRuns.length === 0) {
+    reasons.push('No successful final review runs found');
   }
 
   // Check 5: No security-sensitive files

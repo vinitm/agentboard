@@ -144,6 +144,16 @@ describe('schema initialization', () => {
     });
   });
 
+  describe('migrations', () => {
+    it('tasks table has chat_session_id column', () => {
+      const columns = db
+        .prepare("PRAGMA table_info('tasks')")
+        .all() as Array<{ name: string }>;
+      const colNames = columns.map((c) => c.name);
+      expect(colNames).toContain('chat_session_id');
+    });
+  });
+
   describe('column defaults', () => {
     it('tasks default status is backlog', () => {
       const now = new Date().toISOString();

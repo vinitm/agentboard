@@ -3,16 +3,19 @@ import { useDroppable } from '@dnd-kit/core';
 import { TaskCard } from './TaskCard';
 import type { Task, TaskStatus } from '../types';
 
-const AGENT_COLUMNS: TaskStatus[] = ['planning', 'implementing', 'checks', 'review_panel'];
+const AGENT_COLUMNS: TaskStatus[] = ['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'];
 
 const COLUMN_LABELS: Record<TaskStatus, string> = {
   backlog: 'Backlog',
   ready: 'Ready',
+  spec_review: 'Spec Review',
   planning: 'Planning',
   needs_plan_review: 'Plan Review',
   implementing: 'Implementing',
   checks: 'Checks',
-  review_panel: 'Review Panel',
+  code_quality: 'Code Quality',
+  final_review: 'Final Review',
+  pr_creation: 'PR Creation',
   needs_human_review: 'Needs Review',
   done: 'Done',
   blocked: 'Blocked',
@@ -32,11 +35,14 @@ const STATUS_HEADER_COLOR: Partial<Record<TaskStatus, string>> = {
 const STATUS_DOT_COLOR: Partial<Record<TaskStatus, string>> = {
   backlog: 'bg-text-tertiary',
   ready: 'bg-accent-blue',
+  spec_review: 'bg-[#3b82f6]',
   planning: 'bg-accent-purple',
   needs_plan_review: 'bg-accent-amber',
   implementing: 'bg-accent-purple',
   checks: 'bg-accent-purple',
-  review_panel: 'bg-accent-purple',
+  code_quality: 'bg-[#8b5cf6]',
+  final_review: 'bg-[#14b8a6]',
+  pr_creation: 'bg-[#22c55e]',
   needs_human_review: 'bg-accent-pink',
   done: 'bg-accent-green',
   blocked: 'bg-accent-amber',

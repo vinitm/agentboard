@@ -2,7 +2,7 @@
 
 ## All learnings MUST be project-scoped
 
-This project has its own conventions (console.log prefixes, prepared statements, ralph loop patterns, BufferedWriter for parallel writes, stage contracts) that do not apply to other projects.
+This project has its own conventions (console.log prefixes, prepared statements, inline fix patterns, BufferedWriter for parallel writes, stage contracts) that do not apply to other projects.
 
 ### `/everything-claude-code:learn-eval`
 ALWAYS save to project scope (`.claude/skills/learned/`), NEVER to global (`~/.claude/skills/learned/`).
@@ -24,7 +24,7 @@ At the end of every task:
 ### Learning trigger taxonomy
 
 **Always run `/learn-eval`:**
-- After fixing pipeline bugs (worker loop, stages, ralph loop)
+- After fixing pipeline bugs (worker loop, stages, inline fix)
 - After adding new stages to `src/worker/stages/`
 - After fixing multi-subtask execution issues
 - After modifying DB schema or queries
@@ -32,7 +32,7 @@ At the end of every task:
 
 **Always update `docs/decisions.md`:**
 - After changing pipeline state transitions (the state machine)
-- After changing review panel logic (unanimous vs majority, reviewer roles)
+- After changing code quality or final review logic
 - After changing auto-merge criteria
 - After adding or removing a stage from the pipeline
 

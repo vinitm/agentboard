@@ -53,7 +53,7 @@ export function collectTaskMetrics(
       implementationAttempts++;
     }
 
-    if (run.stage === 'review_panel') {
+    if (run.stage === 'final_review') {
       reviewCycles++;
       // Extract feedback themes from review artifacts
       if (run.status === 'failed') {

@@ -18,6 +18,7 @@ function makeContext(): HookContext {
     blockedReason: null,
     claimedAt: null,
     claimedBy: null,
+    chatSessionId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

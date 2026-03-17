@@ -1,7 +1,7 @@
 # ADR-005: Stage-and-Risk-Driven Model Selection
 
 ## Status
-Accepted
+Superseded by [ADR-007](007-superpowers-workflow.md) — model selection simplified to opus everywhere
 
 ## Context
 Different pipeline stages have different quality/cost tradeoffs. Only four stages invoke Claude Code: spec-generator, planner, implementer, and review-panel. The checks stage runs shell commands and pr-creator runs `gh` CLI — neither uses an LLM.

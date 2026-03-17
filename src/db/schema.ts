@@ -142,6 +142,7 @@ export function initSchema(db: Database.Database): void {
   db.exec(DDL);
   migrateReviewStages(db);
   migrateToSuperpowersWorkflow(db);
+  migrateChatSessionId(db);
 }
 
 export function migrateReviewStages(db: Database.Database): void {
@@ -153,6 +154,15 @@ export function migrateReviewStages(db: Database.Database): void {
     .run();
   if (migrated.changes > 0 || migratedRuns.changes > 0) {
     console.log(`[db] Migrated ${migrated.changes} tasks and ${migratedRuns.changes} runs from review_spec/review_code to review_panel`);
+  }
+}
+
+export function migrateChatSessionId(db: Database.Database): void {
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN chat_session_id TEXT');
+    console.log('[db] Added chat_session_id column to tasks');
+  } catch {
+    // Column already exists — ignore
   }
 }
 

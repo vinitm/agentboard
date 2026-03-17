@@ -9,11 +9,13 @@ import { cleanupWorktree } from '../../worker/git.js';
 
 
 const AGENT_CONTROLLED_COLUMNS: TaskStatus[] = [
+  'spec_review',
   'planning',
   'needs_plan_review',
   'implementing',
   'checks',
-  'review_panel',
+  'code_quality',
+  'final_review',
 ];
 
 export function createTaskRoutes(db: Database.Database, io: Server): Router {
@@ -105,10 +107,13 @@ Guidelines:
 
 Task description: ${description.trim()}`;
 
-    const child = spawn('claude', ['--print', '-p', prompt], {
-      stdio: ['ignore', 'pipe', 'pipe'],
+    const child = spawn('claude', ['--print'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, CLAUDECODE: undefined },
     });
+
+    child.stdin.write(prompt);
+    child.stdin.end();
 
     let stdout = '';
     let stderr = '';
@@ -361,87 +366,6 @@ Task description: ${description.trim()}`;
     res.json(updated);
   });
 
-  // POST /api/tasks/refine-field — AI-assisted per-field spec refinement
-  router.post('/refine-field', (req, res) => {
-    const { field, currentValue, fullSpec } = req.body as {
-      field?: string;
-      currentValue?: string;
-      fullSpec?: Record<string, string>;
-    };
-    if (!field || typeof currentValue !== 'string') {
-      res.status(400).json({ error: 'field and currentValue are required' });
-      return;
-    }
-
-    const specContext = fullSpec
-      ? Object.entries(fullSpec)
-          .filter(([k, v]) => k !== field && v)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join('\n')
-      : '';
-
-    const prompt = `You are a spec refinement assistant. Improve the following specification field.
-
-Field: ${field}
-Current value: ${currentValue || '(empty)'}
-
-Other spec context:
-${specContext || '(none yet)'}
-
-Instructions:
-1. If the current value is empty, generate a thorough draft based on the task context.
-2. If it has content, improve it: add missing details, clarify ambiguities, make criteria more testable.
-3. Identify gaps — things that should be addressed but aren't mentioned.
-
-Return ONLY valid JSON:
-{
-  "refined": "the improved field content",
-  "gaps": ["gap 1 that should be addressed", "gap 2"]
-}
-
-Return an empty gaps array if no gaps found. The refined text should be plain text, not JSON.`;
-
-    const child = spawn('claude', ['--print', '-p', prompt], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, CLAUDECODE: undefined },
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    const timer = setTimeout(() => { child.kill(); }, 60_000);
-
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        console.log(`[http] /api/tasks/refine-field failed: code=${code} stderr=${stderr}`);
-        res.status(500).json({ error: `AI refinement failed: ${stderr || stdout || 'unknown error'}` });
-        return;
-      }
-      let jsonStr = stdout.trim();
-      const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (fenceMatch) { jsonStr = fenceMatch[1].trim(); }
-      try {
-        const parsed = JSON.parse(jsonStr) as { refined: string; gaps?: string[] };
-        res.json({
-          refined: typeof parsed.refined === 'string' ? parsed.refined : currentValue,
-          gaps: Array.isArray(parsed.gaps) ? parsed.gaps.filter((g): g is string => typeof g === 'string') : [],
-        });
-      } catch {
-        console.log(`[http] /api/tasks/refine-field JSON parse failed: ${stdout}`);
-        res.status(500).json({ error: 'Failed to parse AI response', raw: stdout });
-      }
-    });
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      res.status(500).json({ error: `Failed to spawn claude: ${err.message}` });
-    });
-  });
-
   // POST /api/tasks/chat — spec-kit specify→clarify conversational loop
   router.post('/chat', (req, res) => {
     const { messages, currentSpec, roundNumber, projectId } = req.body as {
@@ -573,8 +497,8 @@ Return ONLY valid JSON with no markdown fences:
   "gaps": ["remaining gap 1"]
 }`;
 
-    const spawnOpts: { stdio: ['ignore', 'pipe', 'pipe']; env: Record<string, string | undefined>; cwd?: string } = {
-      stdio: ['ignore', 'pipe', 'pipe'],
+    const spawnOpts: { stdio: ['pipe', 'pipe', 'pipe']; env: Record<string, string | undefined>; cwd?: string } = {
+      stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, CLAUDECODE: undefined },
     };
     if (projectPath) {
@@ -584,7 +508,10 @@ Return ONLY valid JSON with no markdown fences:
       console.log(`[http] /api/tasks/chat WARNING: no projectPath resolved (projectId=${projectId ?? 'none'})`);
     }
 
-    const child = spawn('claude', ['--print', '-p', prompt], spawnOpts);
+    const child = spawn('claude', ['--print'], spawnOpts);
+
+    child.stdin.write(prompt);
+    child.stdin.end();
 
     let stdout = '';
     let stderr = '';

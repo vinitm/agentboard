@@ -81,6 +81,7 @@ export interface Task {
   blockedReason: string | null;
   claimedAt: string | null;
   claimedBy: string | null;
+  chatSessionId: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -176,7 +176,7 @@ describe('POST /api/tasks/:id/move', () => {
   it('rejects moves to agent-controlled columns', async () => {
     const task = queries.createTask(db, { projectId, title: 'Agent Move', status: 'ready' });
 
-    for (const col of ['planning', 'needs_plan_review', 'implementing', 'checks', 'review_panel']) {
+    for (const col of ['spec_review', 'planning', 'needs_plan_review', 'implementing', 'checks', 'code_quality', 'final_review']) {
       const res = await request(app)
         .post(`/api/tasks/${task.id}/move`)
         .send({ column: col });
@@ -394,20 +394,17 @@ describe('AI endpoint spawn patterns', () => {
       'utf-8',
     );
 
-    // Should have 3 spawn('claude' calls (parse, refine-field, chat)
+    // Should have 2 spawn('claude' calls (parse, chat)
     const spawnCount = (routesSource.match(/spawn\('claude'/g) || []).length;
-    expect(spawnCount).toBeGreaterThanOrEqual(3);
+    expect(spawnCount).toBeGreaterThanOrEqual(2);
 
-    // All should use '-p' flag for prompt delivery
-    expect(routesSource).toContain("'--print', '-p', prompt");
+    // All should pipe prompts via stdin (matches executor.ts pattern — avoids -p hangs)
+    expect(routesSource).toContain('child.stdin.write');
+    expect(routesSource).toContain('child.stdin.end');
 
-    // No stdin.write patterns should exist (prompts go via -p flag)
-    expect(routesSource).not.toContain('child.stdin.write');
-    expect(routesSource).not.toContain('child.stdin.end');
-
-    // All stdio configs should use 'ignore' for stdin
-    expect(routesSource).toContain("stdio: ['ignore', 'pipe', 'pipe']");
-    expect(routesSource).not.toContain("stdio: ['pipe', 'pipe', 'pipe']");
+    // All stdio configs should use 'pipe' for stdin to enable prompt piping
+    expect(routesSource).toContain("stdio: ['pipe', 'pipe', 'pipe']");
+    expect(routesSource).not.toContain("stdio: ['ignore', 'pipe', 'pipe']");
   });
 });
 
@@ -471,23 +468,6 @@ describe('POST /api/tasks/parse — validation', () => {
   });
 });
 
-describe('POST /api/tasks/refine-field — validation', () => {
-  it('returns 400 when field is missing', async () => {
-    const res = await request(app)
-      .post('/api/tasks/refine-field')
-      .send({ currentValue: 'something' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/field/i);
-  });
-
-  it('returns 400 when currentValue is missing', async () => {
-    const res = await request(app)
-      .post('/api/tasks/refine-field')
-      .send({ field: 'goal' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/currentValue/i);
-  });
-});
 
 describe('POST /api/tasks/chat — spec-kit specify→clarify prompts', () => {
   it('round 1 prompt uses specify phase (initial spec draft)', () => {
@@ -630,31 +610,33 @@ describe('Spec format: 3-field spec-kit structure', () => {
 });
 
 describe('Frontend: TaskForm conversational UI', () => {
-  it('TaskForm always uses /api/tasks/chat (never /api/tasks/parse)', () => {
+  it('TaskForm uses SSE streaming chat endpoint (never /api/tasks/parse)', () => {
     const fs = require('node:fs');
     const formSource = fs.readFileSync(
       require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
       'utf-8',
     );
 
-    expect(formSource).toContain('/api/tasks/chat');
+    expect(formSource).toContain('/chat/stream');
     expect(formSource).not.toContain('/api/tasks/parse');
   });
 
-  it('TaskForm tracks roundNumber and sends it to chat endpoint', () => {
+  it('TaskForm uses SSE streaming with chunk and done events', () => {
     const fs = require('node:fs');
     const formSource = fs.readFileSync(
       require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
       'utf-8',
     );
 
-    expect(formSource).toContain('roundNumber');
-    expect(formSource).toContain('setRoundNumber');
-    // Should increment round after each response
-    expect(formSource).toContain('prev + 1');
+    // Should handle SSE chunk events for real-time streaming
+    expect(formSource).toContain('streamingContent');
+    expect(formSource).toContain('setStreamingContent');
+    // Should handle SSE event types
+    expect(formSource).toContain("event.type === 'chunk'");
+    expect(formSource).toContain("event.type === 'done'");
   });
 
-  it('TaskForm passes projectId to chat endpoint', () => {
+  it('TaskForm passes projectId and manages taskId for streaming', () => {
     const fs = require('node:fs');
     const formSource = fs.readFileSync(
       require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
@@ -664,8 +646,9 @@ describe('Frontend: TaskForm conversational UI', () => {
     expect(formSource).toContain('projectId');
     // Should be in the Props interface
     expect(formSource).toContain('projectId: string');
-    // Should be sent in the API call
-    expect(formSource).toContain('projectId,');
+    // Should track taskId for streaming endpoint
+    expect(formSource).toContain('taskId');
+    expect(formSource).toContain('setTaskId');
   });
 
   it('TaskForm uses spec-kit 3-field spec labels', () => {
@@ -690,7 +673,7 @@ describe('Frontend: TaskForm conversational UI', () => {
       'utf-8',
     );
 
-    expect(formSource).toContain('result.isComplete');
+    expect(formSource).toContain('event.isComplete');
     expect(formSource).toContain("setPhase('confirming')");
   });
 

@@ -1,7 +1,7 @@
 # Agentboard
 
 Self-hosted Kanban board that orchestrates AI coding agents through a spec-driven pipeline:
-PM writes spec (with AI assistance) → AI plans → engineer reviews plan → autonomous execution (ralph loop → review panel → PR).
+PM builds spec conversationally → AI plans → engineer reviews plan → autonomous execution (per-subtask implement → checks → code quality → final review → PR).
 Built with TypeScript, Express, SQLite, Socket.IO, React + Tailwind.
 See [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestration.md) for the complete agent orchestration architecture.
 
@@ -66,19 +66,22 @@ Architectural decisions are recorded in [docs/decisions.md](docs/decisions.md).
 **Global state** (`~/.agentboard/`): Shared SQLite DB across all projects, server config, project registry, shutdown signal.
 **Per-project state** (`<repo>/.agentboard/`): Project config, git worktrees, logs, memory, and progress files.
 
-Pipeline: backlog → ready → planning → needs_plan_review → implementing ↔ checks (ralph loop) → review_panel → pr_creation → needs_human_review|done
-Subtask pipeline: backlog → ready → ralph loop → done|failed (fully autonomous, no review panel)
+Pipeline: backlog → ready → spec_review → planning → needs_plan_review → implementing → [per-subtask: implement → checks → code_quality] → final_review → pr_creation → needs_human_review|done
+Subtask pipeline: backlog → ready → implement → checks → (inline fix) → code_quality → done|failed|blocked
 
-- **Spec authoring** — PM writes detailed spec via UI (6 sections: problem, user stories, acceptance criteria, constraints, out of scope, verification). Per-field AI refinement via `POST /api/tasks/refine-field`.
+- **Spec authoring** — PM builds spec conversationally via chat UI. AI assists through a specify→clarify loop, asking follow-up questions to refine requirements before the spec is finalized.
+- **Spec review** (`src/worker/stages/spec-review.ts`) — after spec is built, AI reviews the spec for completeness, clarity, and feasibility before planning begins.
 - **Plan review** — after AI planning, task pauses at `needs_plan_review`. Engineer reviews/edits plan via `POST /api/tasks/:id/review-plan` (approve with optional edits, or reject with required reason). Rejection feedback flows into re-planning context.
-- **Learnings UI** — `/learnings` page displays: extracted skills from `.claude/skills/learned/` (with frontmatter parsing), analytics on pipeline performance (first-pass check rate, avg attempts, avg review cycles, common failures), and task history with metrics (duration, tokens, outcome). Backed by `GET /api/projects/:projectId/learning`, `GET /api/projects/:projectId/learning/history`, and `GET /api/projects/:projectId/learning/skills`.
-- **Stages** (`src/worker/stages/`) — planner, implementer, checks, review-panel, pr-creator, learner
-- **Ralph loop** (`src/worker/ralph-loop.ts`) — implement→checks loop with fresh context per iteration. Fallback prompt on 3rd+ failure. Max 5 iterations.
-- **Review panel** (`src/worker/stages/review-panel.ts`) — 3 parallel reviewers (Architect, QA, Security). Unanimous pass required.
-- **Auto-merge** (`src/worker/auto-merge.ts`) — skip human review when low risk + all reviewers pass + no security-sensitive files.
+- **Learnings UI** — `/learnings` page displays: extracted skills from `.claude/skills/learned/` (with frontmatter parsing), analytics on pipeline performance (first-pass check rate, avg attempts, common failures), and task history with metrics (duration, tokens, outcome). Backed by `GET /api/projects/:projectId/learning`, `GET /api/projects/:projectId/learning/history`, and `GET /api/projects/:projectId/learning/skills`.
+- **Stages** (`src/worker/stages/`) — spec-review, planner, implementer, checks, code-quality, final-review, pr-creator, learner
+- **Implementer** (`src/worker/stages/implementer.ts`) — writes code in the worktree. Returns structured status: DONE (implementation complete), NEEDS_CONTEXT (missing information), or BLOCKED (cannot proceed).
+- **Inline fix** (`src/worker/inline-fix.ts`) — when checks fail, one targeted fix attempt with failure context. If the fix also fails, task is escalated to human (blocked).
+- **Code quality** (`src/worker/stages/code-quality.ts`) — single reviewer that evaluates code quality per subtask after checks pass. Replaces the old 3-reviewer panel.
+- **Final review** (`src/worker/stages/final-review.ts`) — runs after all subtasks complete, reviewing the full changeset before PR creation.
+- **Auto-merge** (`src/worker/auto-merge.ts`) — skip human review when low risk + reviewer passes + no security-sensitive files.
 - **Task logging** (`src/worker/log-writer.ts`) — single append-only log per task. `BufferedWriter` for parallel writes.
-- **Model selection** (`src/worker/model-selector.ts`) — maps stages to `config.modelDefaults` keys.
-- **Learning extraction** (`src/worker/stages/learner.ts`) — after each task reaches a terminal state (done/failed), fire-and-forget `extractLearnings()` spawns `claude --print` with learner prompt to analyze execution and save project-specific patterns to `.claude/skills/learned/`. Non-blocking; uses configurable `config.modelDefaults.learning` model (default: haiku). Collects quantitative metrics (`recordLearning()`) and qualitative patterns (`extractLearnings()`).
+- **Model selection** — simplified: uses opus everywhere for consistent quality across all stages.
+- **Learning extraction** (`src/worker/stages/learner.ts`) — after each task reaches a terminal state (done/failed), fire-and-forget `extractLearnings()` spawns `claude --print` with learner prompt to analyze execution and save project-specific patterns to `.claude/skills/learned/`. Non-blocking. Collects quantitative metrics (`recordLearning()`) and qualitative patterns (`extractLearnings()`).
 
 Subtasks execute serially. Parent creates single PR after all succeed.
 See [docs/gotchas/subtasks.md](docs/gotchas/subtasks.md) for subtask pipeline pitfalls.
