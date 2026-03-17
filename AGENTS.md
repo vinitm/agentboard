@@ -44,36 +44,31 @@ agentboard doctor      # Verify prerequisites (git, gh, node, claude)
 - Backend: Node environment. UI: jsdom. E2E: Playwright in `e2e/`
 - Run `npm test` before committing
 
+## Development Workflow
+
+Interactive sessions follow the ECC-based workflow in `.claude/rules/common/development-workflow.md`:
+Research → Plan → TDD → Review → Docs & Learn → Commit
+
+All learnings are project-scoped. See `.claude/rules/common/learning-scope.md`.
+Architectural decisions are recorded in [docs/decisions.md](docs/decisions.md).
+
 ## Architecture & Boundaries
 
 3 layers: CLI (`src/cli/`) → Server+Worker (`src/server/`, `src/worker/`) → DB (`src/db/`)
 
 Pipeline: backlog → ready → spec → planning → implementing ↔ checks (ralph loop) → review_panel → pr_creation → needs_human_review|done
-Subtask pipeline: backlog → ready → ralph loop → done|failed (fully autonomous, no intermediate states, no review panel)
+Subtask pipeline: backlog → ready → ralph loop → done|failed (fully autonomous, no review panel)
 
 - **Stages** (`src/worker/stages/`) — spec-generator, planner, implementer, checks, review-panel, pr-creator, learner
-- **Spec generation** (`src/worker/stages/spec-generator.ts`) — produces machine-verifiable acceptance criteria, file scope, out-of-scope list, and risk assessment before planning begins.
-- **Ralph loop** (`src/worker/ralph-loop.ts`) — wraps implement→checks in a fresh-context-per-iteration loop. Progress persists in git + `.agentboard-progress.md`. Switches to fallback prompt on 3rd+ failure. Configurable via `config.maxRalphIterations` (default: 5).
-- **Review panel** (`src/worker/stages/review-panel.ts`) — runs 3 reviewers in parallel (Architect, QA, Security) via `Promise.allSettled`. All must pass (unanimous). On failure, combined per-role feedback cycles back to the implementer. Reviewer role prompts live in `prompts/review-{architect,qa,security}.md`.
-- **Auto-merge** (`src/worker/auto-merge.ts`) — evaluates whether to skip human review: requires `config.autoMerge` enabled, low risk, all reviewers pass with zero issues, no security-sensitive files touched.
-- **Learning** (`src/worker/stages/learner.ts`) — records task metrics (tokens, duration, attempts, review cycles) to `.agentboard/learning-log.jsonl` after every task completes. API: `GET /api/projects/:id/learning`.
-- **Model selection** (`src/worker/model-selector.ts`) — maps stages to `config.modelDefaults` keys. Review panel uses `modelDefaults.review` (Opus override for high-risk tasks).
+- **Ralph loop** (`src/worker/ralph-loop.ts`) — implement→checks loop with fresh context per iteration. Fallback prompt on 3rd+ failure. Max 5 iterations.
+- **Review panel** (`src/worker/stages/review-panel.ts`) — 3 parallel reviewers (Architect, QA, Security). Unanimous pass required.
+- **Auto-merge** (`src/worker/auto-merge.ts`) — skip human review when low risk + all reviewers pass + no security-sensitive files.
+- **Task logging** (`src/worker/log-writer.ts`) — single append-only log per task. `BufferedWriter` for parallel writes.
+- **Model selection** (`src/worker/model-selector.ts`) — maps stages to `config.modelDefaults` keys.
 
-Subtasks execute serially. First child is `ready`, rest `backlog`. Parent creates single PR after all succeed.
-
-### Subtask pipeline gotchas
-
-- **Subtasks are fully autonomous** — they go `ready → ralph loop → done|failed` with no intermediate states, no review panel, no auto-merge, and no human input.
-- Subtasks reuse the parent's worktree and branch — they have NO git_refs of their own
-- Subtasks skip PR creation — the parent creates a single PR after all subtasks complete
-- Subtasks cannot be manually moved (except to cancelled), retried, or answered via the API
-- The `task` object passed through the pipeline is fetched ONCE at claim time. Its `.status` becomes stale as the pipeline progresses. Functions that check `task.status` for decisions must re-fetch from DB.
-- `commitChanges()` returns empty string (no-op) when there are no staged changes. Callers must handle this gracefully.
-- When a subtask fails, remaining `backlog` siblings are cancelled automatically so the parent can resolve to `failed`.
-- `checkAndUpdateParentStatus` is async — it triggers PR creation for the parent when all subtasks succeed. All call sites must `await` it.
-
-See [docs/architecture/](docs/architecture/) for ADRs on key design decisions.
-See [docs/gotchas/](docs/gotchas/) for known pitfalls by subsystem.
+Subtasks execute serially. Parent creates single PR after all succeed.
+See [docs/gotchas/subtasks.md](docs/gotchas/subtasks.md) for subtask pipeline pitfalls.
+See [docs/architecture/](docs/architecture/) for ADRs. See [docs/gotchas/](docs/gotchas/) for known pitfalls.
 
 ## Never Do / Always Ask First
 
