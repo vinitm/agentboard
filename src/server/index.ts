@@ -15,6 +15,8 @@ import { createConfigRoutes } from './routes/config.js';
 import { createEventRoutes } from './routes/events.js';
 import { createLearningRoutes } from './routes/learning.js';
 import { createLogRoutes } from './routes/logs.js';
+import { createChatRoutes } from './routes/chat.js';
+import { createStageLogRoutes } from './routes/stage-logs.js';
 
 export interface ServerResult {
   server: http.Server;
@@ -79,6 +81,8 @@ export function createServer(
   app.use('/api/events', createEventRoutes(db));
   app.use('/api/projects', createLearningRoutes(db));
   app.use('/api/logs', createLogRoutes(db));
+  app.use('/api/tasks', createChatRoutes(db, io));
+  app.use('/api/tasks/:id/stages', createStageLogRoutes(db));
 
   // ── Serve static UI files in production ───────────────────────────
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
