@@ -20,3 +20,25 @@ At the end of every task:
 2. Run `/everything-claude-code:learn-eval` for significant tasks (new patterns, non-obvious fixes)
 3. Update `docs/decisions.md` if you made architectural or design decisions
 4. Run `/maintaining-agents-md` if new conventions or boundaries were discovered
+
+### Learning trigger taxonomy
+
+**Always run `/learn-eval`:**
+- After fixing pipeline bugs (worker loop, stages, ralph loop)
+- After adding new stages to `src/worker/stages/`
+- After fixing multi-subtask execution issues
+- After modifying DB schema or queries
+- After discovering a non-obvious interaction between subsystems
+
+**Always update `docs/decisions.md`:**
+- After changing pipeline state transitions (the state machine)
+- After changing review panel logic (unanimous vs majority, reviewer roles)
+- After changing auto-merge criteria
+- After adding or removing a stage from the pipeline
+
+**Always create a skill file in `.claude/skills/learned/`:**
+- When a bug fix reveals a non-obvious pattern (e.g., stale objects, shared worktrees)
+- When a new convention is discovered that autonomous agents need to know
+- After any production failure in the autonomous pipeline (post-mortem skill)
+
+**Meta-trigger:** Update this taxonomy whenever a new subsystem is added to the project.

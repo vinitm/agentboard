@@ -37,6 +37,11 @@ The Feature Implementation Workflow describes the development pipeline: research
    - Use **doc-updater** agent to update AGENTS.md, architecture docs, gotchas
    - Run `/everything-claude-code:learn-eval` to extract reusable patterns (project-scoped only)
    - Update `docs/decisions.md` if architectural decisions were made
+   - Learning capture checklist:
+     - [ ] Created skill file in `.claude/skills/learned/` if a non-obvious pattern was discovered
+     - [ ] Updated `docs/decisions.md` if architectural choices were made
+     - [ ] Ran `/learn-eval` for significant tasks (see trigger taxonomy in `learning-scope.md`)
+     - [ ] Verified skill file is project-scoped (not global)
 
 5. **Commit & Push**
    - Feature branch, never master

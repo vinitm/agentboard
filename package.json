@@ -10,7 +10,8 @@
     "start": "node dist/bin/agentboard.js",
     "test": "vitest run",
     "test:watch": "vitest watch",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "bin": {
     "agentboard": "./dist/bin/agentboard.js"
