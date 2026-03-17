@@ -238,14 +238,20 @@ export function cleanupOldLogs(configDir: string, retentionDays: number = 30): n
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   let deleted = 0;
 
-  for (const file of fs.readdirSync(logsDir)) {
-    if (!file.endsWith('.log')) continue;
-    const filePath = path.join(logsDir, file);
+  for (const entry of fs.readdirSync(logsDir, { withFileTypes: true })) {
+    const entryPath = path.join(logsDir, entry.name);
     try {
-      const stat = fs.statSync(filePath);
+      const stat = fs.statSync(entryPath);
       if (stat.mtimeMs < cutoff) {
-        fs.unlinkSync(filePath);
-        deleted++;
+        if (entry.isDirectory()) {
+          // Per-stage log directories (logs/{taskId}/)
+          fs.rmSync(entryPath, { recursive: true, force: true });
+          deleted++;
+        } else if (entry.name.endsWith('.log')) {
+          // Monolithic log files (legacy)
+          fs.unlinkSync(entryPath);
+          deleted++;
+        }
       }
     } catch {
       // Best effort
