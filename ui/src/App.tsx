@@ -4,6 +4,7 @@ import { Board } from './components/Board';
 import { Settings } from './components/Settings';
 import { TaskPage } from './components/TaskPage';
 import { ActivityFeed } from './components/ActivityFeed';
+import { Learnings } from './components/Learnings';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { emptyFilters } from './components/TopBar';
@@ -23,7 +24,7 @@ const AppContent: React.FC = () => {
   const { toast } = useToast();
   const location = useLocation();
 
-  const { tasks, loading, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask } =
+  const { tasks, loading, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask, reviewPlan } =
     useTasks(projectId);
 
   const runningCount = tasks.filter((t) => t.claimedBy).length;
@@ -64,6 +65,7 @@ const AppContent: React.FC = () => {
   const getTitle = () => {
     if (location.pathname === '/settings') return 'Settings';
     if (location.pathname === '/activity') return 'Activity';
+    if (location.pathname === '/learnings') return 'Learnings';
     if (location.pathname.startsWith('/tasks/')) return 'Task Details';
     return 'Board';
   };
@@ -127,6 +129,7 @@ const AppContent: React.FC = () => {
                       deleteTask={deleteTask}
                       answerTask={answerTask}
                       retryTask={retryTask}
+                      reviewPlan={reviewPlan}
                       showNewTask={showNewTask}
                       onCloseNewTask={() => setShowNewTask(false)}
                       filters={filters}
@@ -136,6 +139,7 @@ const AppContent: React.FC = () => {
                 <Route path="/tasks/:id" element={<TaskPage />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/activity" element={<ActivityFeed projectId={projectId} tasks={tasks} />} />
+                <Route path="/learnings" element={<Learnings projectId={projectId} />} />
               </Routes>
             </div>
           </>
