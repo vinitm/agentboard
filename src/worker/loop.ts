@@ -21,9 +21,9 @@ import {
   getNextBacklogSubtask,
   createArtifact,
   getLatestRunByTaskAndStage,
+  listEventsByTask,
 } from '../db/queries.js';
 import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
-import { runSpecGeneration } from './stages/spec-generator.js';
 import { runPlanning } from './stages/planner.js';
 import { runImplementation } from './stages/implementer.js';
 import { runChecks } from './stages/checks.js';
@@ -37,7 +37,7 @@ import { notify } from './notifications.js';
 import { normalizeConfig } from './config-compat.js';
 import { runRalphLoop } from './ralph-loop.js';
 import { evaluateAutoMerge } from './auto-merge.js';
-import { collectTaskMetrics, recordLearning } from './stages/learner.js';
+import { collectTaskMetrics, recordLearning, extractLearnings } from './stages/learner.js';
 import { createTaskLogger, openTaskLogger, cleanupOldLogs, createBufferedWriter } from './log-writer.js';
 import type { TaskLogger } from './log-writer.js';
 import {
@@ -357,6 +357,11 @@ export function createWorkerLoop(
       const metrics = collectTaskMetrics(db, task, 'success');
       recordLearning(configDir, metrics);
 
+      // Fire-and-forget: non-blocking learning extraction
+      extractLearnings(metrics, worktreePath, config.modelDefaults.learning, createLogStreamer(task.id, `learning-${task.id}`, logger))
+        .then(result => { if (result.saved) console.log(`[learner] Extracted skill "${result.pattern}" for task ${task.id}`); })
+        .catch(() => { /* already logged inside extractLearnings */ });
+
       await checkAndUpdateParentStatus(task);
       return;
     }
@@ -378,6 +383,11 @@ export function createWorkerLoop(
 
     const failedMetrics = collectTaskMetrics(db, task, 'failed');
     recordLearning(configDir, failedMetrics);
+
+    // Fire-and-forget: non-blocking learning extraction
+    extractLearnings(failedMetrics, worktreePath, config.modelDefaults.learning, createLogStreamer(task.id, `learning-${task.id}`, logger))
+      .then(result => { if (result.saved) console.log(`[learner] Extracted skill "${result.pattern}" for task ${task.id}`); })
+      .catch(() => { /* already logged inside extractLearnings */ });
 
     await checkAndUpdateParentStatus(task);
   }
@@ -468,6 +478,11 @@ export function createWorkerLoop(
     // Record learning for failed task
     const failedMetrics = collectTaskMetrics(db, task, 'failed');
     recordLearning(configDir, failedMetrics);
+
+    // Fire-and-forget: non-blocking learning extraction
+    extractLearnings(failedMetrics, worktreePath, config.modelDefaults.learning, createLogStreamer(task.id, `learning-${task.id}`, logger))
+      .then(result => { if (result.saved) console.log(`[learner] Extracted skill "${result.pattern}" for task ${task.id}`); })
+      .catch(() => { /* already logged inside extractLearnings */ });
 
     await checkAndUpdateParentStatus(task);
     await runHook(hooks, 'onError', makeHookContext(task, 'implementing', worktreePath, config));
@@ -607,6 +622,11 @@ export function createWorkerLoop(
       const failedMetrics = collectTaskMetrics(db, task, 'failed');
       recordLearning(configDir, failedMetrics);
 
+      // Fire-and-forget: non-blocking learning extraction
+      extractLearnings(failedMetrics, worktreePath, config.modelDefaults.learning, createLogStreamer(task.id, `learning-${task.id}`, logger))
+        .then(result => { if (result.saved) console.log(`[learner] Extracted skill "${result.pattern}" for task ${task.id}`); })
+        .catch(() => { /* already logged inside extractLearnings */ });
+
       await checkAndUpdateParentStatus(task);
       return;
     }
@@ -667,6 +687,11 @@ export function createWorkerLoop(
       const successMetrics = collectTaskMetrics(db, task, 'success');
       recordLearning(configDir, successMetrics);
 
+      // Fire-and-forget: non-blocking learning extraction
+      extractLearnings(successMetrics, worktreePath, config.modelDefaults.learning, createLogStreamer(task.id, `learning-${task.id}`, logger))
+        .then(result => { if (result.saved) console.log(`[learner] Extracted skill "${result.pattern}" for task ${task.id}`); })
+        .catch(() => { /* already logged inside extractLearnings */ });
+
       await checkAndUpdateParentStatus(task);
       await runHook(hooks, 'onTaskComplete', makeHookContext(task, 'pr_creation', worktreePath, config));
       return;
@@ -692,6 +717,11 @@ export function createWorkerLoop(
     // Record learning for successful task (pending human review)
     const successMetrics = collectTaskMetrics(db, task, 'success');
     recordLearning(configDir, successMetrics);
+
+    // Fire-and-forget: non-blocking learning extraction
+    extractLearnings(successMetrics, worktreePath, config.modelDefaults.learning, createLogStreamer(task.id, `learning-${task.id}`, logger))
+      .then(result => { if (result.saved) console.log(`[learner] Extracted skill "${result.pattern}" for task ${task.id}`); })
+      .catch(() => { /* already logged inside extractLearnings */ });
 
     await runHook(hooks, 'onTaskComplete', makeHookContext(task, 'pr_creation', worktreePath, config));
   }
@@ -792,129 +822,134 @@ export function createWorkerLoop(
         logPath: logger.logPath,
       });
 
-      // Move to spec
-      updateTask(db, task.id, { status: 'spec' });
-      createAndBroadcastEvent(
-        task.id,
-        'status_changed',
-        JSON.stringify({
-          from: 'ready',
-          to: 'spec',
-        })
-      );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'spec' });
+      // Check if plan was already approved (task returning from needs_plan_review)
+      const existingPlanRun = getLatestRunByTaskAndStage(db, task.id, 'planning');
+      const events = listEventsByTask(db, task.id);
+      const planApproved = events.some((e) => e.type === 'plan_review_approved');
 
-      // Run spec generation stage
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'spec', worktreePath, projectConfig));
-      logger.stageStart('spec', `spec-${task.id}`, 1, projectConfig.modelDefaults.planning);
-      const specResult = await runSpecGeneration(db, task, worktreePath, projectConfig, createLogStreamer(task.id, `spec-${task.id}`, logger));
-      logger.stageEnd('success');
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'spec', worktreePath, projectConfig));
+      if (existingPlanRun?.status === 'success' && planApproved) {
+        // Plan was approved by engineer — skip planning, proceed to implementation
+        console.log(`[worker] Task ${task.id} has approved plan — skipping planning`);
 
-      createAndBroadcastEvent(
-        task.id,
-        'spec_generated',
-        JSON.stringify({
-          acceptanceCriteria: specResult.acceptanceCriteria,
-          fileScope: specResult.fileScope,
-          riskAssessment: specResult.riskAssessment,
-        })
-      );
+        // Check for edited subtasks from the approval event
+        const approvalEvent = [...events].reverse().find((e) => e.type === 'plan_review_approved');
+        let subtasksToCreate: Array<{ title: string; description: string }> = [];
 
-      // Move to planning
-      updateTask(db, task.id, { status: 'planning' });
-      createAndBroadcastEvent(
-        task.id,
-        'status_changed',
-        JSON.stringify({
-          from: 'spec',
-          to: 'planning',
-        })
-      );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'planning' });
-
-      // Run planning stage
-      await runHook(hooks, 'beforeStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
-      logger.stageStart('planning', `planning-${task.id}`, 1, projectConfig.modelDefaults.planning);
-      const planResult = await runPlanning(db, task, worktreePath, projectConfig, createLogStreamer(task.id, `planning-${task.id}`, logger));
-      logger.stageEnd('success');
-      await runHook(hooks, 'afterStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
-
-      // Log assumptions if any were made
-      if (planResult.assumptions.length > 0) {
-        console.log(`[worker] Task ${task.id} planner made ${planResult.assumptions.length} assumption(s):`);
-        for (const assumption of planResult.assumptions) {
-          console.log(`[worker]   - ${assumption}`);
-        }
-        createAndBroadcastEvent(
-          task.id,
-          'assumptions_made',
-          JSON.stringify({
-            assumptions: planResult.assumptions,
-          })
-        );
-
-        const planningRun = getLatestRunByTaskAndStage(db, task.id, 'planning');
-        if (planningRun) {
-          createArtifact(db, {
-            runId: planningRun.id,
-            type: 'assumptions',
-            name: 'planning_assumptions',
-            content: JSON.stringify(planResult.assumptions),
-          });
-        }
-      }
-
-      if (planResult.subtasks.length > 0) {
-        const MAX_SUBTASKS = 10;
-        if (planResult.subtasks.length > MAX_SUBTASKS) {
-          console.warn(
-            `[worker] Planner returned ${planResult.subtasks.length} subtasks for task ${task.id}, capping at ${MAX_SUBTASKS}`
-          );
-          planResult.subtasks = planResult.subtasks.slice(0, MAX_SUBTASKS);
+        if (approvalEvent) {
+          try {
+            const payload = JSON.parse(approvalEvent.payload) as {
+              edits?: { subtasks?: Array<{ title: string; description: string }> };
+            };
+            if (payload.edits?.subtasks) {
+              subtasksToCreate = payload.edits.subtasks;
+            }
+          } catch { /* use plan result subtasks */ }
         }
 
-        // Create child tasks — first is ready, rest are backlog (serial execution)
-        for (let i = 0; i < planResult.subtasks.length; i++) {
-          const subtask = planResult.subtasks[i];
-          const childTask = createTask(db, {
-            projectId: task.projectId,
-            parentTaskId: task.id,
-            title: subtask.title,
-            description: subtask.description,
-            status: i === 0 ? 'ready' : 'backlog',
-            priority: task.priority,
-            riskLevel: task.riskLevel,
-          });
-          createAndBroadcastEvent(
-            childTask.id,
-            'task_created',
-            JSON.stringify({
+        // Fall back to original plan subtasks if no edits
+        if (subtasksToCreate.length === 0 && existingPlanRun.output) {
+          try {
+            const planOutput = JSON.parse(existingPlanRun.output) as {
+              subtasks?: Array<{ title: string; description: string }>;
+            };
+            if (planOutput.subtasks) {
+              subtasksToCreate = planOutput.subtasks;
+            }
+          } catch { /* proceed without subtasks */ }
+        }
+
+        // Create subtasks if the plan has them
+        if (subtasksToCreate.length > 0) {
+          const MAX_SUBTASKS = 10;
+          const cappedSubtasks = subtasksToCreate.slice(0, MAX_SUBTASKS);
+          if (subtasksToCreate.length > MAX_SUBTASKS) {
+            console.warn(`[worker] Plan has ${subtasksToCreate.length} subtasks for task ${task.id}, capping at ${MAX_SUBTASKS}`);
+          }
+
+          for (let i = 0; i < cappedSubtasks.length; i++) {
+            const subtask = cappedSubtasks[i];
+            const childTask = createTask(db, {
+              projectId: task.projectId,
               parentTaskId: task.id,
-              index: i,
-            })
+              title: subtask.title,
+              description: subtask.description,
+              status: i === 0 ? 'ready' : 'backlog',
+              priority: task.priority,
+              riskLevel: task.riskLevel,
+            });
+            createAndBroadcastEvent(
+              childTask.id,
+              'task_created',
+              JSON.stringify({ parentTaskId: task.id, index: i })
+            );
+            broadcast(io, 'task:created', { task: childTask });
+          }
+
+          updateTask(db, task.id, { status: 'implementing', blockedReason: null });
+          logger.event('subtasks_created', `${cappedSubtasks.length} subtask(s) created — executing serially`);
+          createAndBroadcastEvent(
+            task.id,
+            'subtasks_created',
+            JSON.stringify({ count: cappedSubtasks.length })
           );
-          broadcast(io, 'task:created', { task: childTask });
+          broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
+          unclaimTask(db, task.id);
+          return;
         }
 
-        // Keep parent in implementing while subtasks run
-        updateTask(db, task.id, {
-          status: 'implementing',
-          blockedReason: null,
-        });
-        logger.event('subtasks_created', `${planResult.subtasks.length} subtask(s) created — executing serially`);
+        // No subtasks — proceed directly to implementation
+      } else {
+        // No approved plan yet — run planning, then pause for review
+
+        // Move to planning
+        updateTask(db, task.id, { status: 'planning' });
         createAndBroadcastEvent(
           task.id,
-          'subtasks_created',
-          JSON.stringify({
-            count: planResult.subtasks.length,
-          })
+          'status_changed',
+          JSON.stringify({ from: 'ready', to: 'planning' })
         );
-        broadcast(io, 'task:updated', {
-          taskId: task.id,
-          status: 'implementing',
-        });
-        // Unclaim the parent — children will be picked up individually
+        broadcast(io, 'task:updated', { taskId: task.id, status: 'planning' });
+
+        // Run planning stage
+        await runHook(hooks, 'beforeStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
+        logger.stageStart('planning', `planning-${task.id}`, 1, projectConfig.modelDefaults.planning);
+        const planResult = await runPlanning(db, task, worktreePath, projectConfig, createLogStreamer(task.id, `planning-${task.id}`, logger));
+        logger.stageEnd('success');
+        await runHook(hooks, 'afterStage', makeHookContext(task, 'planning', worktreePath, projectConfig));
+
+        // Log assumptions if any were made
+        if (planResult.assumptions.length > 0) {
+          console.log(`[worker] Task ${task.id} planner made ${planResult.assumptions.length} assumption(s):`);
+          for (const assumption of planResult.assumptions) {
+            console.log(`[worker]   - ${assumption}`);
+          }
+          createAndBroadcastEvent(
+            task.id,
+            'assumptions_made',
+            JSON.stringify({ assumptions: planResult.assumptions })
+          );
+
+          const planningRun = getLatestRunByTaskAndStage(db, task.id, 'planning');
+          if (planningRun) {
+            createArtifact(db, {
+              runId: planningRun.id,
+              type: 'assumptions',
+              name: 'planning_assumptions',
+              content: JSON.stringify(planResult.assumptions),
+            });
+          }
+        }
+
+        // Pause for engineer plan review — do NOT proceed to implementation
+        updateTask(db, task.id, { status: 'needs_plan_review' });
+        createAndBroadcastEvent(
+          task.id,
+          'status_changed',
+          JSON.stringify({ from: 'planning', to: 'needs_plan_review' })
+        );
+        broadcast(io, 'task:updated', { taskId: task.id, status: 'needs_plan_review' });
+        logger.event('plan_review_requested', 'Plan generated — awaiting engineer review');
+        console.log(`[worker] Task ${task.id} plan complete — pausing for engineer review`);
         unclaimTask(db, task.id);
         return;
       }

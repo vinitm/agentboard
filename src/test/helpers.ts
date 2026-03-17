@@ -80,6 +80,7 @@ export function createTestConfig(overrides?: Record<string, unknown>): Agentboar
       implementation: 'opus',
       review: 'sonnet',
       security: 'sonnet',
+      learning: 'haiku',
     },
     commands: {
       test: 'npm test',

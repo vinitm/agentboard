@@ -1,8 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import type { Task } from '../../types/index.js';
 import { listRunsByTask, listArtifactsByRun } from '../../db/queries.js';
+import { executeClaudeCode } from '../executor.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export interface TaskMetrics {
   taskId: string;
@@ -193,4 +198,118 @@ export function analyzeLearningHistory(configDir: string): {
     commonReviewIssues,
     totalTasks,
   };
+}
+
+// ── Learning extraction ─────────────────────────────────────────────
+
+export interface LearningResult {
+  saved: boolean;
+  skillFile?: string;
+  pattern?: string;
+  reason?: string;
+}
+
+function loadLearnerTemplate(): string {
+  const templatePath = path.resolve(__dirname, '../../../../prompts/learner.md');
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Learner prompt template not found at ${templatePath}`);
+  }
+  return fs.readFileSync(templatePath, 'utf-8');
+}
+
+export function buildTaskSummary(metrics: TaskMetrics): string {
+  const lines: string[] = [];
+
+  lines.push(`**Task:** ${metrics.title}`);
+  lines.push(`**Outcome:** ${metrics.outcome}`);
+  lines.push(`**Risk Level:** ${metrics.riskLevel}`);
+  lines.push(`**Implementation Attempts:** ${metrics.implementationAttempts}`);
+  lines.push(`**Review Cycles:** ${metrics.reviewCycles}`);
+  lines.push(`**Checks Passed First Try:** ${metrics.checksPassedFirst ? 'yes' : 'no'}`);
+  lines.push(`**Duration:** ${Math.round(metrics.totalDuration / 1000)}s`);
+  lines.push(`**Tokens Used:** ${metrics.totalTokensUsed}`);
+
+  if (metrics.failedCheckNames.length > 0) {
+    lines.push(`\n**Failed Checks:**`);
+    for (const name of metrics.failedCheckNames) {
+      lines.push(`- ${name}`);
+    }
+  }
+
+  if (metrics.reviewerFeedbackThemes.length > 0) {
+    lines.push(`\n**Reviewer Feedback Themes:**`);
+    for (const theme of metrics.reviewerFeedbackThemes) {
+      lines.push(`- ${theme}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Run AI-powered learning extraction after task completion.
+ * Spawns `claude --print` with a learner prompt that analyzes the task
+ * execution and saves reusable patterns to `.claude/skills/learned/`.
+ *
+ * Non-blocking: failures are logged but never change task outcomes.
+ */
+export async function extractLearnings(
+  metrics: TaskMetrics,
+  worktreePath: string,
+  model: string,
+  onOutput?: (chunk: string) => void
+): Promise<LearningResult> {
+  try {
+    const template = loadLearnerTemplate();
+    const summary = buildTaskSummary(metrics);
+    const prompt = template.replace('{taskSummary}', summary);
+
+    const result = await executeClaudeCode({
+      prompt,
+      worktreePath,
+      model,
+      timeout: 120_000,
+      onOutput,
+    });
+
+    if (result.exitCode !== 0) {
+      console.log(`[learner] Learning extraction exited with code ${result.exitCode}`);
+      return { saved: false, reason: `exit_code_${result.exitCode}` };
+    }
+
+    return parseLearningResult(result.output);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`[learner] Learning extraction failed: ${message}`);
+    return { saved: false, reason: message };
+  }
+}
+
+function parseLearningResult(output: string): LearningResult {
+  // Try to find JSON on the last non-empty line
+  const lines = output.trim().split('\n').filter(Boolean);
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
+    const line = lines[i].trim();
+    const jsonMatch = line.match(/(\{[^}]*"saved"\s*:[^}]*\})/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[1]) as LearningResult;
+      } catch {
+        // Continue searching
+      }
+    }
+  }
+
+  // Try fenced code block fallback
+  const fenceMatch = output.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (fenceMatch?.[1]) {
+    try {
+      const parsed = JSON.parse(fenceMatch[1].trim()) as LearningResult;
+      if (typeof parsed.saved === 'boolean') return parsed;
+    } catch {
+      // Fall through
+    }
+  }
+
+  return { saved: false, reason: 'parse_error' };
 }

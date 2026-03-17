@@ -20,5 +20,13 @@ export function normalizeConfig(raw: Record<string, unknown>): AgentboardConfig 
     raw.maxRalphIterations = 5;
   }
 
+  // Default learning model to haiku for cost-effective learning extraction
+  if (raw.modelDefaults && typeof raw.modelDefaults === 'object') {
+    const md = raw.modelDefaults as Record<string, unknown>;
+    if (!md['learning']) {
+      md['learning'] = 'haiku';
+    }
+  }
+
   return raw as unknown as AgentboardConfig;
 }

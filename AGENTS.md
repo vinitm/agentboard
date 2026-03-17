@@ -66,15 +66,18 @@ Architectural decisions are recorded in [docs/decisions.md](docs/decisions.md).
 **Global state** (`~/.agentboard/`): Shared SQLite DB across all projects, server config, project registry, shutdown signal.
 **Per-project state** (`<repo>/.agentboard/`): Project config, git worktrees, logs, memory, and progress files.
 
-Pipeline: backlog → ready → spec → planning → implementing ↔ checks (ralph loop) → review_panel → pr_creation → needs_human_review|done
+Pipeline: backlog → ready → planning → needs_plan_review → implementing ↔ checks (ralph loop) → review_panel → pr_creation → needs_human_review|done
 Subtask pipeline: backlog → ready → ralph loop → done|failed (fully autonomous, no review panel)
 
-- **Stages** (`src/worker/stages/`) — spec-generator, planner, implementer, checks, review-panel, pr-creator, learner
+- **Spec authoring** — PM writes detailed spec via UI (6 sections: problem, user stories, acceptance criteria, constraints, out of scope, verification). Per-field AI refinement via `POST /api/tasks/refine-field`.
+- **Plan review** — after AI planning, task pauses at `needs_plan_review`. Engineer reviews/edits plan via `POST /api/tasks/:id/review-plan` (approve with optional edits, or reject with required reason). Rejection feedback flows into re-planning context.
+- **Stages** (`src/worker/stages/`) — planner, implementer, checks, review-panel, pr-creator, learner
 - **Ralph loop** (`src/worker/ralph-loop.ts`) — implement→checks loop with fresh context per iteration. Fallback prompt on 3rd+ failure. Max 5 iterations.
 - **Review panel** (`src/worker/stages/review-panel.ts`) — 3 parallel reviewers (Architect, QA, Security). Unanimous pass required.
 - **Auto-merge** (`src/worker/auto-merge.ts`) — skip human review when low risk + all reviewers pass + no security-sensitive files.
 - **Task logging** (`src/worker/log-writer.ts`) — single append-only log per task. `BufferedWriter` for parallel writes.
 - **Model selection** (`src/worker/model-selector.ts`) — maps stages to `config.modelDefaults` keys.
+- **Learning extraction** (`src/worker/stages/learner.ts`) — after each task reaches a terminal state (done/failed), fire-and-forget `extractLearnings()` spawns `claude --print` with learner prompt to analyze execution and save project-specific patterns to `.claude/skills/learned/`. Non-blocking; uses configurable `config.modelDefaults.learning` model (default: haiku). Collects quantitative metrics (`recordLearning()`) and qualitative patterns (`extractLearnings()`).
 
 Subtasks execute serially. Parent creates single PR after all succeed.
 See [docs/gotchas/subtasks.md](docs/gotchas/subtasks.md) for subtask pipeline pitfalls.

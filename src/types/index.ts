@@ -109,6 +109,7 @@ export interface ModelDefaults {
   implementation: string;
   review: string;
   security: string;
+  learning: string;
 }
 
 export interface Commands {
@@ -178,14 +179,11 @@ export interface TaskLog {
   createdAt: string;
 }
 
-// ── Spec document for task creation (PM-authored) ───────────────────
+// ── Spec document for task creation (PM-authored, spec-kit inspired) ─
 export interface SpecDocument {
-  problemStatement: string;
-  userStories: string;
-  acceptanceCriteria: string;
-  constraints: string;
-  outOfScope: string;
-  verificationStrategy: string;
+  goal: string;
+  userScenarios: string;
+  successCriteria: string;
 }
 
 // ── Plan review action from engineer ────────────────────────────────
