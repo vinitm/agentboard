@@ -311,6 +311,18 @@ export function createWorkerLoop(
   ): Promise<void> {
     const onOutput = createLogStreamer(task.id, `subtask-${task.id}`, logger);
 
+    // Create StageRunner scoped to the subtask
+    const project = getProjectById(db, task.projectId);
+    const subtaskStageRunner = createStageRunner({
+      taskId: task.parentTaskId ?? task.id,
+      projectId: task.projectId,
+      subtaskId: task.id,
+      io,
+      db,
+      logsDir: path.join(configDir, 'logs'),
+      projectRoot: project?.path ?? configDir,
+    });
+
     // ── Step 1: Single-shot implementation ─────────────────────────
     await runHook(hooks, 'beforeStage', makeHookContext(task, 'implementing', worktreePath, taskConfig));
     updateTask(db, task.id, { status: 'implementing' });
@@ -322,7 +334,10 @@ export function createWorkerLoop(
     broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
     logger?.stageStart('implementing', `impl-${task.id}`, 1, taskConfig.modelDefaults.implementation);
-    const implResult = await runImplementation(db, task, worktreePath, taskConfig, 1, onOutput);
+    const implResult = await subtaskStageRunner.execute('implementing', (stageOnOutput) =>
+      runImplementation(db, task, worktreePath, taskConfig, 1, stageOnOutput),
+      { summarize: (r) => ({ summary: r.status === 'DONE' ? 'Implementation complete' : `Status: ${r.status}` }) }
+    );
     const implSuccess = implResult.status === 'DONE' || implResult.status === 'DONE_WITH_CONCERNS';
     logger?.stageEnd(implSuccess ? 'success' : implResult.status.toLowerCase());
     await runHook(hooks, 'afterStage', makeHookContext(task, 'implementing', worktreePath, taskConfig));
@@ -366,7 +381,10 @@ export function createWorkerLoop(
     broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
 
     logger?.stageStart('checks', `checks-${task.id}`, 1, 'n/a');
-    const checksResult = await runChecks(db, task, worktreePath, taskConfig, onOutput);
+    const checksResult = await subtaskStageRunner.execute('checks', (stageOnOutput) =>
+      runChecks(db, task, worktreePath, taskConfig, stageOnOutput),
+      { summarize: (r) => ({ summary: r.passed ? 'All checks passed' : `${r.results.filter(c => !c.passed).length} check(s) failed` }) }
+    );
     logger?.stageEnd(checksResult.passed ? 'passed' : 'failed');
 
     let checksPassed = checksResult.passed;
@@ -381,14 +399,17 @@ export function createWorkerLoop(
       logger?.event('checks_failed', 'Attempting inline fix');
 
       const failedChecks = checksResult.results.filter(r => !r.passed);
-      const fixResult = await runInlineFix({
-        db,
-        task,
-        worktreePath,
-        config: taskConfig,
-        failedChecks,
-        onOutput,
-      });
+      const fixResult = await subtaskStageRunner.execute('inline_fix', (stageOnOutput) =>
+        runInlineFix({
+          db,
+          task,
+          worktreePath,
+          config: taskConfig,
+          failedChecks,
+          onOutput: stageOnOutput,
+        }),
+        { summarize: (r) => ({ summary: r.fixed ? 'Fix applied successfully' : 'Fix attempt failed' }) }
+      );
 
       if (fixResult.fixed) {
         checksPassed = true;
@@ -431,7 +452,10 @@ export function createWorkerLoop(
       broadcast(io, 'task:updated', { taskId: task.id, status: 'code_quality' });
 
       logger?.stageStart('code_quality', `quality-${task.id}`, qualityCycle, taskConfig.modelDefaults.review);
-      const qualityResult = await runCodeQuality(db, task, worktreePath, taskConfig, onOutput);
+      const qualityResult = await subtaskStageRunner.execute('code_quality', (stageOnOutput) =>
+        runCodeQuality(db, task, worktreePath, taskConfig, stageOnOutput),
+        { attempt: qualityCycle, summarize: (r) => ({ summary: r.passed ? 'Quality passed' : `${r.issues.length} issue(s): ${r.summary}` }) }
+      );
       logger?.stageEnd(qualityResult.passed ? 'passed' : 'failed');
 
       if (qualityResult.passed) {
@@ -463,7 +487,10 @@ export function createWorkerLoop(
       broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
       logger?.stageStart('implementing', `quality-fix-${task.id}`, qualityCycle + 1, taskConfig.modelDefaults.implementation);
-      const fixResult = await runImplementation(db, task, worktreePath, taskConfig, qualityCycle + 1, onOutput);
+      const fixResult = await subtaskStageRunner.execute('implementing', (stageOnOutput) =>
+        runImplementation(db, task, worktreePath, taskConfig, qualityCycle + 1, stageOnOutput),
+        { attempt: qualityCycle + 1, summarize: (r) => ({ summary: r.status === 'DONE' ? 'Quality fix applied' : `Status: ${r.status}` }) }
+      );
       const fixSuccess = fixResult.status === 'DONE' || fixResult.status === 'DONE_WITH_CONCERNS';
       logger?.stageEnd(fixSuccess ? 'success' : 'failed');
 
@@ -522,6 +549,17 @@ export function createWorkerLoop(
   ): Promise<void> {
     const onOutput = createLogStreamer(task.id, `impl-${task.id}`, logger);
 
+    // Create StageRunner for top-level task pipeline (no subtaskId)
+    const project = getProjectById(db, task.projectId);
+    const pipelineStageRunner = createStageRunner({
+      taskId: task.id,
+      projectId: task.projectId,
+      io,
+      db,
+      logsDir: path.join(configDir, 'logs'),
+      projectRoot: project?.path ?? configDir,
+    });
+
     // ── Step 1: Implementation ─────────────────────────────────────
     updateTask(db, task.id, { status: 'implementing' });
     createAndBroadcastEvent(
@@ -533,7 +571,10 @@ export function createWorkerLoop(
 
     await runHook(hooks, 'beforeStage', makeHookContext(task, 'implementing', worktreePath, taskConfig));
     logger?.stageStart('implementing', `impl-${task.id}`, 1, taskConfig.modelDefaults.implementation);
-    const implResult = await runImplementation(db, task, worktreePath, taskConfig, 1, onOutput);
+    const implResult = await pipelineStageRunner.execute('implementing', (stageOnOutput) =>
+      runImplementation(db, task, worktreePath, taskConfig, 1, stageOnOutput),
+      { summarize: (r) => ({ summary: r.status === 'DONE' ? 'Implementation complete' : `Status: ${r.status}` }) }
+    );
     const implSuccess = implResult.status === 'DONE' || implResult.status === 'DONE_WITH_CONCERNS';
     logger?.stageEnd(implSuccess ? 'success' : implResult.status.toLowerCase());
     await runHook(hooks, 'afterStage', makeHookContext(task, 'implementing', worktreePath, taskConfig));
@@ -564,7 +605,10 @@ export function createWorkerLoop(
     broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
 
     logger?.stageStart('checks', `checks-${task.id}`, 1, 'n/a');
-    const checksResult = await runChecks(db, task, worktreePath, taskConfig, onOutput);
+    const checksResult = await pipelineStageRunner.execute('checks', (stageOnOutput) =>
+      runChecks(db, task, worktreePath, taskConfig, stageOnOutput),
+      { summarize: (r) => ({ summary: r.passed ? 'All checks passed' : `${r.results.filter(c => !c.passed).length} check(s) failed` }) }
+    );
     logger?.stageEnd(checksResult.passed ? 'passed' : 'failed');
 
     let checksPassed = checksResult.passed;
@@ -578,14 +622,17 @@ export function createWorkerLoop(
       logger?.event('checks_failed', 'Attempting inline fix');
 
       const failedChecks = checksResult.results.filter(r => !r.passed);
-      const fixResult = await runInlineFix({
-        db,
-        task,
-        worktreePath,
-        config: taskConfig,
-        failedChecks,
-        onOutput,
-      });
+      const fixResult = await pipelineStageRunner.execute('inline_fix', (stageOnOutput) =>
+        runInlineFix({
+          db,
+          task,
+          worktreePath,
+          config: taskConfig,
+          failedChecks,
+          onOutput: stageOnOutput,
+        }),
+        { summarize: (r) => ({ summary: r.fixed ? 'Fix applied successfully' : 'Fix attempt failed' }) }
+      );
 
       if (fixResult.fixed) {
         checksPassed = true;
@@ -625,7 +672,10 @@ export function createWorkerLoop(
 
       await runHook(hooks, 'beforeStage', makeHookContext(task, 'code_quality', worktreePath, taskConfig));
       logger?.stageStart('code_quality', `quality-${task.id}`, qualityCycle, taskConfig.modelDefaults.review);
-      const qualityResult = await runCodeQuality(db, task, worktreePath, taskConfig, onOutput);
+      const qualityResult = await pipelineStageRunner.execute('code_quality', (stageOnOutput) =>
+        runCodeQuality(db, task, worktreePath, taskConfig, stageOnOutput),
+        { attempt: qualityCycle, summarize: (r) => ({ summary: r.passed ? 'Quality passed' : `${r.issues.length} issue(s): ${r.summary}` }) }
+      );
       logger?.stageEnd(qualityResult.passed ? 'passed' : 'failed');
       await runHook(hooks, 'afterStage', makeHookContext(task, 'code_quality', worktreePath, taskConfig));
 
@@ -652,7 +702,10 @@ export function createWorkerLoop(
       broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
 
       logger?.stageStart('implementing', `quality-fix-${task.id}`, qualityCycle + 1, taskConfig.modelDefaults.implementation);
-      const fixResult = await runImplementation(db, task, worktreePath, taskConfig, qualityCycle + 1, onOutput);
+      const fixResult = await pipelineStageRunner.execute('implementing', (stageOnOutput) =>
+        runImplementation(db, task, worktreePath, taskConfig, qualityCycle + 1, stageOnOutput),
+        { attempt: qualityCycle + 1, summarize: (r) => ({ summary: r.status === 'DONE' ? 'Quality fix applied' : `Status: ${r.status}` }) }
+      );
       const fixSuccess = fixResult.status === 'DONE' || fixResult.status === 'DONE_WITH_CONCERNS';
       logger?.stageEnd(fixSuccess ? 'success' : 'failed');
 
