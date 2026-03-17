@@ -3,11 +3,14 @@
 export type TaskStatus =
   | 'backlog'
   | 'ready'
+  | 'spec_review'
   | 'planning'
   | 'needs_plan_review'
   | 'implementing'
   | 'checks'
-  | 'review_panel'
+  | 'code_quality'
+  | 'final_review'
+  | 'pr_creation'
   | 'needs_human_review'
   | 'done'
   | 'blocked'
@@ -15,11 +18,42 @@ export type TaskStatus =
   | 'cancelled';
 
 export type Stage =
+  | 'spec_review'
   | 'planning'
   | 'implementing'
   | 'checks'
-  | 'review_panel'
+  | 'code_quality'
+  | 'final_review'
   | 'pr_creation';
+
+export type StageLogStage = Stage | 'inline_fix' | 'learner';
+
+export type StageLogStatus = 'running' | 'completed' | 'failed' | 'skipped';
+
+export interface StageLog {
+  id: string;
+  taskId: string;
+  runId: string | null;
+  stage: StageLogStage;
+  subtaskId: string | null;
+  attempt: number;
+  status: StageLogStatus;
+  summary: string | null;
+  tokensUsed: number | null;
+  durationMs: number | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface StageTransitionEvent {
+  taskId: string;
+  stage: StageLogStage;
+  subtaskId?: string;
+  status: StageLogStatus;
+  summary?: string;
+  durationMs?: number;
+  tokensUsed?: number;
+}
 
 export type RunStatus = 'running' | 'success' | 'failed' | 'cancelled';
 export type RiskLevel = 'low' | 'medium' | 'high';
@@ -105,6 +139,33 @@ export interface ChatResponse {
   priorityUpdate?: number;
   isComplete: boolean;
   gaps: string[];
+}
+
+// SSE streaming event types for chat
+export interface SSEChunkEvent {
+  type: 'chunk';
+  content: string;
+}
+
+export interface SSEDoneEvent {
+  type: 'done';
+  message: string;
+  specUpdates: Partial<SpecDocument>;
+  titleUpdate: string | null;
+  descriptionUpdate: string | null;
+  riskLevelUpdate: RiskLevel | null;
+  isComplete: boolean;
+}
+
+export type SSEEvent = SSEChunkEvent | SSEDoneEvent;
+
+// Persisted chat message from the server
+export interface PersistedChatMessage {
+  id: string;
+  taskId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
 }
 
 export interface PlanReviewAction {
