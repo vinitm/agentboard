@@ -6,11 +6,11 @@ This document describes how agentboard orchestrates AI coding agents through its
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                          Agentboard                                 │
-│                                                                     │
+│                          Agentboard (Global)                         │
+│                      ~/.agentboard/                                  │
 │  ┌──────────┐   ┌──────────────┐   ┌──────────┐   ┌────────────┐  │
 │  │ React UI │◄──│ Socket.IO WS │◄──│  Express  │──▶│  SQLite DB │  │
-│  │ (Kanban) │   │  (real-time) │   │  API      │   │  (WAL)     │  │
+│  │ (Kanban) │   │  (real-time) │   │  API      │   │ (WAL, WG)  │  │
 │  └──────────┘   └──────┬───────┘   └──────────┘   └─────┬──────┘  │
 │                        │                                  │         │
 │                        ▼                                  │         │
@@ -19,26 +19,68 @@ This document describes how agentboard orchestrates AI coding agents through its
 │              │  (5s polling)   │                                    │
 │              └────────┬────────┘                                    │
 │                       │                                             │
-│         ┌─────────────┼─────────────┐                              │
-│         ▼             ▼             ▼                               │
-│    ┌─────────┐  ┌─────────┐  ┌─────────┐   (up to maxConcurrent)  │
-│    │ Task A  │  │ Task B  │  │ Task C  │                           │
-│    │Pipeline │  │Pipeline │  │Pipeline │                           │
-│    └────┬────┘  └────┬────┘  └────┬────┘                           │
-│         │            │            │                                  │
-│         ▼            ▼            ▼                                  │
-│    ┌─────────────────────────────────────┐                          │
-│    │        Claude Code Executor         │                          │
-│    │  spawn('claude', ['--print', ...])  │                          │
-│    └─────────────────────────────────────┘                          │
-│         │            │            │                                  │
-│         ▼            ▼            ▼                                  │
-│    ┌─────────┐  ┌─────────┐  ┌─────────┐                           │
-│    │Worktree │  │Worktree │  │Worktree │   (git worktree per task) │
-│    │  /task-a│  │  /task-b│  │  /task-c│                           │
-│    └─────────┘  └─────────┘  └─────────┘                           │
+│         ┌─────────────┼────────────────────┐                        │
+│         ▼             ▼             ▼      ▼                        │
+│    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
+│    │Project A │  │Project B │  │Project C │  │Project N │         │
+│    │ (Repo 1) │  │ (Repo 2) │  │ (Repo 3) │  │ (Repo N) │         │
+│    └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
+│         │             │             │            │                  │
+│         ▼             ▼             ▼            ▼                  │
+│    ┌─────────────────────────────────────────────────┐              │
+│    │  Per-Project State (.agentboard/ per repo)      │              │
+│    │  ├─ config.json (project-specific settings)    │              │
+│    │  ├─ worktrees/ (git worktrees per task)        │              │
+│    │  ├─ logs/ (task execution logs)                │              │
+│    │  └─ memory.json (project-scoped learning)      │              │
+│    └──────────────┬────────────────────────────────┘              │
+│                   │                                                 │
+│                   ▼                                                 │
+│    ┌─────────────────────────────────────┐                         │
+│    │   Claude Code Executor (per task)   │                         │
+│    │  spawn('claude', ['--print', ...])  │                         │
+│    └─────────────────────────────────────┘                         │
+│         │            │            │                                 │
+│         ▼            ▼            ▼                                 │
+│    ┌─────────┐  ┌─────────┐  ┌─────────┐                          │
+│    │Worktree │  │Worktree │  │Worktree │   (per task, per project)│
+│    │  /task-a│  │  /task-b│  │  /task-c│                          │
+│    └─────────┘  └─────────┘  └─────────┘                          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+## Global vs Per-Project State
+
+Agentboard is designed to orchestrate multiple projects from a single server instance.
+
+### Global State (~/.agentboard/)
+
+Shared across all projects:
+- **`agentboard.db`** — Single SQLite database (WAL mode) storing all projects' tasks, runs, artifacts, and events
+- **`server.json`** — Server-level configuration (port, host, maxConcurrentTasks, notifications)
+- **`repos.json`** — Registry of all initialized projects
+- **`shutdown`** — IPC signal file created by `agentboard down` to trigger graceful shutdown
+
+The worker loop polls this database every 5 seconds and dispatches tasks across registered projects up to `maxConcurrentTasks`.
+
+### Per-Project State (<repo>/.agentboard/)
+
+Unique to each project:
+- **`config.json`** — Project-specific settings (models, commands, review rules, PR settings, branch/remote config)
+- **`worktrees/`** — Git worktrees for task isolation (one per task, cleaned up after completion)
+- **`logs/`** — Task execution logs (one append-only file per task, retention: 30 days)
+- **`memory.json`** — Persistent project memory (failure patterns, conventions)
+- **Progress files** — `.agentboard-progress.md` in worktree during task execution
+
+Per-project config is loaded at task processing time from each project's `.agentboard/config.json`.
+
+### CLI Execution from Anywhere
+
+`agentboard up` and `agentboard down` work from any directory because they operate on global state:
+- `agentboard up` creates/connects to the global database, loads server config, and starts the worker loop
+- `agentboard down` writes to the `shutdown` signal file, triggering graceful shutdown
+- `agentboard init <repo>` registers a project (adds entry to `repos.json`)
+- `agentboard doctor` shows registered projects and verifies prerequisites
 
 ## Task State Machine
 
@@ -483,11 +525,12 @@ Tracks recurring failure patterns and project conventions to improve future agen
 ## Database Schema
 
 **File:** `src/db/schema.ts`
+**Location:** `~/.agentboard/agentboard.db` (shared, global)
 
 | Table | Purpose |
 |-------|---------|
-| `projects` | Registered project repositories |
-| `tasks` | Task state, spec, ownership, parent-child relationships |
+| `projects` | Registered project repositories (for multi-project indexing) |
+| `tasks` | Task state, spec, ownership, parent-child relationships (cross-project) |
 | `runs` | Stage execution records (model, tokens, input/output, timing) |
 | `artifacts` | Structured outputs (specs, plans, review results, PR URLs) |
 | `git_refs` | Branch and worktree tracking per task |
@@ -495,6 +538,11 @@ Tracks recurring failure patterns and project conventions to improve future agen
 | `task_logs` | Log file metadata (path, size) |
 
 All queries use prepared statements via `src/db/queries.ts`. Row conversion functions handle `snake_case` DB columns to `camelCase` TypeScript.
+
+The database is accessed by:
+1. **Express API** — for UI queries (read-heavy)
+2. **Worker loop** — for task processing (read-write, serialized via SQLite locking)
+3. **Socket.IO broadcaster** — for real-time updates
 
 ## Key Architectural Patterns
 

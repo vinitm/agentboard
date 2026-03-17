@@ -1,7 +1,7 @@
 # Agentboard
 
-Self-hosted Kanban board that orchestrates AI coding agents through an autonomous pipeline:
-spec → planning → ralph loop (implement ↔ checks) → multi-role review panel → auto-merge gate → PR creation.
+Self-hosted Kanban board that orchestrates AI coding agents through a spec-driven pipeline:
+PM writes spec (with AI assistance) → AI plans → engineer reviews plan → autonomous execution (ralph loop → review panel → PR).
 Built with TypeScript, Express, SQLite, Socket.IO, React + Tailwind.
 See [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestration.md) for the complete agent orchestration architecture.
 
@@ -19,12 +19,18 @@ npm test               # Run backend tests
 npm run test:watch     # Watch mode
 npm run test:coverage  # Backend tests with coverage report
 
-### CLI
+### CLI (Global)
 
-agentboard init        # Initialize .agentboard/ config in a repo
-agentboard up          # Start server + worker
-agentboard down        # Graceful shutdown
-agentboard doctor      # Verify prerequisites (git, gh, node, claude)
+The CLI is global — commands work from anywhere:
+
+agentboard init        # Initialize .agentboard/config.json in a repo
+agentboard up          # Start global server + worker (from anywhere)
+agentboard down        # Graceful shutdown (from anywhere)
+agentboard doctor      # Verify prerequisites + show registered projects
+
+**Global state:** `~/.agentboard/` stores `server.json` (port, host, concurrency), `agentboard.db` (shared database), `repos.json` (project registry), and `shutdown` (IPC signal).
+
+**Per-project state:** `<repo>/.agentboard/config.json` stores project-specific settings (models, commands, review rules).
 
 ## Code Style & Conventions
 
@@ -56,6 +62,9 @@ Architectural decisions are recorded in [docs/decisions.md](docs/decisions.md).
 ## Architecture & Boundaries
 
 3 layers: CLI (`src/cli/`) → Server+Worker (`src/server/`, `src/worker/`) → DB (`src/db/`)
+
+**Global state** (`~/.agentboard/`): Shared SQLite DB across all projects, server config, project registry, shutdown signal.
+**Per-project state** (`<repo>/.agentboard/`): Project config, git worktrees, logs, memory, and progress files.
 
 Pipeline: backlog → ready → spec → planning → implementing ↔ checks (ralph loop) → review_panel → pr_creation → needs_human_review|done
 Subtask pipeline: backlog → ready → ralph loop → done|failed (fully autonomous, no review panel)

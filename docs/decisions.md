@@ -39,3 +39,9 @@ Architectural and design decisions for agentboard. Read this before working on t
 **Decision:** All learnings save to `.claude/skills/learned/` (project), never `~/.claude/skills/learned/` (global).
 **Why:** Agentboard patterns (ralph loop, BufferedWriter, stage contracts) are project-specific and would confuse agents in other projects.
 **Consequences:** Learnings don't transfer to other projects. This is intentional.
+
+## 2026-03-17: Global database, global CLI, per-project config
+**Context:** Agentboard initially supported one project per `.agentboard/` directory. Now needed to orchestrate multiple projects from a single server.
+**Decision:** Single shared SQLite at `~/.agentboard/agentboard.db` (global). `agentboard up/down/doctor` work from anywhere. Per-project state (worktrees, logs, config, memory) stays in each repo's `.agentboard/`.
+**Why:** Single database simplifies cross-project task tracking and multi-task scheduling. Global CLI avoids needing to cd into repos. Per-project config allows project-specific settings (models, commands, review rules) without coupling.
+**Consequences:** Database location changes from `<repo>/.agentboard/agentboard.db` to `~/.agentboard/agentboard.db`. Migration required for existing deployments. Projects are now indexed by `projects` table. Server-level settings move to `~/.agentboard/server.json`.

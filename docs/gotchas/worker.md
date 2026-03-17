@@ -4,7 +4,7 @@
 
 **Symptom:** A long-running task mysteriously restarts from `ready` after a server restart.
 
-**Cause:** The recovery mechanism (`recoverStaleTasks()` in `src/worker/recovery.ts`, called at startup from `src/cli/up.ts`) resets any task where `claimed_at` is older than 30 minutes, assuming the worker crashed. If your task legitimately takes >30 minutes and the server restarts, it gets reclaimed.
+**Cause:** The recovery mechanism (`recoverStaleTasks()` in `src/worker/recovery.ts`, called at startup from `src/cli/up.ts`) resets any task where `claimed_at` is older than 30 minutes, assuming the worker crashed. This is global — restarting `agentboard up` (from anywhere) triggers recovery for all stale tasks in the database.
 
 **Fix:** If debugging long-running tasks, be aware of this timeout. The executor has a separate 300s (5 min) timeout — the 30-minute recovery is for crashed workers, not slow tasks.
 

@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Agentboard is a self-hosted tool that runs on a single machine alongside a repo. It needs persistence for tasks, runs, artifacts, and events. The Express server reads the DB while the worker writes concurrently.
+Agentboard is a self-hosted tool that runs on a single machine and orchestrates multiple projects. It needs persistence for tasks, runs, artifacts, and events across all projects. The Express server reads the DB while the worker writes concurrently. The database lives at `~/.agentboard/agentboard.db` (shared across all projects), not per-project.
 
 Options considered: PostgreSQL, MySQL, SQLite, or an embedded key-value store.
 

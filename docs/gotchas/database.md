@@ -1,5 +1,13 @@
 # Database Gotchas
 
+## Global database at ~/.agentboard/agentboard.db
+
+**Symptom:** Confusion about where the database is stored when working with multiple projects.
+
+**Cause:** All projects share a single SQLite database at `~/.agentboard/agentboard.db` (not per-project). The `projects` table indexes which repo each task belongs to.
+
+**Note:** Per-project state (config, logs, worktrees, memory) stays in each repo's `.agentboard/` directory. Only the database is global.
+
 ## Singleton connection — don't create new ones
 
 **Symptom:** Database locked errors or data not visible between components.
