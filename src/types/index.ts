@@ -2,8 +2,9 @@
 export type TaskStatus =
   | 'backlog'
   | 'ready'
-  | 'spec'
+  | 'spec'           // deprecated — kept for DB backward compat
   | 'planning'
+  | 'needs_plan_review'
   | 'implementing'
   | 'checks'
   | 'review_panel'
@@ -151,6 +152,14 @@ export interface AgentboardConfig {
   maxRalphIterations: number;
 }
 
+// ── Server-level config (stored at ~/.agentboard/server.json) ───────
+export interface ServerConfig {
+  port: number;
+  host: string;
+  maxConcurrentTasks: number;
+  notifications: Notifications;
+}
+
 // ── Spec result from spec-generator stage ───────────────────────────
 export interface SpecResult {
   acceptanceCriteria: string[];
@@ -169,10 +178,22 @@ export interface TaskLog {
   createdAt: string;
 }
 
-// ── Decision points for task creation ───────────────────────────────
-export interface DecisionPoint {
-  question: string;
-  options: string[];
-  defaultIndex: number;
-  specField: string;
+// ── Spec document for task creation (PM-authored) ───────────────────
+export interface SpecDocument {
+  problemStatement: string;
+  userStories: string;
+  acceptanceCriteria: string;
+  constraints: string;
+  outOfScope: string;
+  verificationStrategy: string;
+}
+
+// ── Plan review action from engineer ────────────────────────────────
+export interface PlanReviewAction {
+  action: 'approve' | 'reject';
+  reason?: string;
+  edits?: {
+    planSummary?: string;
+    subtasks?: Array<{ title: string; description: string }>;
+  };
 }

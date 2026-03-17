@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import chalk from 'chalk';
 import { detectLanguages } from '../detect/language.js';
 import { detectCommands } from '../detect/commands.js';
 import type { AgentboardConfig } from '../types/index.js';
+import { ensureGlobalDir, GLOBAL_REGISTRY_PATH } from './paths.js';
 
 interface RegistryEntry {
   path: string;
@@ -107,19 +107,13 @@ export default async function init(): Promise<void> {
  * Idempotent — skips if already registered. Uses atomic write to prevent corruption.
  */
 function registerRepo(repoPath: string): void {
-  const globalDir = path.join(os.homedir(), '.agentboard');
-  const registryPath = path.join(globalDir, 'repos.json');
-
-  // Ensure ~/.agentboard/ exists
-  if (!fs.existsSync(globalDir)) {
-    fs.mkdirSync(globalDir, { recursive: true });
-  }
+  ensureGlobalDir();
 
   // Read existing registry
   let registry: RegistryEntry[] = [];
-  if (fs.existsSync(registryPath)) {
+  if (fs.existsSync(GLOBAL_REGISTRY_PATH)) {
     try {
-      registry = JSON.parse(fs.readFileSync(registryPath, 'utf-8')) as RegistryEntry[];
+      registry = JSON.parse(fs.readFileSync(GLOBAL_REGISTRY_PATH, 'utf-8')) as RegistryEntry[];
       if (!Array.isArray(registry)) {
         registry = [];
       }
@@ -144,9 +138,9 @@ function registerRepo(repoPath: string): void {
   registry.push(entry);
 
   // Atomic write: write to temp file, then rename
-  const tmpPath = registryPath + '.tmp';
+  const tmpPath = GLOBAL_REGISTRY_PATH + '.tmp';
   fs.writeFileSync(tmpPath, JSON.stringify(registry, null, 2) + '\n');
-  fs.renameSync(tmpPath, registryPath);
+  fs.renameSync(tmpPath, GLOBAL_REGISTRY_PATH);
 
-  console.log(chalk.green('Registered repo in'), registryPath);
+  console.log(chalk.green('Registered repo in'), GLOBAL_REGISTRY_PATH);
 }

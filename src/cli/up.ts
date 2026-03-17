@@ -1,6 +1,4 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
 import chalk from 'chalk';
 import { createDatabase } from '../db/index.js';
 import { createServer } from '../server/index.js';
@@ -9,6 +7,14 @@ import { recoverStaleTasks } from '../worker/recovery.js';
 import { getProjectByPath, createProject, listProjects, deleteProject } from '../db/queries.js';
 import type { AgentboardConfig } from '../types/index.js';
 import type Database from 'better-sqlite3';
+import {
+  ensureGlobalDir,
+  loadServerConfig,
+  GLOBAL_DB_PATH,
+  GLOBAL_SHUTDOWN_PATH,
+  GLOBAL_REGISTRY_PATH,
+  GLOBAL_SERVER_CONFIG_PATH,
+} from './paths.js';
 
 interface RegistryEntry {
   path: string;
@@ -19,45 +25,68 @@ interface RegistryEntry {
 export default async function up(opts: {
   port?: string;
 }): Promise<void> {
-  const cwd = process.cwd();
-  const abDir = path.join(cwd, '.agentboard');
+  // Ensure ~/.agentboard/ exists
+  ensureGlobalDir();
 
   // Clean up stale shutdown file from a previous crash
-  const staleShutdown = path.join(abDir, 'shutdown');
-  if (fs.existsSync(staleShutdown)) {
-    fs.unlinkSync(staleShutdown);
+  if (fs.existsSync(GLOBAL_SHUTDOWN_PATH)) {
+    fs.unlinkSync(GLOBAL_SHUTDOWN_PATH);
   }
 
-  const configPath = path.join(abDir, 'config.json');
-
-  if (!fs.existsSync(configPath)) {
-    console.error(
-      chalk.red(
-        'Error: .agentboard/config.json not found. Run `agentboard init` first.'
-      )
-    );
-    process.exit(1);
-  }
-
-  // 1. Load config
-  const config: AgentboardConfig = JSON.parse(
-    fs.readFileSync(configPath, 'utf-8')
-  ) as AgentboardConfig;
+  // 1. Load server config from ~/.agentboard/server.json
+  const serverConfig = loadServerConfig();
 
   // Override port from CLI flag
   if (opts.port) {
-    config.port = parseInt(opts.port, 10);
+    serverConfig.port = parseInt(opts.port, 10);
   }
 
-  // 2. Open database
-  const dbPath = path.join(cwd, '.agentboard', 'agentboard.db');
-  const db = createDatabase(dbPath);
+  // Build a full AgentboardConfig with server-level values for the worker/server.
+  // Per-project settings are loaded from each project's .agentboard/config.json
+  // at task processing time.
+  const config: AgentboardConfig = {
+    port: serverConfig.port,
+    host: serverConfig.host,
+    maxConcurrentTasks: serverConfig.maxConcurrentTasks,
+    maxAttemptsPerTask: 10,
+    maxReviewCycles: 3,
+    maxSubcardDepth: 2,
+    prDraft: true,
+    autoMerge: false,
+    securityMode: 'lightweight',
+    commitPolicy: 'after-checks-pass',
+    formatPolicy: 'auto-fix-separate-commit',
+    branchPrefix: 'agent/',
+    baseBranch: 'main',
+    githubRemote: 'origin',
+    prMethod: 'gh-cli',
+    modelDefaults: {
+      planning: 'sonnet',
+      implementation: 'opus',
+      review: 'sonnet',
+      security: 'haiku',
+    },
+    commands: {
+      test: null,
+      lint: null,
+      format: null,
+      formatFix: null,
+      typecheck: null,
+      security: null,
+    },
+    notifications: serverConfig.notifications,
+    ruflo: { enabled: false },
+    maxRalphIterations: 5,
+  };
+
+  // 2. Open database at ~/.agentboard/agentboard.db
+  const db = createDatabase(GLOBAL_DB_PATH);
 
   // 3. Sync projects from global registry
   syncProjectsFromRegistry(db);
 
   // 4. Start server
-  const { server, io } = createServer(db, config, { configPath });
+  const { server, io } = createServer(db, config, { configPath: GLOBAL_SERVER_CONFIG_PATH });
 
   // Wait for server to actually start listening (or fail)
   await new Promise<void>((resolve, reject) => {
@@ -82,6 +111,19 @@ export default async function up(opts: {
     )
   );
 
+  // Show registered projects
+  const projects = listProjects(db);
+  if (projects.length > 0) {
+    console.log(chalk.blue(`Serving ${projects.length} project(s):`));
+    for (const project of projects) {
+      console.log(chalk.blue(`  • ${project.name} (${project.path})`));
+    }
+  } else {
+    console.log(
+      chalk.yellow('No projects registered. Run `agentboard init` in a repo to register it.')
+    );
+  }
+
   // 5. Crash recovery: recover stale tasks
   const recovered = recoverStaleTasks(db);
   if (recovered > 0) {
@@ -92,11 +134,10 @@ export default async function up(opts: {
   const worker = createWorkerLoop(db, config, io);
   worker.start();
 
-  // 7. Watch for shutdown file
-  const shutdownPath = path.join(cwd, '.agentboard', 'shutdown');
+  // 7. Watch for shutdown file at ~/.agentboard/shutdown
   const shutdownInterval = setInterval(() => {
-    if (fs.existsSync(shutdownPath)) {
-      fs.unlinkSync(shutdownPath);
+    if (fs.existsSync(GLOBAL_SHUTDOWN_PATH)) {
+      fs.unlinkSync(GLOBAL_SHUTDOWN_PATH);
       console.log(chalk.yellow('\nShutdown signal received.'));
       worker.stop().then(() => {
         server.close();
@@ -127,19 +168,14 @@ export default async function up(opts: {
  * Also cleans up stale projects not in the registry and missing from disk.
  */
 function syncProjectsFromRegistry(db: Database.Database): void {
-  const registryPath = path.join(os.homedir(), '.agentboard', 'repos.json');
-
-  if (!fs.existsSync(registryPath)) {
-    console.log(
-      chalk.yellow('No repos registered. Run `agentboard init` in a repo to register it.')
-    );
+  if (!fs.existsSync(GLOBAL_REGISTRY_PATH)) {
     return;
   }
 
   // Parse registry
   let registry: RegistryEntry[];
   try {
-    const raw = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
+    const raw = JSON.parse(fs.readFileSync(GLOBAL_REGISTRY_PATH, 'utf-8'));
     if (!Array.isArray(raw)) {
       console.warn(chalk.yellow('Warning: repos.json is not an array, skipping registry sync'));
       return;
@@ -163,7 +199,7 @@ function syncProjectsFromRegistry(db: Database.Database): void {
 
     registryPaths.add(entry.path);
 
-    const repoConfigPath = path.join(entry.path, '.agentboard', 'config.json');
+    const repoConfigPath = `${entry.path}/.agentboard/config.json`;
     if (!fs.existsSync(repoConfigPath)) {
       console.warn(
         chalk.yellow(`Warning: Registered repo ${entry.name} missing config at ${repoConfigPath}, skipping`)
@@ -190,7 +226,7 @@ function syncProjectsFromRegistry(db: Database.Database): void {
     if (registryPaths.has(project.path)) continue; // In registry — keep
 
     const configExists = fs.existsSync(
-      path.join(project.path, '.agentboard', 'config.json')
+      `${project.path}/.agentboard/config.json`
     );
     if (configExists) continue; // Config still on disk — keep (manually created)
 
