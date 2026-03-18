@@ -39,6 +39,156 @@ function summarizeEvent(type: string, payload: Record<string, unknown>): string 
   }
 }
 
+/** Status badge for pipeline states */
+function StatusBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    blocked: 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20',
+    done: 'bg-green-500/15 text-green-400 ring-1 ring-green-500/20',
+    failed: 'bg-red-500/15 text-red-400 ring-1 ring-red-500/20',
+    implementing: 'bg-purple-500/15 text-purple-400 ring-1 ring-purple-500/20',
+    ready: 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/20',
+    needs_plan_review: 'bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/20',
+    needs_human_review: 'bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/20',
+    planning: 'bg-indigo-500/15 text-indigo-400 ring-1 ring-indigo-500/20',
+  };
+  const style = colors[status] ?? 'bg-gray-500/15 text-gray-400 ring-1 ring-gray-500/20';
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${style}`}>
+      {status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+/** Labeled field row for the detail view */
+function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-2 py-0.5">
+      <span className="text-[10px] uppercase tracking-wider text-text-quaternary font-medium w-20 flex-shrink-0 text-right">{label}</span>
+      <span className="text-xs text-text-primary">{children}</span>
+    </div>
+  );
+}
+
+function str(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+function has(payload: Record<string, unknown>, key: string): boolean {
+  return payload[key] !== undefined && payload[key] !== null && payload[key] !== '';
+}
+
+/** Renders a structured detail view for known event types, with JSON fallback */
+function EventDetail({ type, payload }: { type: string; payload: Record<string, unknown> }) {
+  switch (type) {
+    case 'status_changed':
+      return (
+        <div className="space-y-0.5">
+          <DetailField label="From"><StatusBadge status={str(payload.from)} /></DetailField>
+          <DetailField label="To"><StatusBadge status={str(payload.to)} /></DetailField>
+          {has(payload, 'reason') && <DetailField label="Reason"><span className="text-text-secondary">{str(payload.reason)}</span></DetailField>}
+        </div>
+      );
+
+    case 'implementation_failed':
+    case 'checks_failed':
+      return (
+        <div className="space-y-0.5">
+          {has(payload, 'attempt') && <DetailField label="Attempt"><span className="font-mono">{str(payload.attempt)}</span></DetailField>}
+          {has(payload, 'error') && <DetailField label="Error"><span className="text-red-400">{str(payload.error)}</span></DetailField>}
+          {has(payload, 'stage') && <DetailField label="Stage"><span className="text-text-secondary">{str(payload.stage)}</span></DetailField>}
+        </div>
+      );
+
+    case 'review_panel_failed':
+    case 'review_panel_completed': {
+      const results = payload.results as Array<{ role: string; passed: boolean }> | undefined;
+      return (
+        <div className="space-y-0.5">
+          {has(payload, 'reviewCycle') && <DetailField label="Cycle"><span className="font-mono">{str(payload.reviewCycle)}</span></DetailField>}
+          {results && (
+            <DetailField label="Reviewers">
+              <div className="flex flex-wrap gap-1.5">
+                {results.map((r, i) => (
+                  <span key={i} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    r.passed ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'
+                  }`}>
+                    {r.passed ? '\u2713' : '\u2717'} {r.role}
+                  </span>
+                ))}
+              </div>
+            </DetailField>
+          )}
+        </div>
+      );
+    }
+
+    case 'pr_created':
+      return (
+        <div className="space-y-0.5">
+          {has(payload, 'prNumber') && <DetailField label="PR">{`#${str(payload.prNumber)}`}</DetailField>}
+          {has(payload, 'url') && <DetailField label="URL"><span className="text-accent-blue underline">{str(payload.url)}</span></DetailField>}
+          {has(payload, 'branch') && <DetailField label="Branch"><span className="font-mono text-text-secondary">{str(payload.branch)}</span></DetailField>}
+        </div>
+      );
+
+    case 'pr_creation_failed':
+      return (
+        <div className="space-y-0.5">
+          {has(payload, 'error') && <DetailField label="Error"><span className="text-red-400">{str(payload.error)}</span></DetailField>}
+        </div>
+      );
+
+    case 'subtasks_created':
+      return (
+        <div className="space-y-0.5">
+          <DetailField label="Count"><span className="font-mono">{str(payload.count)}</span></DetailField>
+          {Array.isArray(payload.subtasks) && (
+            <DetailField label="Subtasks">
+              <ul className="space-y-0.5">
+                {(payload.subtasks as Array<{ title?: string; id?: number }>).map((s, i) => (
+                  <li key={i} className="text-text-secondary">
+                    {s.title ?? `Subtask ${s.id ?? i + 1}`}
+                  </li>
+                ))}
+              </ul>
+            </DetailField>
+          )}
+        </div>
+      );
+
+    case 'task_error':
+      return (
+        <div className="space-y-0.5">
+          {has(payload, 'error') && <DetailField label="Error"><span className="text-red-400 break-words">{str(payload.error)}</span></DetailField>}
+          {has(payload, 'stage') && <DetailField label="Stage"><span className="text-text-secondary">{str(payload.stage)}</span></DetailField>}
+        </div>
+      );
+
+    case 'answer_provided':
+      return (
+        <div className="space-y-0.5">
+          {has(payload, 'answers') && <DetailField label="Answer"><span className="text-text-secondary whitespace-pre-wrap">{str(payload.answers)}</span></DetailField>}
+        </div>
+      );
+
+    default:
+      // Fallback: render each key as a labeled field
+      return (
+        <div className="space-y-0.5">
+          {Object.entries(payload).map(([key, value]) => (
+            <DetailField key={key} label={key}>
+              <span className="text-text-secondary font-mono text-[11px] break-words">
+                {str(value)}
+              </span>
+            </DetailField>
+          ))}
+        </div>
+      );
+  }
+}
+
 export const EventsTimeline: React.FC<Props> = ({ taskId, events: initialEvents }) => {
   const [events, setEvents] = useState<EventRecord[]>(initialEvents);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -70,19 +220,17 @@ export const EventsTimeline: React.FC<Props> = ({ taskId, events: initialEvents 
         const isExpanded = expanded.has(event.id);
         return (
           <div key={event.id} className="relative mb-4 cursor-pointer" onClick={() => toggleExpand(event.id)}>
-            <div className={`absolute -left-6 top-0.5 text-sm leading-none ${colorClass}`}>●</div>
+            <div className={`absolute -left-6 top-0.5 text-sm leading-none ${colorClass}`}>{'\u25CF'}</div>
             <div className="flex gap-3 items-baseline">
               <span className="text-[11px] text-text-tertiary whitespace-nowrap min-w-[70px]">{new Date(event.createdAt).toLocaleTimeString()}</span>
               <span className="text-[13px] text-text-primary">{summarizeEvent(event.type, payload)}</span>
             </div>
             {isExpanded && (
-              <div className="relative mt-2">
+              <div className="relative mt-2 p-3 bg-bg-secondary rounded-md border border-border-default">
                 <div className="absolute top-2 right-2">
                   <CopyButton text={JSON.stringify(payload, null, 2)} />
                 </div>
-                <pre className="p-3 bg-bg-secondary rounded-md text-xs text-text-primary font-mono overflow-auto max-h-[300px] whitespace-pre-wrap break-words border border-border-default">
-                  {JSON.stringify(payload, null, 2)}
-                </pre>
+                <EventDetail type={event.type} payload={payload} />
               </div>
             )}
           </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../api/client';
 import { CopyButton } from './CopyButton';
+import { LogRenderer } from './LogRenderer.js';
 import type { StageLog, StageLogStatus } from '../types';
 
 const STAGE_LABELS: Record<string, string> = {
@@ -161,7 +162,7 @@ export const StageRow: React.FC<Props> = ({ stageLog, taskId, isActive, isExpand
               {loadingLogs ? (
                 <div className="text-text-tertiary">Loading logs...</div>
               ) : displayContent ? (
-                <pre className="whitespace-pre-wrap break-all m-0">{displayContent}</pre>
+                <LogRenderer text={displayContent} />
               ) : (
                 <div className="text-text-tertiary">No log content available</div>
               )}
