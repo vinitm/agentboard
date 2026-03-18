@@ -809,7 +809,7 @@ describe('Frontend: TaskForm passes existingTaskId on submit', () => {
     );
 
     // The Props interface should declare existingTaskId as optional in the onSubmit data type
-    expect(formSource).toContain('existingTaskId?: string');
+    expect(formSource).toContain('existingTaskId?: number');
   });
 });
 
