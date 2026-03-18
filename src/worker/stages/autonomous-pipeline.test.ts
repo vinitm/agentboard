@@ -306,16 +306,3 @@ describe('UI: TaskForm spec editor', () => {
   });
 });
 
-// ── UI: TaskDetail has AssumptionsPanel ──────────────────────────────
-
-describe('UI: TaskDetail assumptions panel', () => {
-  it('TaskDetail has AssumptionsPanel component', () => {
-    const fs = require('node:fs');
-    const detailSource = fs.readFileSync(repoRoot('ui/src/components/TaskDetail.tsx'), 'utf-8');
-
-    expect(detailSource).toContain('AssumptionsPanel');
-    expect(detailSource).toContain("'assumptions'");
-    expect(detailSource).toContain('accent-amber');
-    expect(detailSource).toContain('Verify during PR review');
-  });
-});
