@@ -15,7 +15,7 @@ import type { StageLog } from '../types/index.js';
 describe('stage-log-queries', () => {
   let db: Database.Database;
   let projectId: string;
-  let taskId: string;
+  let taskId: number;
 
   beforeEach(() => {
     db = createTestDb();
@@ -67,18 +67,23 @@ describe('stage-log-queries', () => {
 
     it('creates a stage log with optional fields', () => {
       const startedAt = new Date().toISOString();
+      const subtask = createTask(db, {
+        projectId,
+        title: 'Subtask for testing',
+        parentTaskId: taskId,
+      });
       const log = createStageLog(db, {
         taskId,
         projectId,
         stage: 'checks',
-        subtaskId: 'subtask-456',
+        subtaskId: subtask.id,
         attempt: 3,
         filePath: '/logs/task-abc.log',
         startedAt,
       });
 
       expect(log.runId).toBeNull();
-      expect(log.subtaskId).toBe('subtask-456');
+      expect(log.subtaskId).toBe(subtask.id);
       expect(log.attempt).toBe(3);
     });
   });

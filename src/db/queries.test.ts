@@ -25,7 +25,7 @@ function makeTask(db: Database.Database, projectId: string, overrides: Partial<q
   });
 }
 
-function makeRun(db: Database.Database, taskId: string, overrides: Partial<queries.CreateRunData> = {}) {
+function makeRun(db: Database.Database, taskId: number, overrides: Partial<queries.CreateRunData> = {}) {
   return queries.createRun(db, {
     taskId,
     stage: 'planning',

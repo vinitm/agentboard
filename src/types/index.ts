@@ -33,11 +33,11 @@ export type StageLogStatus = 'running' | 'completed' | 'failed' | 'skipped';
 
 export interface StageLog {
   id: string;
-  taskId: string;
+  taskId: number;
   projectId: string;
   runId: string | null;
   stage: StageLogStage;
-  subtaskId: string | null;
+  subtaskId: number | null;
   attempt: number;
   filePath: string;
   status: StageLogStatus;
@@ -50,9 +50,9 @@ export interface StageLog {
 }
 
 export interface StageTransitionEvent {
-  taskId: string;
+  taskId: number;
   stage: StageLogStage;
-  subtaskId?: string;
+  subtaskId?: number;
   status: StageLogStatus;
   summary?: string;
   durationMs?: number;
@@ -80,9 +80,9 @@ export interface Project {
 }
 
 export interface Task {
-  id: string;
+  id: number;
   projectId: string;
-  parentTaskId: string | null;
+  parentTaskId: number | null;
   title: string;
   description: string;
   status: TaskStatus;
@@ -100,7 +100,7 @@ export interface Task {
 
 export interface Run {
   id: string;
-  taskId: string;
+  taskId: number;
   stage: Stage;
   status: RunStatus;
   attempt: number;
@@ -123,7 +123,7 @@ export interface Artifact {
 
 export interface GitRef {
   id: string;
-  taskId: string;
+  taskId: number;
   branch: string;
   worktreePath: string | null;
   status: GitRefStatus;
@@ -132,7 +132,7 @@ export interface GitRef {
 
 export interface Event {
   id: string;
-  taskId: string;
+  taskId: number;
   runId: string | null;
   type: string;
   payload: string;        // JSON
@@ -164,7 +164,7 @@ export interface SpecReviewResult {
 // ── Chat message ────────────────────────────────────────────────────
 export interface ChatMessage {
   id: string;
-  taskId: string;
+  taskId: number;
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
@@ -264,7 +264,7 @@ export interface SpecResult {
 // ── Task log metadata ───────────────────────────────────────────────
 export interface TaskLog {
   id: string;
-  taskId: string;
+  taskId: number;
   projectId: string;
   logPath: string;
   sizeBytes: number;

@@ -74,7 +74,7 @@ describe('schema initialization', () => {
     it('rejects a task with a nonexistent project_id', () => {
       expect(() => {
         db.prepare(
-          `INSERT INTO tasks (id, project_id, title) VALUES ('t1', 'nonexistent-project', 'Test')`
+          `INSERT INTO tasks (project_id, title) VALUES ('nonexistent-project', 'Test')`
         ).run();
       }).toThrow();
     });
@@ -82,7 +82,7 @@ describe('schema initialization', () => {
     it('rejects a run with a nonexistent task_id', () => {
       expect(() => {
         db.prepare(
-          `INSERT INTO runs (id, task_id, stage) VALUES ('r1', 'nonexistent-task', 'planning')`
+          `INSERT INTO runs (id, task_id, stage) VALUES ('r1', 99999, 'planning')`
         ).run();
       }).toThrow();
     });
@@ -98,7 +98,7 @@ describe('schema initialization', () => {
     it('rejects a git_ref with a nonexistent task_id', () => {
       expect(() => {
         db.prepare(
-          `INSERT INTO git_refs (id, task_id, branch) VALUES ('g1', 'nonexistent-task', 'main')`
+          `INSERT INTO git_refs (id, task_id, branch) VALUES ('g1', 99999, 'main')`
         ).run();
       }).toThrow();
     });
@@ -106,7 +106,7 @@ describe('schema initialization', () => {
     it('rejects an event with a nonexistent task_id', () => {
       expect(() => {
         db.prepare(
-          `INSERT INTO events (id, task_id, type) VALUES ('e1', 'nonexistent-task', 'test')`
+          `INSERT INTO events (id, task_id, type) VALUES ('e1', 99999, 'test')`
         ).run();
       }).toThrow();
     });
@@ -161,10 +161,11 @@ describe('schema initialization', () => {
         `INSERT INTO projects (id, name, path, config_path, created_at, updated_at)
          VALUES ('p1', 'P', '/p', '/c', ?, ?)`
       ).run(now, now);
-      db.prepare(
-        `INSERT INTO tasks (id, project_id, title) VALUES ('t1', 'p1', 'Test task')`
+      const result = db.prepare(
+        `INSERT INTO tasks (project_id, title) VALUES ('p1', 'Test task')`
       ).run();
-      const row = db.prepare(`SELECT status, risk_level, priority, column_position FROM tasks WHERE id='t1'`).get() as Record<string, unknown>;
+      const taskId = Number(result.lastInsertRowid);
+      const row = db.prepare(`SELECT status, risk_level, priority, column_position FROM tasks WHERE id=?`).get(taskId) as Record<string, unknown>;
       expect(row.status).toBe('backlog');
       expect(row.risk_level).toBe('low');
       expect(row.priority).toBe(0);
@@ -177,12 +178,13 @@ describe('schema initialization', () => {
         `INSERT INTO projects (id, name, path, config_path, created_at, updated_at)
          VALUES ('p1', 'P', '/p', '/c', ?, ?)`
       ).run(now, now);
-      db.prepare(
-        `INSERT INTO tasks (id, project_id, title) VALUES ('t1', 'p1', 'Test')`
+      const taskResult = db.prepare(
+        `INSERT INTO tasks (project_id, title) VALUES ('p1', 'Test')`
       ).run();
+      const taskId = Number(taskResult.lastInsertRowid);
       db.prepare(
-        `INSERT INTO runs (id, task_id, stage, started_at) VALUES ('r1', 't1', 'planning', ?)`
-      ).run(now);
+        `INSERT INTO runs (id, task_id, stage, started_at) VALUES ('r1', ?, 'planning', ?)`
+      ).run(taskId, now);
       const row = db.prepare(`SELECT status, attempt FROM runs WHERE id='r1'`).get() as Record<string, unknown>;
       expect(row.status).toBe('running');
       expect(row.attempt).toBe(1);
@@ -194,12 +196,13 @@ describe('schema initialization', () => {
         `INSERT INTO projects (id, name, path, config_path, created_at, updated_at)
          VALUES ('p1', 'P', '/p', '/c', ?, ?)`
       ).run(now, now);
-      db.prepare(
-        `INSERT INTO tasks (id, project_id, title) VALUES ('t1', 'p1', 'Test')`
+      const taskResult = db.prepare(
+        `INSERT INTO tasks (project_id, title) VALUES ('p1', 'Test')`
       ).run();
+      const taskId = Number(taskResult.lastInsertRowid);
       db.prepare(
-        `INSERT INTO git_refs (id, task_id, branch) VALUES ('g1', 't1', 'main')`
-      ).run();
+        `INSERT INTO git_refs (id, task_id, branch) VALUES ('g1', ?, 'main')`
+      ).run(taskId);
       const row = db.prepare(`SELECT status FROM git_refs WHERE id='g1'`).get() as Record<string, unknown>;
       expect(row.status).toBe('local');
     });
@@ -210,12 +213,13 @@ describe('schema initialization', () => {
         `INSERT INTO projects (id, name, path, config_path, created_at, updated_at)
          VALUES ('p1', 'P', '/p', '/c', ?, ?)`
       ).run(now, now);
-      db.prepare(
-        `INSERT INTO tasks (id, project_id, title) VALUES ('t1', 'p1', 'Test')`
+      const taskResult = db.prepare(
+        `INSERT INTO tasks (project_id, title) VALUES ('p1', 'Test')`
       ).run();
+      const taskId = Number(taskResult.lastInsertRowid);
       db.prepare(
-        `INSERT INTO events (id, task_id, type) VALUES ('e1', 't1', 'test.event')`
-      ).run();
+        `INSERT INTO events (id, task_id, type) VALUES ('e1', ?, 'test.event')`
+      ).run(taskId);
       const row = db.prepare(`SELECT payload FROM events WHERE id='e1'`).get() as Record<string, unknown>;
       expect(row.payload).toBe('{}');
     });

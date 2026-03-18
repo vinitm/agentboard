@@ -7,11 +7,11 @@ import type { StageLog, StageLogStage, StageLogStatus } from '../types/index.js'
 function rowToStageLog(row: Record<string, unknown>): StageLog {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     projectId: row.project_id as string,
     runId: (row.run_id as string) ?? null,
     stage: row.stage as StageLogStage,
-    subtaskId: (row.subtask_id as string) ?? null,
+    subtaskId: (row.subtask_id as number) ?? null,
     attempt: row.attempt as number,
     filePath: row.file_path as string,
     status: row.status as StageLogStatus,
@@ -27,11 +27,11 @@ function rowToStageLog(row: Record<string, unknown>): StageLog {
 // ── Create ────────────────────────────────────────────────────────────
 
 export interface CreateStageLogData {
-  taskId: string;
+  taskId: number;
   projectId: string;
   runId?: string;
   stage: StageLogStage;
-  subtaskId?: string;
+  subtaskId?: number;
   attempt?: number;
   filePath: string;
   startedAt: string;
@@ -75,7 +75,7 @@ export function getStageLogById(
 
 export function listStageLogsByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): StageLog[] {
   const rows = db
     .prepare('SELECT * FROM stage_logs WHERE task_id = ? ORDER BY started_at ASC')

@@ -64,7 +64,7 @@ describe('types', () => {
 
   it('ChatMessage has required fields', () => {
     const msg: ChatMessage = {
-      id: '1', taskId: 't1', role: 'user', content: 'hello', createdAt: 'now',
+      id: '1', taskId: 1, role: 'user', content: 'hello', createdAt: 'now',
     };
     expect(msg.role).toBe('user');
   });

@@ -31,9 +31,9 @@ function rowToProject(row: Record<string, unknown>): Project {
 
 function rowToTask(row: Record<string, unknown>): Task {
   return {
-    id: row.id as string,
+    id: row.id as number,
     projectId: row.project_id as string,
-    parentTaskId: (row.parent_task_id as string) ?? null,
+    parentTaskId: (row.parent_task_id as number) ?? null,
     title: row.title as string,
     description: row.description as string,
     status: row.status as TaskStatus,
@@ -53,7 +53,7 @@ function rowToTask(row: Record<string, unknown>): Task {
 function rowToRun(row: Record<string, unknown>): Run {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     stage: row.stage as Stage,
     status: row.status as RunStatus,
     attempt: row.attempt as number,
@@ -80,7 +80,7 @@ function rowToArtifact(row: Record<string, unknown>): Artifact {
 function rowToGitRef(row: Record<string, unknown>): GitRef {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     branch: row.branch as string,
     worktreePath: (row.worktree_path as string) ?? null,
     status: row.status as GitRefStatus,
@@ -91,7 +91,7 @@ function rowToGitRef(row: Record<string, unknown>): GitRef {
 function rowToEvent(row: Record<string, unknown>): Event {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     runId: (row.run_id as string) ?? null,
     type: row.type as string,
     payload: row.payload as string,
@@ -172,7 +172,7 @@ export interface CreateTaskData {
   projectId: string;
   title: string;
   description?: string;
-  parentTaskId?: string | null;
+  parentTaskId?: number | null;
   status?: TaskStatus;
   riskLevel?: RiskLevel;
   priority?: number;
@@ -184,14 +184,12 @@ export function createTask(
   db: Database.Database,
   data: CreateTaskData
 ): Task {
-  const id = uuidv4();
   const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO tasks (id, project_id, parent_task_id, title, description, status,
+  const result = db.prepare(
+    `INSERT INTO tasks (project_id, parent_task_id, title, description, status,
        risk_level, priority, column_position, spec, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    id,
     data.projectId,
     data.parentTaskId ?? null,
     data.title,
@@ -204,12 +202,12 @@ export function createTask(
     now,
     now
   );
-  return getTaskById(db, id)!;
+  return getTaskById(db, Number(result.lastInsertRowid))!;
 }
 
 export function getTaskById(
   db: Database.Database,
-  id: string
+  id: number
 ): Task | undefined {
   const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
     | Record<string, unknown>
@@ -247,13 +245,13 @@ export interface UpdateTaskData {
   columnPosition?: number;
   spec?: string | null;
   blockedReason?: string | null;
-  parentTaskId?: string | null;
+  parentTaskId?: number | null;
   chatSessionId?: string | null;
 }
 
 export function updateTask(
   db: Database.Database,
-  id: string,
+  id: number,
   data: UpdateTaskData
 ): Task | undefined {
   const fields: string[] = [];
@@ -283,7 +281,7 @@ export function updateTask(
 
 export function moveToColumn(
   db: Database.Database,
-  id: string,
+  id: number,
   status: TaskStatus,
   columnPosition: number
 ): Task | undefined {
@@ -296,7 +294,7 @@ export function moveToColumn(
 
 export function claimTask(
   db: Database.Database,
-  id: string,
+  id: number,
   claimedBy: string
 ): boolean {
   const now = new Date().toISOString();
@@ -308,7 +306,7 @@ export function claimTask(
 
 export function unclaimTask(
   db: Database.Database,
-  id: string
+  id: number
 ): Task | undefined {
   const now = new Date().toISOString();
   db.prepare(
@@ -319,7 +317,7 @@ export function unclaimTask(
 
 export function getSubtasksByParentId(
   db: Database.Database,
-  parentTaskId: string
+  parentTaskId: number
 ): Task[] {
   const rows = db
     .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC')
@@ -329,7 +327,7 @@ export function getSubtasksByParentId(
 
 export function getNextBacklogSubtask(
   db: Database.Database,
-  parentTaskId: string
+  parentTaskId: number
 ): Task | undefined {
   const row = db
     .prepare(
@@ -339,14 +337,14 @@ export function getNextBacklogSubtask(
   return row ? rowToTask(row) : undefined;
 }
 
-export function deleteTask(db: Database.Database, id: string): void {
+export function deleteTask(db: Database.Database, id: number): void {
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
 }
 
 // ── Runs ─────────────────────────────────────────────────────────────
 
 export interface CreateRunData {
-  taskId: string;
+  taskId: number;
   stage: Stage;
   attempt?: number;
   modelUsed?: string | null;
@@ -386,7 +384,7 @@ export function getRunById(
 
 export function listRunsByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): Run[] {
   const rows = db
     .prepare('SELECT * FROM runs WHERE task_id = ? ORDER BY started_at DESC')
@@ -396,7 +394,7 @@ export function listRunsByTask(
 
 export function getLatestRunByTaskAndStage(
   db: Database.Database,
-  taskId: string,
+  taskId: number,
   stage: Stage
 ): Run | undefined {
   const row = db
@@ -489,7 +487,7 @@ export function deleteArtifact(db: Database.Database, id: string): void {
 // ── Git Refs ─────────────────────────────────────────────────────────
 
 export interface CreateGitRefData {
-  taskId: string;
+  taskId: number;
   branch: string;
   worktreePath?: string | null;
   status?: GitRefStatus;
@@ -520,7 +518,7 @@ export function getGitRefById(
 
 export function listGitRefsByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): GitRef[] {
   const rows = db
     .prepare('SELECT * FROM git_refs WHERE task_id = ? ORDER BY created_at DESC')
@@ -553,7 +551,7 @@ export function deleteGitRef(db: Database.Database, id: string): void {
 // ── Events ───────────────────────────────────────────────────────────
 
 export interface CreateEventData {
-  taskId: string;
+  taskId: number;
   runId?: string | null;
   type: string;
   payload?: string;
@@ -584,7 +582,7 @@ export function getEventById(
 
 export function listEventsByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): Event[] {
   const rows = db
     .prepare('SELECT * FROM events WHERE task_id = ? ORDER BY created_at ASC')
@@ -628,7 +626,7 @@ export function deleteEvent(db: Database.Database, id: string): void {
 function rowToTaskLog(row: Record<string, unknown>): TaskLog {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     projectId: row.project_id as string,
     logPath: row.log_path as string,
     sizeBytes: row.size_bytes as number,
@@ -637,7 +635,7 @@ function rowToTaskLog(row: Record<string, unknown>): TaskLog {
 }
 
 export interface CreateTaskLogData {
-  taskId: string;
+  taskId: number;
   projectId: string;
   logPath: string;
   sizeBytes?: number;
@@ -668,7 +666,7 @@ export function getTaskLogById(
 
 export function getTaskLogByTaskId(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): TaskLog | undefined {
   const row = db.prepare('SELECT * FROM task_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1').get(taskId) as
     | Record<string, unknown>
@@ -699,7 +697,7 @@ export function updateTaskLogSize(
 function rowToChatMessage(row: Record<string, unknown>): ChatMessage {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     role: row.role as 'user' | 'assistant',
     content: row.content as string,
     createdAt: row.created_at as string,
@@ -707,7 +705,7 @@ function rowToChatMessage(row: Record<string, unknown>): ChatMessage {
 }
 
 export interface CreateChatMessageData {
-  taskId: string;
+  taskId: number;
   role: 'user' | 'assistant';
   content: string;
 }
@@ -728,7 +726,7 @@ export function createChatMessage(
 
 export function listChatMessagesByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): ChatMessage[] {
   const rows = db
     .prepare('SELECT * FROM chat_messages WHERE task_id = ? ORDER BY created_at ASC')
@@ -738,7 +736,7 @@ export function listChatMessagesByTask(
 
 export function deleteChatMessagesByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): void {
   db.prepare('DELETE FROM chat_messages WHERE task_id = ?').run(taskId);
 }
