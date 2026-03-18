@@ -1,0 +1,79 @@
+{
+  "workflows": {
+    "workflow-1773861677238-elnpdx": {
+      "workflowId": "workflow-1773861677238-elnpdx",
+      "name": "cost-dashboard-implementation",
+      "description": "Implement Pipeline Cost & Performance Dashboard for agentboard: DB queries, API routes, UI page",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "db-cost-queries",
+          "type": "task",
+          "config": {
+            "description": "Add cost aggregation queries to stage-log-queries.ts: getTaskCostRollup, getStageCostBreakdown, getCostTrend"
+          },
+          "status": "completed",
+          "startedAt": "2026-03-18T19:21:23.876Z",
+          "completedAt": "2026-03-18T19:21:23.876Z",
+          "result": {
+            "executed": true,
+            "stepType": "task"
+          }
+        },
+        {
+          "stepId": "step-2",
+          "name": "api-cost-routes",
+          "type": "task",
+          "config": {
+            "description": "Create cost API routes: GET /api/tasks/:id/costs, GET /api/projects/:projectId/costs/breakdown, GET /api/projects/:projectId/costs/trend"
+          },
+          "status": "completed",
+          "startedAt": "2026-03-18T19:21:23.876Z",
+          "completedAt": "2026-03-18T19:21:23.876Z",
+          "result": {
+            "executed": true,
+            "stepType": "task"
+          }
+        },
+        {
+          "stepId": "step-3",
+          "name": "ui-cost-dashboard",
+          "type": "task",
+          "config": {
+            "description": "Build CostDashboard React component with stage heatmap, cost trend chart, and per-task rollups"
+          },
+          "status": "completed",
+          "startedAt": "2026-03-18T19:21:23.876Z",
+          "completedAt": "2026-03-18T19:21:23.876Z",
+          "result": {
+            "executed": true,
+            "stepType": "task"
+          }
+        },
+        {
+          "stepId": "step-4",
+          "name": "integration-wiring",
+          "type": "task",
+          "config": {
+            "description": "Wire up routes in server/index.ts, add nav link in Sidebar, add route in App.tsx"
+          },
+          "status": "completed",
+          "startedAt": "2026-03-18T19:21:23.876Z",
+          "completedAt": "2026-03-18T19:21:23.876Z",
+          "result": {
+            "executed": true,
+            "stepType": "task"
+          }
+        }
+      ],
+      "status": "completed",
+      "currentStep": 4,
+      "variables": {},
+      "createdAt": "2026-03-18T19:21:17.238Z",
+      "startedAt": "2026-03-18T19:21:23.876Z",
+      "completedAt": "2026-03-18T19:21:23.876Z"
+    }
+  },
+  "templates": {},
+  "version": "3.0.0"
+}
