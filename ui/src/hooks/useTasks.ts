@@ -39,7 +39,7 @@ export function useTasks(projectId: string) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
     };
 
-    const onDeleted = ({ id }: { id: string }) => {
+    const onDeleted = ({ id }: { id: number }) => {
       setTasks((prev) => prev.filter((t) => t.id !== id));
     };
 
@@ -75,7 +75,7 @@ export function useTasks(projectId: string) {
 
   const updateTask = useCallback(
     async (
-      id: string,
+      id: number,
       data: Partial<Pick<Task, 'title' | 'description' | 'spec' | 'riskLevel' | 'priority' | 'columnPosition'>>,
     ) => {
       const updated = await api.put<Task>(`/api/tasks/${id}`, data);
@@ -85,30 +85,30 @@ export function useTasks(projectId: string) {
     [],
   );
 
-  const moveTask = useCallback(async (id: string, column: TaskStatus) => {
+  const moveTask = useCallback(async (id: number, column: TaskStatus) => {
     const moved = await api.post<Task>(`/api/tasks/${id}/move`, { column });
     setTasks((prev) => prev.map((t) => (t.id === id ? moved : t)));
     return moved;
   }, []);
 
-  const deleteTask = useCallback(async (id: string) => {
+  const deleteTask = useCallback(async (id: number) => {
     await api.del(`/api/tasks/${id}`);
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const answerTask = useCallback(async (id: string, answers: string) => {
+  const answerTask = useCallback(async (id: number, answers: string) => {
     const answered = await api.post<Task>(`/api/tasks/${id}/answer`, { answers });
     setTasks((prev) => prev.map((t) => (t.id === id ? answered : t)));
     return answered;
   }, []);
 
-  const retryTask = useCallback(async (id: string) => {
+  const retryTask = useCallback(async (id: number) => {
     const retried = await api.post<Task>(`/api/tasks/${id}/retry`);
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...retried, status: retried.status ?? 'ready' } : t)));
     return retried;
   }, []);
 
-  const reviewPlan = useCallback(async (id: string, action: PlanReviewAction) => {
+  const reviewPlan = useCallback(async (id: number, action: PlanReviewAction) => {
     const updated = await api.post<Task>(`/api/tasks/${id}/review-plan`, action);
     setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
     return updated;

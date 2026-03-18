@@ -7,7 +7,7 @@ import type { Task, RiskLevel, SpecDocument, ChatMessage, SSEEvent, PersistedCha
 interface Props {
   initial?: Task | null;
   projectId: string;
-  onSubmit: (data: { title: string; description: string; spec: string; riskLevel: RiskLevel; priority: number }) => Promise<void>;
+  onSubmit: (data: { title: string; description: string; spec: string; riskLevel: RiskLevel; priority: number; existingTaskId?: number }) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -58,7 +58,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   const [spec, setSpec] = useState<SpecDocument>(() => parseSpec(initial?.spec ?? null));
 
   // Task ID for streaming (set on first create, or from initial)
-  const [taskId, setTaskId] = useState<string | null>(initial?.id ?? null);
+  const [taskId, setTaskId] = useState<number | null>(initial?.id ?? null);
 
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -270,15 +270,26 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
       setError('Title is required');
       return;
     }
+    const emptyFields = (Object.keys(SPEC_LABELS) as Array<keyof SpecDocument>)
+      .filter((k) => !spec[k].trim())
+      .map((k) => SPEC_LABELS[k]);
+    if (emptyFields.length > 0) {
+      setError(`The following spec fields must be filled before creating a task: ${emptyFields.join(', ')}`);
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
+      // If taskId is set and we're not editing an existing task (via edit button),
+      // it means a task was created during chat — pass its ID so parent updates instead of creating
+      const existingTaskId = (!isEditing && taskId) ? taskId : undefined;
       await onSubmit({
         title: title.trim(),
         description: description.trim(),
         spec: JSON.stringify(spec),
         riskLevel,
         priority,
+        existingTaskId,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');

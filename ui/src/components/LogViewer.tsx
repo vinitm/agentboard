@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CopyButton } from './CopyButton';
 import { useSocket } from '../hooks/useSocket';
 
-interface LogEntry { taskId: string; runId: string; chunk: string; timestamp: string }
-interface Props { taskId: string }
+interface LogEntry { taskId: number; runId: string; chunk: string; timestamp: string }
+interface Props { taskId: number }
 
 export const LogViewer: React.FC<Props> = ({ taskId }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);

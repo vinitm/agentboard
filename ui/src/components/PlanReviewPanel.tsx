@@ -4,7 +4,7 @@ import type { Task, Run, Artifact, PlanReviewAction, PlanReviewData } from '../t
 
 interface Props {
   task: Task;
-  onReview: (id: string, action: PlanReviewAction) => Promise<Task>;
+  onReview: (id: number, action: PlanReviewAction) => Promise<Task>;
 }
 
 const inputClasses = 'w-full rounded-md bg-bg-tertiary border border-border-default px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-transparent resize-y';

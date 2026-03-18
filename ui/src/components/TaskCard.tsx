@@ -118,7 +118,10 @@ export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = 
       } ${selected ? 'ring-2 ring-accent-blue' : ''} ${isRunning ? 'card-running' : ''}`}
     >
       {/* Title */}
-      <div className="text-sm font-medium text-text-primary line-clamp-2 mb-1">{task.title}</div>
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="text-xs text-gray-400 font-mono">#{task.id}</span>
+        <span className="text-sm font-medium text-text-primary line-clamp-2">{task.title}</span>
+      </div>
 
       {/* Description preview */}
       {task.description && (

@@ -12,7 +12,7 @@ interface LearningAnalysis {
 }
 
 interface TaskMetrics {
-  taskId: string;
+  taskId: number;
   title: string;
   riskLevel: string;
   outcome: 'success' | 'failed';

@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { CopyButton } from './CopyButton';
 import { LogViewer } from './LogViewer';
+import { BlockedPanel } from './BlockedPanel';
+import { PRPanel } from './PRPanel';
+import { PlanReviewPanel } from './PlanReviewPanel';
 import { RunHistory } from './RunHistory';
 import { EventsTimeline } from './EventsTimeline';
 import { SubtaskMiniCard } from './SubtaskMiniCard';
 import { StageAccordion } from './StageAccordion';
-import type { Task, Run, TaskStatus } from '../types';
+import type { Task, Run, TaskStatus, PlanReviewAction } from '../types';
 
 type Tab = 'stages' | 'events' | 'runs';
 const ACTIVE_STATUSES: TaskStatus[] = ['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'];
@@ -41,7 +44,7 @@ const riskBorderColor: Record<string, string> = {
   high: 'border-accent-red text-accent-red', medium: 'border-accent-amber text-accent-amber', low: 'border-accent-green text-accent-green',
 };
 
-interface EventRecord { id: string; taskId: string; runId: string | null; type: string; payload: string; createdAt: string }
+interface EventRecord { id: string; taskId: number; runId: string | null; type: string; payload: string; createdAt: string }
 
 // Skeleton loader for the page
 const PageSkeleton: React.FC = () => (
@@ -65,8 +68,12 @@ const PageSkeleton: React.FC = () => (
   </div>
 );
 
+const MOVABLE_COLUMNS: TaskStatus[] = ['backlog', 'ready', 'cancelled', 'done'];
+
 export const TaskPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const taskId = id ? Number(id) : undefined;
+  const navigate = useNavigate();
   const [task, setTask] = useState<Task | null>(null);
   const [parentTask, setParentTask] = useState<Task | null>(null);
   const [subtasks, setSubtasks] = useState<Task[]>([]);
@@ -77,11 +84,11 @@ export const TaskPage: React.FC = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!id) return;
+    if (taskId === undefined || isNaN(taskId)) return;
     setLoading(true);
     setParentTask(null);
     setSubtasks([]);
-    Promise.all([api.get<Task>(`/api/tasks/${id}`), api.get<Run[]>(`/api/runs?taskId=${id}`), api.get<EventRecord[]>(`/api/events?taskId=${id}`)])
+    Promise.all([api.get<Task>(`/api/tasks/${taskId}`), api.get<Run[]>(`/api/runs?taskId=${taskId}`), api.get<EventRecord[]>(`/api/events?taskId=${taskId}`)])
       .then(async ([t, r, e]) => {
         setTask(t); setRuns(r); setEvents(e);
         if (t.parentTaskId) {
@@ -93,7 +100,7 @@ export const TaskPage: React.FC = () => {
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load task'))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [taskId]);
 
   const changeTab = (t: Tab) => { setTab(t); window.location.hash = t; };
 
@@ -150,11 +157,30 @@ export const TaskPage: React.FC = () => {
           )}
         </div>
         <div className="flex gap-2 flex-shrink-0">
+          {!isSubtask && (
+            <select
+              onChange={async (e) => {
+                if (!e.target.value) return;
+                try {
+                  const moved = await api.post<Task>(`/api/tasks/${task.id}/move`, { column: e.target.value });
+                  setTask(moved);
+                } catch (err) {
+                  alert(`Cannot move task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                }
+                e.target.value = '';
+              }}
+              className="rounded-md px-2 py-1 text-xs bg-bg-tertiary border border-border-default text-text-primary"
+              defaultValue=""
+            >
+              <option value="" disabled>Move to...</option>
+              {MOVABLE_COLUMNS.map((col) => <option key={col} value={col}>{col}</option>)}
+            </select>
+          )}
           {task.status === 'failed' && !isSubtask && (
             <button onClick={async () => { await api.post(`/api/tasks/${task.id}/retry`); const t = await api.get<Task>(`/api/tasks/${task.id}`); setTask(t); }}
               className="px-3 py-1 rounded-lg text-xs font-semibold bg-accent-amber text-white hover:bg-amber-600 transition-colors">Retry</button>
           )}
-          <button onClick={async () => { if (confirm('Delete this task?')) { await api.del(`/api/tasks/${task.id}`); window.location.href = '/'; } }}
+          <button onClick={async () => { if (confirm('Delete this task?')) { await api.del(`/api/tasks/${task.id}`); navigate('/'); } }}
             className="px-3 py-1 rounded-lg text-xs font-semibold border border-accent-red text-accent-red hover:bg-accent-red hover:text-white transition-colors">Delete</button>
         </div>
       </div>
@@ -173,6 +199,35 @@ export const TaskPage: React.FC = () => {
               .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
               .map((sub) => <SubtaskMiniCard key={sub.id} task={sub} />)}
           </div>
+        </div>
+      )}
+
+      {/* Action panels */}
+      {task.status === 'needs_plan_review' && (
+        <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
+          <PlanReviewPanel task={task} onReview={async (taskIdParam: number, action: PlanReviewAction) => {
+            const updated = await api.post<Task>(`/api/tasks/${taskIdParam}/review-plan`, action);
+            setTask(updated);
+            return updated;
+          }} />
+        </div>
+      )}
+      {task.status === 'blocked' && task.blockedReason && (
+        <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
+          <BlockedPanel taskId={task.id} blockedReason={task.blockedReason} onAnswer={async (taskIdParam: number, answers: string) => {
+            const answered = await api.post<Task>(`/api/tasks/${taskIdParam}/answer`, { answers });
+            setTask(answered);
+            return answered;
+          }} />
+        </div>
+      )}
+      {task.status === 'needs_human_review' && (
+        <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
+          <PRPanel task={task} onMove={async (taskIdParam: number, column: TaskStatus) => {
+            const moved = await api.post<Task>(`/api/tasks/${taskIdParam}/move`, { column });
+            setTask(moved);
+            return moved;
+          }} />
         </div>
       )}
 

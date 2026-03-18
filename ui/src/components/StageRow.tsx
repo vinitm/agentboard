@@ -56,7 +56,7 @@ const StatusIcon: React.FC<{ status: StageLogStatus }> = ({ status }) => {
 
 interface Props {
   stageLog: StageLog;
-  taskId: string;
+  taskId: number;
   isActive: boolean;
   isExpanded: boolean;
   onToggle: () => void;

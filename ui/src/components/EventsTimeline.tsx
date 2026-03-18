@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { CopyButton } from './CopyButton';
 import { useSocket } from '../hooks/useSocket';
 
-interface EventRecord { id: string; taskId: string; runId: string | null; type: string; payload: string; createdAt: string }
-interface Props { taskId: string; events: EventRecord[] }
+interface EventRecord { id: string; taskId: number; runId: string | null; type: string; payload: string; createdAt: string }
+interface Props { taskId: number; events: EventRecord[] }
 
 const EVENT_COLORS: Record<string, string> = {
   status_changed: 'text-accent-blue', implementation_failed: 'text-accent-red',

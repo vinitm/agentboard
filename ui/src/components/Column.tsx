@@ -54,9 +54,9 @@ interface Props {
   status: TaskStatus;
   tasks: Task[];
   onTaskClick: (task: Task) => void;
-  subtasksByParent?: Map<string, Task[]>;
-  selectedIds?: Set<string>;
-  onToggleSelect?: (taskId: string, event: React.MouseEvent) => void;
+  subtasksByParent?: Map<number, Task[]>;
+  selectedIds?: Set<number>;
+  onToggleSelect?: (taskId: number, event: React.MouseEvent) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }

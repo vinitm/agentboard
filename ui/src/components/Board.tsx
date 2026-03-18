@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { Column } from './Column';
 import { TaskCard } from './TaskCard';
-import { TaskDetail } from './TaskDetail';
 import { TaskForm } from './TaskForm';
 import type { Task, TaskStatus, RiskLevel, PlanReviewAction } from '../types';
 import type { FilterState } from './TopBar';
@@ -20,12 +20,12 @@ interface Props {
   loading: boolean;
   projectId: string;
   createTask: (data: { title: string; description?: string; spec?: string; riskLevel?: RiskLevel; priority?: number }) => Promise<Task>;
-  updateTask: (id: string, data: Partial<Task>) => Promise<Task>;
-  moveTask: (id: string, column: TaskStatus) => Promise<Task>;
-  deleteTask: (id: string) => Promise<void>;
-  answerTask: (id: string, answers: string) => Promise<Task>;
-  retryTask: (id: string) => Promise<Task>;
-  reviewPlan: (id: string, action: PlanReviewAction) => Promise<Task>;
+  updateTask: (id: number, data: Partial<Task>) => Promise<Task>;
+  moveTask: (id: number, column: TaskStatus) => Promise<Task>;
+  deleteTask: (id: number) => Promise<void>;
+  answerTask: (id: number, answers: string) => Promise<Task>;
+  retryTask: (id: number) => Promise<Task>;
+  reviewPlan: (id: number, action: PlanReviewAction) => Promise<Task>;
   showNewTask?: boolean;
   onCloseNewTask?: () => void;
   filters?: FilterState;
@@ -105,18 +105,17 @@ export const Board: React.FC<Props> = ({
   tasks, loading, projectId, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask, reviewPlan,
   showNewTask, onCloseNewTask, filters,
 }) => {
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [editingTask, setEditingTask] = useState<Task | null | undefined>(undefined);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [collapsedColumns, setCollapsedColumns] = useState<Set<TaskStatus>>(new Set());
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
 
   // Subtask filtering
   const { topLevelTasks, subtasksByParent } = useMemo(() => {
-    const byParent = new Map<string, Task[]>();
+    const byParent = new Map<number, Task[]>();
     const topLevel = tasks.filter((t) => {
       if (t.parentTaskId) {
         const existing = byParent.get(t.parentTaskId) || [];
@@ -151,10 +150,11 @@ export const Board: React.FC<Props> = ({
     setActiveTask(null);
     const { active, over } = event;
     if (!over) return;
-    const taskId = active.id as string;
-    const overId = over.id as string;
-    const isValidColumn = (MAIN_COLUMNS as string[]).includes(overId) || (EXTRA_COLUMNS as string[]).includes(overId);
-    const targetColumn = isValidColumn ? (overId as TaskStatus) : tasks.find((t) => t.id === overId)?.status;
+    const taskId = active.id as number;
+    const overId = over.id;
+    const overIdStr = String(overId);
+    const isValidColumn = (MAIN_COLUMNS as string[]).includes(overIdStr) || (EXTRA_COLUMNS as string[]).includes(overIdStr);
+    const targetColumn = isValidColumn ? (overIdStr as TaskStatus) : tasks.find((t) => t.id === overId)?.status;
     if (!targetColumn) return;
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === targetColumn) return;
@@ -164,9 +164,15 @@ export const Board: React.FC<Props> = ({
     });
   };
 
-  const handleCreateOrEdit = async (data: { title: string; description: string; spec: string; riskLevel: RiskLevel; priority: number }) => {
+  const handleCreateOrEdit = async (data: { title: string; description: string; spec: string; riskLevel: RiskLevel; priority: number; existingTaskId?: number }) => {
     if (editingTask) {
+      // Editing via the edit button — just update
       await updateTask(editingTask.id, data);
+    } else if (data.existingTaskId) {
+      // Task was already created during chat — update it and move to ready
+      const { existingTaskId, ...updateData } = data;
+      await updateTask(existingTaskId, updateData);
+      await moveTask(existingTaskId, 'ready');
     } else {
       await createTask(data);
     }
@@ -174,7 +180,7 @@ export const Board: React.FC<Props> = ({
     onCloseNewTask?.();
   };
 
-  const toggleSelect = (taskId: string, event: React.MouseEvent) => {
+  const toggleSelect = (taskId: number, event: React.MouseEvent) => {
     event.stopPropagation();
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -259,7 +265,7 @@ export const Board: React.FC<Props> = ({
         {/* Main columns */}
         <div className="flex gap-2.5 overflow-x-auto pb-3">
           {MAIN_COLUMNS.map((status) => (
-            <Column key={status} status={status} tasks={tasksByStatus(status)} onTaskClick={(t) => setSelectedTaskId(t.id)}
+            <Column key={status} status={status} tasks={tasksByStatus(status)} onTaskClick={(t) => navigate(`/tasks/${t.id}`)}
               subtasksByParent={subtasksByParent}
               selectedIds={selectedIds} onToggleSelect={toggleSelect}
               collapsed={collapsedColumns.has(status)} onToggleCollapse={() => toggleColumn(status)} />
@@ -272,7 +278,7 @@ export const Board: React.FC<Props> = ({
             const colTasks = tasksByStatus(status);
             if (colTasks.length === 0) return null;
             return (
-              <Column key={status} status={status} tasks={colTasks} onTaskClick={(t) => setSelectedTaskId(t.id)}
+              <Column key={status} status={status} tasks={colTasks} onTaskClick={(t) => navigate(`/tasks/${t.id}`)}
                 subtasksByParent={subtasksByParent}
                 selectedIds={selectedIds} onToggleSelect={toggleSelect}
                 collapsed={collapsedColumns.has(status)} onToggleCollapse={() => toggleColumn(status)} />
@@ -288,13 +294,6 @@ export const Board: React.FC<Props> = ({
           </div>
         ) : null}
       </DragOverlay>
-
-      {selectedTask && (
-        <TaskDetail task={selectedTask} onClose={() => setSelectedTaskId(null)} onUpdate={updateTask}
-          onAnswer={answerTask} onRetry={retryTask} onDelete={deleteTask} onMove={moveTask}
-          onReviewPlan={reviewPlan}
-          onEdit={(t) => { setSelectedTaskId(null); setEditingTask(t); }} />
-      )}
 
       {(editingTask !== undefined || showNewTask) && (
         <TaskForm

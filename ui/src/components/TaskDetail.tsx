@@ -12,16 +12,16 @@ import type { Task, TaskStatus, Run, SpecDocument, PlanReviewAction } from '../t
 interface Props {
   task: Task;
   onClose: () => void;
-  onUpdate: (id: string, data: Partial<Task>) => Promise<Task>;
-  onAnswer: (id: string, answers: string) => Promise<Task>;
-  onRetry: (id: string) => Promise<Task>;
-  onDelete: (id: string) => Promise<void>;
+  onUpdate: (id: number, data: Partial<Task>) => Promise<Task>;
+  onAnswer: (id: number, answers: string) => Promise<Task>;
+  onRetry: (id: number) => Promise<Task>;
+  onDelete: (id: number) => Promise<void>;
   onEdit: (task: Task) => void;
-  onMove: (id: string, column: TaskStatus) => Promise<Task>;
-  onReviewPlan: (id: string, action: PlanReviewAction) => Promise<Task>;
+  onMove: (id: number, column: TaskStatus) => Promise<Task>;
+  onReviewPlan: (id: number, action: PlanReviewAction) => Promise<Task>;
 }
 
-interface EventRecord { id: string; taskId: string; runId: string | null; type: string; payload: string; createdAt: string }
+interface EventRecord { id: string; taskId: number; runId: string | null; type: string; payload: string; createdAt: string }
 
 const PIPELINE_STAGES = ['spec_review', 'planning', 'needs_plan_review', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'] as const;
 const STAGE_LABELS: Record<string, string> = {

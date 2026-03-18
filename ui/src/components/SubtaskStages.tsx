@@ -24,8 +24,8 @@ const subtaskStatusIcon: Record<string, string> = {
 
 interface Props {
   stages: StageLog[];
-  taskId: string;
-  subtasks: Array<{ id: string; title: string; status: string }>;
+  taskId: number;
+  subtasks: Array<{ id: number; title: string; status: string }>;
   liveChunks: Map<string, string[]>;
 }
 
@@ -33,7 +33,7 @@ export const SubtaskStages: React.FC<Props> = ({ stages, taskId, subtasks, liveC
   const [expandedStageId, setExpandedStageId] = useState<string | null>(null);
 
   // Group stages by subtaskId
-  const stagesBySubtask = new Map<string, StageLog[]>();
+  const stagesBySubtask = new Map<number, StageLog[]>();
   for (const stage of stages) {
     if (!stage.subtaskId) continue;
     const existing = stagesBySubtask.get(stage.subtaskId) || [];
@@ -58,7 +58,7 @@ export const SubtaskStages: React.FC<Props> = ({ stages, taskId, subtasks, liveC
         const isRunning = subtaskStages.some(s => s.status === 'running');
         const isDone = subtaskInfo?.status === 'done';
         const isFailed = subtaskInfo?.status === 'failed';
-        const displayTitle = subtaskInfo?.title || `Subtask ${subtaskId.slice(0, 8)}`;
+        const displayTitle = subtaskInfo?.title || `Subtask #${subtaskId}`;
         const statusClass = isFailed ? subtaskStatusIcon.failed : isDone ? subtaskStatusIcon.done : isRunning ? subtaskStatusIcon.running : 'text-text-tertiary';
 
         return (

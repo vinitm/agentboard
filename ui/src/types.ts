@@ -32,10 +32,10 @@ export type StageLogStatus = 'running' | 'completed' | 'failed' | 'skipped';
 
 export interface StageLog {
   id: string;
-  taskId: string;
+  taskId: number;
   runId: string | null;
   stage: StageLogStage;
-  subtaskId: string | null;
+  subtaskId: number | null;
   attempt: number;
   status: StageLogStatus;
   summary: string | null;
@@ -46,9 +46,9 @@ export interface StageLog {
 }
 
 export interface StageTransitionEvent {
-  taskId: string;
+  taskId: number;
   stage: StageLogStage;
-  subtaskId?: string;
+  subtaskId?: number;
   status: StageLogStatus;
   summary?: string;
   durationMs?: number;
@@ -68,9 +68,9 @@ export interface Project {
 }
 
 export interface Task {
-  id: string;
+  id: number;
   projectId: string;
-  parentTaskId: string | null;
+  parentTaskId: number | null;
   title: string;
   description: string;
   status: TaskStatus;
@@ -88,7 +88,7 @@ export interface Task {
 
 export interface Run {
   id: string;
-  taskId: string;
+  taskId: number;
   stage: Stage;
   status: RunStatus;
   attempt: number;
@@ -163,7 +163,7 @@ export type SSEEvent = SSEChunkEvent | SSEDoneEvent;
 // Persisted chat message from the server
 export interface PersistedChatMessage {
   id: string;
-  taskId: string;
+  taskId: number;
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;

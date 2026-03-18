@@ -29,10 +29,10 @@ export const api = {
   del(path: string): Promise<void> {
     return request<void>('DELETE', path);
   },
-  getStages(taskId: string) {
+  getStages(taskId: number) {
     return request<{ stages: StageLog[] }>('GET', `/api/tasks/${taskId}/stages`);
   },
-  getStageLogContent(taskId: string, stageLogId: string): Promise<string> {
+  getStageLogContent(taskId: number, stageLogId: string): Promise<string> {
     return fetch(`/api/tasks/${taskId}/stages/${stageLogId}/logs`)
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch log content');

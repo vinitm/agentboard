@@ -6,7 +6,7 @@ import type { Task } from '../types';
 
 interface FeedEvent {
   id: string;
-  taskId: string;
+  taskId: number;
   runId: string | null;
   type: string;
   payload: string;

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 
 interface Props {
-  taskId: string;
+  taskId: number;
   blockedReason: string;
-  onAnswer: (id: string, answers: string) => Promise<unknown>;
+  onAnswer: (id: number, answers: string) => Promise<unknown>;
 }
 
 export const BlockedPanel: React.FC<Props> = ({ taskId, blockedReason, onAnswer }) => {

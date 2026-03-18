@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { Task, TaskStatus } from '../types';
 
-interface EventRecord { id: string; taskId: string; type: string; payload: string; createdAt: string }
+interface EventRecord { id: string; taskId: number; type: string; payload: string; createdAt: string }
 
 interface Props {
   task: Task;
-  onMove: (id: string, column: TaskStatus) => Promise<unknown>;
+  onMove: (id: number, column: TaskStatus) => Promise<unknown>;
 }
 
 export const PRPanel: React.FC<Props> = ({ task, onMove }) => {

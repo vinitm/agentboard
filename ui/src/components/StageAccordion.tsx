@@ -6,17 +6,17 @@ import { SubtaskStages } from './SubtaskStages';
 import type { StageLog, StageTransitionEvent } from '../types';
 
 interface LogChunkEvent {
-  taskId: string;
+  taskId: number;
   runId: string;
   chunk: string;
   timestamp: string;
   stage?: string;
-  subtaskId?: string;
+  subtaskId?: number;
 }
 
 interface Props {
-  taskId: string;
-  subtasks?: Array<{ id: string; title: string; status: string }>;
+  taskId: number;
+  subtasks?: Array<{ id: number; title: string; status: string }>;
 }
 
 export const StageAccordion: React.FC<Props> = ({ taskId, subtasks = [] }) => {
