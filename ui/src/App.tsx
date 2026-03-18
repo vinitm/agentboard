@@ -5,6 +5,7 @@ import { Settings } from './components/Settings';
 import { TaskPage } from './components/TaskPage';
 import { ActivityFeed } from './components/ActivityFeed';
 import { Learnings } from './components/Learnings';
+import { CostDashboard } from './components/CostDashboard';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { emptyFilters } from './components/TopBar';
@@ -66,6 +67,7 @@ const AppContent: React.FC = () => {
     if (location.pathname === '/settings') return 'Settings';
     if (location.pathname === '/activity') return 'Activity';
     if (location.pathname === '/learnings') return 'Learnings';
+    if (location.pathname === '/costs') return 'Costs';
     if (location.pathname.startsWith('/tasks/')) return 'Task Details';
     return 'Board';
   };
@@ -141,6 +143,7 @@ const AppContent: React.FC = () => {
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/activity" element={<ActivityFeed projectId={projectId} tasks={tasks} />} />
                 <Route path="/learnings" element={<Learnings projectId={projectId} />} />
+                <Route path="/costs" element={<CostDashboard projectId={projectId} />} />
               </Routes>
             </div>
           </>

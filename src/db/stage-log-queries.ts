@@ -83,6 +83,16 @@ export function listStageLogsByTask(
   return rows.map(rowToStageLog);
 }
 
+export function listStageLogsBySubtask(
+  db: Database.Database,
+  subtaskId: number
+): StageLog[] {
+  const rows = db
+    .prepare('SELECT * FROM stage_logs WHERE subtask_id = ? ORDER BY started_at ASC')
+    .all(subtaskId) as Record<string, unknown>[];
+  return rows.map(rowToStageLog);
+}
+
 // ── Update ────────────────────────────────────────────────────────────
 
 export interface UpdateStageLogData {
@@ -132,4 +142,127 @@ export function markStageLogFailed(db: Database.Database, id: string): void {
   db.prepare(
     `UPDATE stage_logs SET status = 'failed', completed_at = ? WHERE id = ?`
   ).run(now, id);
+}
+
+// ── Cost aggregation queries ─────────────────────────────────────────
+
+export interface TaskCostRollup {
+  taskId: number;
+  totalTokens: number;
+  totalDurationMs: number;
+  stageCount: number;
+  stages: Array<{
+    stage: string;
+    tokens: number;
+    durationMs: number;
+    attempts: number;
+  }>;
+}
+
+export function getTaskCostRollup(
+  db: Database.Database,
+  taskId: number
+): TaskCostRollup {
+  const rows = db.prepare(
+    `SELECT stage,
+            COALESCE(SUM(tokens_used), 0) AS tokens,
+            COALESCE(SUM(duration_ms), 0) AS duration_ms,
+            COUNT(*) AS attempts
+     FROM stage_logs
+     WHERE task_id = ?
+     GROUP BY stage
+     ORDER BY MIN(started_at) ASC`
+  ).all(taskId) as Array<{ stage: string; tokens: number; duration_ms: number; attempts: number }>;
+
+  const totalTokens = rows.reduce((sum, r) => sum + r.tokens, 0);
+  const totalDurationMs = rows.reduce((sum, r) => sum + r.duration_ms, 0);
+
+  return {
+    taskId,
+    totalTokens,
+    totalDurationMs,
+    stageCount: rows.length,
+    stages: rows.map(r => ({
+      stage: r.stage,
+      tokens: r.tokens,
+      durationMs: r.duration_ms,
+      attempts: r.attempts,
+    })),
+  };
+}
+
+export interface StageCostBreakdown {
+  stage: string;
+  totalTokens: number;
+  totalDurationMs: number;
+  taskCount: number;
+  avgTokensPerTask: number;
+  avgDurationPerTask: number;
+}
+
+export function getStageCostBreakdown(
+  db: Database.Database,
+  projectId: string
+): StageCostBreakdown[] {
+  const rows = db.prepare(
+    `SELECT stage,
+            COALESCE(SUM(tokens_used), 0) AS total_tokens,
+            COALESCE(SUM(duration_ms), 0) AS total_duration_ms,
+            COUNT(DISTINCT task_id) AS task_count
+     FROM stage_logs
+     WHERE project_id = ?
+     GROUP BY stage
+     ORDER BY total_tokens DESC`
+  ).all(projectId) as Array<{
+    stage: string;
+    total_tokens: number;
+    total_duration_ms: number;
+    task_count: number;
+  }>;
+
+  return rows.map(r => ({
+    stage: r.stage,
+    totalTokens: r.total_tokens,
+    totalDurationMs: r.total_duration_ms,
+    taskCount: r.task_count,
+    avgTokensPerTask: r.task_count > 0 ? Math.round(r.total_tokens / r.task_count) : 0,
+    avgDurationPerTask: r.task_count > 0 ? Math.round(r.total_duration_ms / r.task_count) : 0,
+  }));
+}
+
+export interface CostTrendPoint {
+  date: string;
+  totalTokens: number;
+  totalDurationMs: number;
+  taskCount: number;
+}
+
+export function getCostTrend(
+  db: Database.Database,
+  projectId: string,
+  days: number = 30
+): CostTrendPoint[] {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const rows = db.prepare(
+    `SELECT DATE(started_at) AS date,
+            COALESCE(SUM(tokens_used), 0) AS total_tokens,
+            COALESCE(SUM(duration_ms), 0) AS total_duration_ms,
+            COUNT(DISTINCT task_id) AS task_count
+     FROM stage_logs
+     WHERE project_id = ? AND started_at >= ?
+     GROUP BY DATE(started_at)
+     ORDER BY date ASC`
+  ).all(projectId, since) as Array<{
+    date: string;
+    total_tokens: number;
+    total_duration_ms: number;
+    task_count: number;
+  }>;
+
+  return rows.map(r => ({
+    date: r.date,
+    totalTokens: r.total_tokens,
+    totalDurationMs: r.total_duration_ms,
+    taskCount: r.task_count,
+  }));
 }
