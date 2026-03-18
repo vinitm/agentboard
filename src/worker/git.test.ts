@@ -36,6 +36,31 @@ describe('createWorktree', () => {
     expect(fs.existsSync(worktreePath)).toBe(true);
     expect(worktreePath).toBe(path.join(repoPath, '.agentboard', 'worktrees', '1'));
   });
+
+  it('recovers when branch exists but worktree was removed', async () => {
+    // First call creates the worktree and branch
+    const first = await createWorktree(repoPath, 5, 'retry-test', 'master', 'agentboard/');
+    expect(fs.existsSync(first.worktreePath)).toBe(true);
+
+    // Remove worktree but leave the branch (simulates a failed run that left the branch behind)
+    await cleanupWorktree(repoPath, first.worktreePath);
+
+    // Second call should succeed by cleaning up stale branch and recreating
+    const second = await createWorktree(repoPath, 5, 'retry-test', 'master', 'agentboard/');
+    expect(second.branch).toBe('agentboard/5-retry-test');
+    expect(fs.existsSync(second.worktreePath)).toBe(true);
+  });
+
+  it('recovers when both branch and worktree already exist', async () => {
+    // First call creates the worktree and branch
+    const first = await createWorktree(repoPath, 6, 'full-retry', 'master', 'agentboard/');
+    expect(fs.existsSync(first.worktreePath)).toBe(true);
+
+    // Second call with same task ID — both branch and worktree still exist
+    const second = await createWorktree(repoPath, 6, 'full-retry', 'master', 'agentboard/');
+    expect(second.branch).toBe('agentboard/6-full-retry');
+    expect(fs.existsSync(second.worktreePath)).toBe(true);
+  });
 });
 
 describe('cleanupWorktree', () => {

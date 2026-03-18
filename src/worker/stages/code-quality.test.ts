@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'node:fs';
 import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig, CodeQualityResult } from '../../types/index.js';
 import { createTestDb, createTestConfig } from '../../test/helpers.js';
@@ -7,6 +8,15 @@ import { createTestDb, createTestConfig } from '../../test/helpers.js';
 vi.mock('../executor.js', () => ({
   executeClaudeCode: vi.fn(),
 }));
+
+// Mock fs.readFileSync for the prompt template (path differs between src/ and dist/)
+const originalReadFileSync = fs.readFileSync;
+vi.spyOn(fs, 'readFileSync').mockImplementation((filePath, options) => {
+  if (typeof filePath === 'string' && filePath.includes('prompts/code-quality.md')) {
+    return 'Review code quality:\n{diff}\n{taskTitle}\n{taskDescription}';
+  }
+  return originalReadFileSync(filePath, options as BufferEncoding);
+});
 
 // Mock execFile for git diff commands
 vi.mock('node:child_process', () => ({

@@ -359,12 +359,38 @@ describe('Subtask autonomy guardrails', () => {
     expect(res.body.error).toMatch(/autonomous/i);
   });
 
-  it('blocks retry on subtask', async () => {
+  it('allows retry on failed subtask', async () => {
     queries.updateTask(db, subtaskId, { status: 'failed' });
     const res = await request(app)
       .post(`/api/tasks/${subtaskId}/retry`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+    expect(res.body.blockedReason).toBeNull();
+  });
+
+  it('allows retry on blocked subtask', async () => {
+    queries.updateTask(db, subtaskId, { status: 'blocked', blockedReason: 'some error' });
+    const res = await request(app)
+      .post(`/api/tasks/${subtaskId}/retry`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+    expect(res.body.blockedReason).toBeNull();
+  });
+
+  it('allows skip on blocked subtask', async () => {
+    queries.updateTask(db, subtaskId, { status: 'blocked', blockedReason: 'some error' });
+    const res = await request(app)
+      .post(`/api/tasks/${subtaskId}/skip`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('cancelled');
+  });
+
+  it('blocks skip on non-subtask', async () => {
+    queries.updateTask(db, parentId, { status: 'failed' });
+    const res = await request(app)
+      .post(`/api/tasks/${parentId}/skip`);
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/parent/i);
+    expect(res.body.error).toMatch(/subtask/i);
   });
 
   it('handleSubtaskTerminal promotes next sibling when subtask is done', async () => {

@@ -6,6 +6,7 @@ import type { Task, AgentboardConfig } from '../../types/index.js';
 import { selectModel } from '../model-selector.js';
 import { buildTaskPacket } from '../context-builder.js';
 import { executeClaudeCode } from '../executor.js';
+import { getToolsForStage } from '../stage-tools.js';
 import { createRun, updateRun, createArtifact } from '../../db/queries.js';
 
 export interface PlanningResult {
@@ -59,6 +60,7 @@ async function runPlanReview(
     prompt,
     worktreePath,
     model,
+    tools: getToolsForStage('planning'),
     onOutput,
   });
 
@@ -158,6 +160,7 @@ export async function runPlanning(
         prompt,
         worktreePath,
         model,
+        tools: getToolsForStage('planning'),
         onOutput,
       });
 

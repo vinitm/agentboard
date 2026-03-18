@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import type { Task } from '../../types/index.js';
 import { listRunsByTask, listArtifactsByRun } from '../../db/queries.js';
 import { executeClaudeCode } from '../executor.js';
+import { getToolsForStage } from '../stage-tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -269,6 +270,7 @@ export async function extractLearnings(
       worktreePath,
       model,
       timeout: 120_000,
+      tools: getToolsForStage('learner'),
       onOutput,
     });
 

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ruflo": {
+      "command": "node",
+      "args": [
+        "scripts/ruflo-mcp-proxy.mjs"
+      ]
+    }
+  }
+}

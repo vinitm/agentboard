@@ -20,6 +20,7 @@ function getSubtaskDisplayStatus(task: Task): string {
   switch (task.status) {
     case 'done': return 'done';
     case 'failed': return 'failed';
+    case 'blocked': return 'blocked';
     case 'cancelled': return 'cancelled';
     case 'backlog': return 'queued';
     default: return task.claimedBy ? 'running' : 'next';
@@ -176,9 +177,13 @@ export const TaskPage: React.FC = () => {
               {MOVABLE_COLUMNS.map((col) => <option key={col} value={col}>{col}</option>)}
             </select>
           )}
-          {task.status === 'failed' && !isSubtask && (
+          {(task.status === 'failed' || task.status === 'blocked') && (
             <button onClick={async () => { await api.post(`/api/tasks/${task.id}/retry`); const t = await api.get<Task>(`/api/tasks/${task.id}`); setTask(t); }}
               className="px-3 py-1 rounded-lg text-xs font-semibold bg-accent-amber text-white hover:bg-amber-600 transition-colors">Retry</button>
+          )}
+          {isSubtask && (task.status === 'blocked' || task.status === 'failed') && (
+            <button onClick={async () => { if (confirm('Skip this subtask? It will be cancelled and the next subtask will be promoted.')) { const updated = await api.post<Task>(`/api/tasks/${task.id}/skip`); setTask(updated); } }}
+              className="px-3 py-1 rounded-lg text-xs font-semibold border border-text-tertiary text-text-secondary hover:bg-bg-tertiary transition-colors">Skip</button>
           )}
           <button onClick={async () => { if (confirm('Delete this task?')) { await api.del(`/api/tasks/${task.id}`); navigate('/'); } }}
             className="px-3 py-1 rounded-lg text-xs font-semibold border border-accent-red text-accent-red hover:bg-accent-red hover:text-white transition-colors">Delete</button>
@@ -212,13 +217,27 @@ export const TaskPage: React.FC = () => {
           }} />
         </div>
       )}
-      {task.status === 'blocked' && task.blockedReason && (
+      {task.status === 'blocked' && task.blockedReason && !isSubtask && (
         <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
           <BlockedPanel taskId={task.id} blockedReason={task.blockedReason} onAnswer={async (taskIdParam: number, answers: string) => {
             const answered = await api.post<Task>(`/api/tasks/${taskIdParam}/answer`, { answers });
             setTask(answered);
             return answered;
           }} />
+        </div>
+      )}
+      {task.status === 'blocked' && task.blockedReason && isSubtask && (
+        <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
+          <div className="rounded-lg border border-accent-amber/30 bg-accent-amber/5 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <svg className="w-4 h-4 text-accent-amber flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+              </svg>
+              <span className="text-sm font-semibold text-accent-amber">Subtask Blocked</span>
+            </div>
+            <p className="text-sm text-text-secondary whitespace-pre-wrap">{task.blockedReason}</p>
+            <p className="text-xs text-text-tertiary mt-2">Use Retry to re-run this subtask, or Skip to cancel it and continue with the next one.</p>
+          </div>
         </div>
       )}
       {task.status === 'needs_human_review' && (
@@ -250,6 +269,7 @@ export const TaskPage: React.FC = () => {
         {tab === 'stages' && (
           <StageAccordion
             taskId={task.id}
+            parentTaskId={isSubtask ? task.parentTaskId! : undefined}
             subtasks={subtasks.map(s => ({ id: s.id, title: s.title, status: s.status }))}
           />
         )}

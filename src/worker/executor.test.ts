@@ -260,4 +260,77 @@ describe('executeClaudeCode', () => {
       expect.objectContaining({ cwd: '/tmp/my-worktree' })
     );
   });
+
+  it('includes both --permission-mode and --tools when tools are provided', async () => {
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+
+    const promise = executeClaudeCode({
+      prompt: 'hello',
+      worktreePath: '/tmp/my-worktree',
+      model: 'claude-opus-4-5',
+      tools: ['Read', 'Glob', 'Grep'],
+    });
+
+    setTimeout(() => {
+      child.emit('close', 0);
+    }, 0);
+
+    await promise;
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'claude',
+      ['--print', '--model', 'claude-opus-4-5', '--permission-mode', 'acceptEdits', '--tools', 'Read,Glob,Grep'],
+      expect.objectContaining({ cwd: '/tmp/my-worktree' })
+    );
+  });
+
+  it('omits --tools when tools array is empty', async () => {
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+
+    const promise = executeClaudeCode({
+      prompt: 'hello',
+      worktreePath: '/tmp/my-worktree',
+      model: 'claude-opus-4-5',
+      tools: [],
+    });
+
+    setTimeout(() => {
+      child.emit('close', 0);
+    }, 0);
+
+    await promise;
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'claude',
+      ['--print', '--model', 'claude-opus-4-5', '--permission-mode', 'acceptEdits'],
+      expect.objectContaining({ cwd: '/tmp/my-worktree' })
+    );
+  });
+
+  it('uses custom permissionMode when provided', async () => {
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+
+    const promise = executeClaudeCode({
+      prompt: 'hello',
+      worktreePath: '/tmp/my-worktree',
+      model: 'claude-opus-4-5',
+      tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+      permissionMode: 'bypassPermissions',
+    });
+
+    setTimeout(() => {
+      child.emit('close', 0);
+    }, 0);
+
+    await promise;
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'claude',
+      ['--print', '--model', 'claude-opus-4-5', '--permission-mode', 'bypassPermissions', '--tools', 'Read,Write,Edit,Bash,Glob,Grep'],
+      expect.objectContaining({ cwd: '/tmp/my-worktree' })
+    );
+  });
 });

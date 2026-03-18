@@ -6,6 +6,7 @@ import type { Task, AgentboardConfig } from '../types/index.js';
 import type { CheckResult } from './stages/checks.js';
 import { runChecks } from './stages/checks.js';
 import { executeClaudeCode } from './executor.js';
+import { getToolsForStage, getPermissionModeForStage } from './stage-tools.js';
 import { commitChanges } from './git.js';
 
 export interface InlineFixOptions {
@@ -54,6 +55,8 @@ export async function runInlineFix(options: InlineFixOptions): Promise<InlineFix
     prompt,
     worktreePath,
     model,
+    tools: getToolsForStage('inline_fix'),
+    permissionMode: getPermissionModeForStage('inline_fix'),
     onOutput,
   });
 

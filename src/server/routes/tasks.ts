@@ -658,7 +658,9 @@ Return ONLY valid JSON with no markdown fences:
     res.json(updated);
   });
 
-  // POST /api/tasks/:id/retry — retry failed task (deletes subtasks, cleans up worktrees, starts fresh)
+  // POST /api/tasks/:id/retry — retry a failed/blocked task
+  // For parent tasks: deletes subtasks, cleans up worktrees, starts fresh
+  // For subtasks: resets to 'ready' to re-enter the per-subtask pipeline (reuses parent worktree)
   router.post('/:id/retry', async (req, res) => {
     let id: number;
     try { id = parseTaskId(req.params.id); }
@@ -669,16 +671,30 @@ Return ONLY valid JSON with no markdown fences:
       res.status(404).json({ error: 'Task not found' });
       return;
     }
-    if (task.parentTaskId) {
-      res.status(400).json({ error: 'Cannot retry subtasks directly — retry the parent task instead' });
-      return;
-    }
-    if (task.status !== 'failed') {
-      res.status(400).json({ error: 'Task is not in failed state' });
+
+    if (task.status !== 'failed' && task.status !== 'blocked') {
+      res.status(400).json({ error: 'Task must be in failed or blocked state to retry' });
       return;
     }
 
-    // Clean up subtasks first (worktrees, git refs, then delete)
+    if (task.parentTaskId) {
+      // Subtask retry: reset to ready so the worker picks it up again
+      queries.unclaimTask(db, id);
+      const updated = queries.updateTask(db, id, {
+        status: 'ready',
+        blockedReason: null,
+      });
+      queries.createEvent(db, {
+        taskId: id,
+        type: 'status_changed',
+        payload: JSON.stringify({ from: task.status, to: 'ready', reason: 'subtask_retried' }),
+      });
+      broadcast(io, 'task:updated', updated);
+      res.json(updated);
+      return;
+    }
+
+    // Parent task retry: clean up subtasks and start fresh
     const subtasks = queries.getSubtasksByParentId(db, task.id);
     for (const subtask of subtasks) {
       await cleanupTaskWorktree(db, subtask.id);
@@ -699,8 +715,47 @@ Return ONLY valid JSON with no markdown fences:
 
     const updated = queries.updateTask(db, id, {
       status: 'ready',
+      blockedReason: null,
     });
     broadcast(io, 'task:updated', updated);
+    res.json(updated);
+  });
+
+  // POST /api/tasks/:id/skip — skip a blocked/failed subtask (cancel it, promote next sibling)
+  router.post('/:id/skip', (req, res) => {
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (!task.parentTaskId) {
+      res.status(400).json({ error: 'Only subtasks can be skipped' });
+      return;
+    }
+    if (task.status !== 'blocked' && task.status !== 'failed') {
+      res.status(400).json({ error: 'Can only skip blocked or failed subtasks' });
+      return;
+    }
+
+    queries.unclaimTask(db, id);
+    const updated = queries.updateTask(db, id, {
+      status: 'cancelled',
+      blockedReason: null,
+    });
+    queries.createEvent(db, {
+      taskId: id,
+      type: 'status_changed',
+      payload: JSON.stringify({ from: task.status, to: 'cancelled', reason: 'subtask_skipped' }),
+    });
+    broadcast(io, 'task:updated', updated);
+
+    // Promote next sibling or finalize parent
+    handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'cancelled' });
+
     res.json(updated);
   });
 

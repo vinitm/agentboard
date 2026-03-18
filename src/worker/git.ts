@@ -30,10 +30,28 @@ export async function createWorktree(
   const branch = `${branchPrefix}${taskId}-${slug}`;
   const worktreePath = path.join(repoPath, '.agentboard', 'worktrees', String(taskId));
 
-  await git(
-    ['worktree', 'add', '-b', branch, worktreePath, baseBranch],
-    repoPath
-  );
+  try {
+    await git(
+      ['worktree', 'add', '-b', branch, worktreePath, baseBranch],
+      repoPath
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '';
+    if (msg.includes('already exists')) {
+      // Branch or worktree exists from a previous attempt — clean up stale state
+      await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoPath }).catch(() => {});
+      await execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath }).catch(() => {});
+      // Delete the stale branch so we get a fresh one from baseBranch
+      await execFileAsync('git', ['branch', '-D', branch], { cwd: repoPath }).catch(() => {});
+      // Retry the original command with a fresh branch
+      await git(
+        ['worktree', 'add', '-b', branch, worktreePath, baseBranch],
+        repoPath
+      );
+    } else {
+      throw err;
+    }
+  }
 
   return { worktreePath, branch };
 }

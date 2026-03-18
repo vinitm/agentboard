@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig, SpecReviewResult, SpecDocument } from '../../types/index.js';
 import { selectModel } from '../model-selector.js';
 import { executeClaudeCode } from '../executor.js';
+import { getToolsForStage } from '../stage-tools.js';
 import { createRun, updateRun } from '../../db/queries.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -197,6 +198,7 @@ export async function runSpecReview(
       prompt,
       worktreePath: '.',
       model,
+      tools: getToolsForStage('spec_review'),
       onOutput,
     });
 

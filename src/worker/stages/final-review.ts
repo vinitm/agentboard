@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig, FinalReviewResult } from '../../types/index.js';
 import { executeClaudeCode } from '../executor.js';
+import { getToolsForStage } from '../stage-tools.js';
 import { createRun, updateRun } from '../../db/queries.js';
 
 const execFileAsync = promisify(execFile);
@@ -43,7 +44,7 @@ function extractAcceptanceCriteria(task: Task): string[] {
  * Load the final-review prompt template from disk.
  */
 function loadPromptTemplate(): string {
-  const promptPath = path.resolve(__dirname, '../../../prompts/final-review.md');
+  const promptPath = path.resolve(__dirname, '../../../../prompts/final-review.md');
   try {
     return fs.readFileSync(promptPath, 'utf-8');
   } catch {
@@ -211,6 +212,7 @@ export async function runFinalReview(
       prompt,
       worktreePath,
       model,
+      tools: getToolsForStage('final_review'),
       onOutput,
     });
 

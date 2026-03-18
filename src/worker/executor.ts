@@ -5,6 +5,10 @@ export interface ExecuteOptions {
   worktreePath: string;
   model: string;
   timeout?: number;
+  /** Explicit tool list (e.g. ['Read','Glob','Grep']). When set, appends --tools to restrict available tools. */
+  tools?: string[];
+  /** Permission mode for the session. Defaults to 'acceptEdits'. */
+  permissionMode?: 'acceptEdits' | 'bypassPermissions';
   /** Optional callback invoked with each chunk of stdout/stderr as it arrives. */
   onOutput?: (chunk: string) => void;
 }
@@ -23,11 +27,15 @@ export interface ExecuteResult {
  * piping the prompt to stdin.
  */
 export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResult> {
-  const { prompt, worktreePath, model, timeout = 300_000, onOutput } = options;
+  const { prompt, worktreePath, model, timeout = 300_000, tools, permissionMode = 'acceptEdits', onOutput } = options;
   const startTime = Date.now();
 
   return new Promise<ExecuteResult>((resolve) => {
-    const args = ['--print', '--model', model, '--permission-mode', 'acceptEdits'];
+    const args = ['--print', '--model', model, '--permission-mode', permissionMode];
+
+    if (tools && tools.length > 0) {
+      args.push('--tools', tools.join(','));
+    }
 
     const child = spawn('claude', args, {
       cwd: worktreePath,
@@ -37,8 +45,10 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
 
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
 
     const timer = setTimeout(() => {
+      timedOut = true;
       child.kill();
     }, timeout);
 
@@ -71,8 +81,11 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
     child.on('close', (code: number | null) => {
       clearTimeout(timer);
       const duration = Date.now() - startTime;
-      const output = stdout + (stderr ? `\n[stderr]\n${stderr}` : '');
-      const exitCode = code ?? 1;
+      const timeoutSuffix = timedOut
+        ? `\n[timeout] Process killed after ${Math.round(timeout / 1000)}s timeout`
+        : '';
+      const output = stdout + (stderr ? `\n[stderr]\n${stderr}` : '') + timeoutSuffix;
+      const exitCode = timedOut ? 124 : (code ?? 1);
 
       // Try to parse token usage from output
       const tokensUsed = parseTokenUsage(output);

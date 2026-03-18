@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig, CodeQualityResult } from '../../types/index.js';
 import { executeClaudeCode } from '../executor.js';
+import { getToolsForStage } from '../stage-tools.js';
 import { createRun, updateRun, createArtifact } from '../../db/queries.js';
 
 const execFileAsync = promisify(execFile);
@@ -40,7 +41,7 @@ function isValidIssue(item: unknown): item is RawIssue {
 }
 
 function loadPromptTemplate(): string {
-  const promptPath = path.resolve(__dirname, '../../../prompts', 'code-quality.md');
+  const promptPath = path.resolve(__dirname, '../../../../prompts', 'code-quality.md');
   try {
     return fs.readFileSync(promptPath, 'utf-8');
   } catch {
@@ -172,6 +173,7 @@ export async function runCodeQuality(
       prompt,
       worktreePath,
       model,
+      tools: getToolsForStage('code_quality'),
       onOutput,
     });
 

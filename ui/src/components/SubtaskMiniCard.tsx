@@ -13,6 +13,8 @@ function getSubtaskDisplay(task: Task): { color: string; borderColor: string; la
       return { color: 'bg-accent-green', borderColor: 'border-l-accent-green', label: 'Done' };
     case 'failed':
       return { color: 'bg-accent-red', borderColor: 'border-l-accent-red', label: 'Failed' };
+    case 'blocked':
+      return { color: 'bg-accent-amber', borderColor: 'border-l-accent-amber', label: 'Blocked' };
     case 'cancelled':
       return { color: 'bg-text-tertiary', borderColor: 'border-l-transparent', label: 'Cancelled' };
     case 'backlog':
@@ -49,6 +51,11 @@ export const SubtaskMiniCard: React.FC<Props> = ({ task }) => {
       {task.status === 'failed' && (
         <svg className="w-3 h-3 text-accent-red flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+        </svg>
+      )}
+      {task.status === 'blocked' && (
+        <svg className="w-3 h-3 text-accent-amber flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
         </svg>
       )}
       {task.status === 'done' && (

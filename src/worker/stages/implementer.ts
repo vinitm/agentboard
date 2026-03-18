@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig, ImplementationResult, ImplementerStatus } from '../../types/index.js';
 import { buildTaskPacket } from '../context-builder.js';
 import { executeClaudeCode } from '../executor.js';
+import { getToolsForStage, getPermissionModeForStage } from '../stage-tools.js';
 import { createRun, updateRun } from '../../db/queries.js';
 
 // Re-export for consumers that import from this module
@@ -120,6 +121,9 @@ export async function runImplementation(
       prompt,
       worktreePath,
       model,
+      timeout: 600_000, // 10 minutes — implementation tasks need more time than other stages
+      tools: getToolsForStage('implementing'),
+      permissionMode: getPermissionModeForStage('implementing'),
       onOutput,
     });
 
@@ -155,10 +159,14 @@ export async function runImplementation(
         finishedAt: new Date().toISOString(),
       });
 
+      const blockerReason = result.exitCode === 124
+        ? 'Claude process timed out — the task may be too large for a single subtask, or the agent is stuck. Consider breaking it down further or retrying.'
+        : `Process exited with code ${result.exitCode}`;
+
       return {
         status: 'BLOCKED',
         output: result.output,
-        blockerReason: `Process exited with code ${result.exitCode}`,
+        blockerReason,
       };
     }
 
