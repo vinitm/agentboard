@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { createTestDb } from '../test/helpers.js';
+import { migrateTaskIdsToInteger } from './schema.js';
 
 let db: Database.Database;
 
@@ -151,6 +152,108 @@ describe('schema initialization', () => {
         .all() as Array<{ name: string }>;
       const colNames = columns.map((c) => c.name);
       expect(colNames).toContain('chat_session_id');
+    });
+  });
+
+  describe('migrateTaskIdsToInteger', () => {
+    it('converts UUID task IDs to sequential integers preserving data', () => {
+      // Create a DB with old TEXT-based schema
+      const oldDb = new Database(':memory:');
+      oldDb.exec('PRAGMA foreign_keys = ON;');
+      oldDb.exec(`
+        CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, config_path TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+        CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'backlog', risk_level TEXT NOT NULL DEFAULT 'low', priority INTEGER NOT NULL DEFAULT 0,
+          column_position INTEGER NOT NULL DEFAULT 0, spec TEXT, blocked_reason TEXT, claimed_at TEXT, claimed_by TEXT,
+          chat_session_id TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+        CREATE TABLE runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          stage TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'running', attempt INTEGER NOT NULL DEFAULT 1,
+          tokens_used INTEGER, model_used TEXT, input TEXT, output TEXT,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')), finished_at TEXT);
+        CREATE TABLE artifacts (id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          type TEXT NOT NULL, name TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+        CREATE TABLE git_refs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          branch TEXT NOT NULL, worktree_path TEXT, status TEXT NOT NULL DEFAULT 'local', created_at TEXT NOT NULL DEFAULT (datetime('now')));
+        CREATE TABLE events (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          run_id TEXT REFERENCES runs(id) ON DELETE SET NULL, type TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')));
+        CREATE TABLE task_logs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, log_path TEXT NOT NULL,
+          size_bytes INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+        CREATE TABLE stage_logs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+          stage TEXT NOT NULL, subtask_id TEXT, attempt INTEGER NOT NULL DEFAULT 1, file_path TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'running', summary TEXT, tokens_used INTEGER, duration_ms INTEGER,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')), started_at TEXT NOT NULL, completed_at TEXT);
+        CREATE TABLE chat_messages (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          role TEXT NOT NULL CHECK(role IN ('user', 'assistant')), content TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')));
+      `);
+
+      const now = '2026-03-18T12:00:00.000Z';
+      const later = '2026-03-18T12:01:00.000Z';
+      oldDb.exec('PRAGMA foreign_keys = OFF;');
+
+      // Insert project and two tasks (parent + subtask)
+      oldDb.prepare(`INSERT INTO projects (id, name, path, config_path) VALUES ('proj-1', 'Test', '/test', '/cfg')`).run();
+      oldDb.prepare(`INSERT INTO tasks (id, project_id, title, created_at, updated_at) VALUES ('uuid-aaa', 'proj-1', 'Parent Task', ?, ?)`).run(now, now);
+      oldDb.prepare(`INSERT INTO tasks (id, project_id, parent_task_id, title, created_at, updated_at) VALUES ('uuid-bbb', 'proj-1', 'uuid-aaa', 'Subtask', ?, ?)`).run(later, later);
+
+      // Insert related records
+      oldDb.prepare(`INSERT INTO runs (id, task_id, stage) VALUES ('run-1', 'uuid-aaa', 'planning')`).run();
+      oldDb.prepare(`INSERT INTO events (id, task_id, type) VALUES ('evt-1', 'uuid-bbb', 'status_change')`).run();
+      oldDb.prepare(`INSERT INTO chat_messages (id, task_id, role, content) VALUES ('msg-1', 'uuid-aaa', 'user', 'hello')`).run();
+      oldDb.prepare(`INSERT INTO stage_logs (id, task_id, project_id, stage, subtask_id, file_path, started_at) VALUES ('sl-1', 'uuid-aaa', 'proj-1', 'planning', 'uuid-bbb', '/log', ?)`).run(now);
+
+      oldDb.exec('PRAGMA foreign_keys = ON;');
+
+      // Run migration
+      migrateTaskIdsToInteger(oldDb);
+
+      // Verify tasks have integer IDs
+      const tasks = oldDb.prepare('SELECT id, parent_task_id, title FROM tasks ORDER BY id').all() as Array<{ id: number; parent_task_id: number | null; title: string }>;
+      expect(tasks).toHaveLength(2);
+      expect(tasks[0].id).toBe(1);
+      expect(tasks[0].title).toBe('Parent Task');
+      expect(tasks[0].parent_task_id).toBeNull();
+      expect(tasks[1].id).toBe(2);
+      expect(tasks[1].title).toBe('Subtask');
+      expect(tasks[1].parent_task_id).toBe(1);
+
+      // Verify runs migrated
+      const runs = oldDb.prepare('SELECT task_id FROM runs WHERE id = ?').get('run-1') as { task_id: number };
+      expect(runs.task_id).toBe(1);
+
+      // Verify events migrated
+      const events = oldDb.prepare('SELECT task_id FROM events WHERE id = ?').get('evt-1') as { task_id: number };
+      expect(events.task_id).toBe(2);
+
+      // Verify chat_messages migrated
+      const msgs = oldDb.prepare('SELECT task_id FROM chat_messages WHERE id = ?').get('msg-1') as { task_id: number };
+      expect(msgs.task_id).toBe(1);
+
+      // Verify stage_logs migrated with subtask_id mapped
+      const sl = oldDb.prepare('SELECT task_id, subtask_id FROM stage_logs WHERE id = ?').get('sl-1') as { task_id: number; subtask_id: number };
+      expect(sl.task_id).toBe(1);
+      expect(sl.subtask_id).toBe(2);
+
+      // Verify schema is now INTEGER
+      const colInfo = oldDb.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string; type: string }>;
+      const idCol = colInfo.find((c) => c.name === 'id');
+      expect(idCol?.type).toBe('INTEGER');
+
+      oldDb.close();
+    });
+
+    it('is a no-op on a fresh integer-schema DB', () => {
+      // db is already created with integer schema via createTestDb()
+      // migrateTaskIdsToInteger should detect INTEGER and skip
+      migrateTaskIdsToInteger(db);
+      const colInfo = db.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string; type: string }>;
+      const idCol = colInfo.find((c) => c.name === 'id');
+      expect(idCol?.type).toBe('INTEGER');
     });
   });
 
