@@ -1,23 +1,17 @@
+---
+paths:
+  - "src/server/**"
+  - "src/db/**"
+  - "src/worker/**"
+---
+
 # Security Guidelines
-
-## Mandatory Security Checks
-
-Before ANY commit:
-- [ ] No hardcoded secrets (API keys, passwords, tokens)
-- [ ] All user inputs validated
-- [ ] SQL injection prevention (parameterized queries / prepared statements)
-- [ ] XSS prevention (sanitized HTML)
-- [ ] CSRF protection enabled
-- [ ] Authentication/authorization verified
-- [ ] Rate limiting on all endpoints
-- [ ] Error messages don't leak sensitive data
 
 ## Agentboard-Specific Security Rules
 
 - **Prepared statements only** — all DB queries go through `src/db/queries.ts` with parameterized queries
 - **`execFile` only** — never use `exec` for shell commands. `execFile` passes arguments as arrays, preventing command injection
 - **Single DB connection** — use `getDatabase()` singleton, never create new connections
-- **No `any`** — strict TypeScript throughout. Use `unknown` and narrow safely
 
 ## Secret Management
 

@@ -1,3 +1,10 @@
+---
+paths:
+  - ".claude/skills/**"
+  - "src/worker/stages/learner.ts"
+  - "docs/decisions.md"
+---
+
 # Learning Scope
 
 ## All learnings MUST be project-scoped

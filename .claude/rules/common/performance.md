@@ -1,3 +1,8 @@
+---
+paths:
+  - "src/worker/**"
+---
+
 # Performance Optimization
 
 ## Model Selection Strategy
@@ -20,19 +25,6 @@ General guidance for interactive sessions:
 - Complex architectural decisions
 - Maximum reasoning requirements
 - Research and analysis tasks
-
-## Context Window Management
-
-Avoid last 20% of context window for:
-- Large-scale refactoring
-- Feature implementation spanning multiple files
-- Debugging complex interactions
-
-Lower context sensitivity tasks:
-- Single-file edits
-- Independent utility creation
-- Documentation updates
-- Simple bug fixes
 
 ## Build Troubleshooting
 

@@ -1,3 +1,11 @@
+---
+paths:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "src/test/**"
+  - "e2e/**"
+---
+
 # Testing Requirements
 
 ## Minimum Test Coverage: 80%
@@ -7,34 +15,12 @@ Test Types (ALL required):
 2. **Integration Tests** — API endpoints, database operations
 3. **E2E Tests** — Critical user flows (Playwright in `e2e/`)
 
-## Test-Driven Development
-
-MANDATORY workflow:
-1. Write test first (RED)
-2. Run test — it should FAIL
-3. Write minimal implementation (GREEN)
-4. Run test — it should PASS
-5. Refactor (IMPROVE)
-6. Verify coverage (80%+)
-
 ## Agentboard Test Helpers
 
 Always use the project's test infrastructure:
 - `createTestDb()` from `src/test/helpers.ts` — in-memory SQLite per test
 - `createTestRepo()` — real git repo with auto-cleanup
 - `createTestApp()` — Express app with supertest for API route tests
-
-## Test Co-location
-
-Tests live next to the code they test:
-- `foo.ts` → `foo.test.ts`
-- `Bar.tsx` → `Bar.test.tsx`
-
-## Environment
-
-- Backend: Node test environment
-- UI: jsdom environment
-- E2E: Playwright in `e2e/`
 
 ## Troubleshooting Test Failures
 

@@ -1,3 +1,9 @@
+---
+paths:
+  - "src/**"
+  - "ui/**"
+---
+
 # Coding Style
 
 ## Immutability (CRITICAL)
@@ -34,23 +40,3 @@ ALWAYS validate at system boundaries:
 - Validate all user input before processing
 - Fail fast with clear error messages
 - Never trust external data (API responses, user input, file content)
-
-## Agentboard Conventions
-
-- **ES module imports** with `.js` extensions (even for .ts files) — see [docs/gotchas/imports.md](docs/gotchas/imports.md)
-- **Console.log with bracketed prefixes**: `[worker]`, `[http]`, `[recovery]` — this IS the logging convention for this project
-- **snake_case DB columns → camelCase TypeScript** via row-conversion functions
-- **Prompt templates** in `prompts/` as markdown files
-- **Follow existing stage patterns** in `src/worker/stages/`
-- **Model names** via `config.modelDefaults` and `model-selector.ts`, never hardcoded
-
-## Code Quality Checklist
-
-Before marking work complete:
-- [ ] Code is readable and well-named
-- [ ] Functions are small (<50 lines)
-- [ ] Files are focused (<800 lines)
-- [ ] No deep nesting (>4 levels)
-- [ ] Proper error handling
-- [ ] No hardcoded values (use constants or config)
-- [ ] No mutation (immutable patterns used)
