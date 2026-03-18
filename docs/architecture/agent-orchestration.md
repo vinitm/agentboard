@@ -183,6 +183,13 @@ Every stage spawns a fresh Claude Code subprocess, records a `Run` in the databa
 
 Spec authoring happens conversationally via the chat UI. The PM describes the task and AI assists through a specify→clarify loop, asking follow-up questions to refine requirements. The result is a structured specification with acceptance criteria, file scope, out-of-scope items, and risk assessment.
 
+**Chat Session Persistence:** Conversational state persists across messages via Claude Code native session management (`--session-id` on first message, `--resume` on subsequent). Session ID stored on `tasks.chat_session_id`. If session resume fails, graceful fallback replays full chat history from `chat_messages` table to seed a fresh session.
+
+**Brainstorming Agent Guardrails:**
+- **Tool restrictions:** Read-only tools only (Read, Glob, Grep). No file writes, no shell commands.
+- **Role boundaries:** System prompt (`prompts/brainstorming-system.md`) enforces conversation-only mode. Agent may read codebase for context but never suggests code changes or edits.
+- **Completion:** Sets `isComplete: true` when all 3 spec fields substantive + at least 2 clarifying questions asked, or user explicitly says "done".
+
 ### Stage 2: Spec Review
 
 **File:** `src/worker/stages/spec-review.ts`

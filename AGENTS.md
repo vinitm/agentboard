@@ -32,6 +32,8 @@ agentboard doctor      # Verify prerequisites + show registered projects
 
 **Per-project state:** `<repo>/.agentboard/config.json` stores project-specific settings (models, commands, review rules). Stage logs at `.agentboard/logs/{taskId}/{stage}.log` (per-stage) and `.agentboard/logs/{taskId}/subtask-{subtaskId}/{stage}.log` (per-subtask).
 
+**Chat sessions:** Persistent per-task chat sessions via Claude Code `--session-id` / `--resume` instead of replaying full history per message. Session ID stored on `tasks.chat_session_id`. Falls back to history replay if session cannot be resumed.
+
 ## Code Style & Conventions
 
 - ES module imports with `.js` extensions (even for .ts files) — see [docs/gotchas/imports.md](docs/gotchas/imports.md)
@@ -69,7 +71,7 @@ Architectural decisions are recorded in [docs/decisions.md](docs/decisions.md).
 Pipeline: backlog → ready → spec_review → planning → needs_plan_review → implementing → [per-subtask: implement → checks → code_quality] → final_review → pr_creation → needs_human_review|done
 Subtask pipeline: backlog → ready → implement → checks → (inline fix) → code_quality → done|failed|blocked
 
-- **Spec authoring** — PM builds spec conversationally via chat UI. AI assists through a specify→clarify loop, asking follow-up questions to refine requirements before the spec is finalized.
+- **Spec authoring** — PM builds spec conversationally via chat UI with persistent session continuity (Claude Code `--session-id` / `--resume`). Brainstorming agent has read-only guardrails (Read, Glob, Grep tools only) and is confined to spec building via role boundaries (no edits, no shell, no code changes). AI assists through a specify→clarify loop, asking follow-up questions to refine requirements. Falls back to history-replay session if resume fails.
 - **Spec review** (`src/worker/stages/spec-review.ts`) — after spec is built, AI reviews the spec for completeness, clarity, and feasibility before planning begins.
 - **Plan review** — after AI planning, task pauses at `needs_plan_review`. Engineer reviews/edits plan via `POST /api/tasks/:id/review-plan` (approve with optional edits, or reject with required reason). Rejection feedback flows into re-planning context.
 - **Learnings UI** — `/learnings` page displays: extracted skills from `.claude/skills/learned/` (with frontmatter parsing), analytics on pipeline performance (first-pass check rate, avg attempts, common failures), and task history with metrics (duration, tokens, outcome). Backed by `GET /api/projects/:projectId/learning`, `GET /api/projects/:projectId/learning/history`, and `GET /api/projects/:projectId/learning/skills`.
@@ -84,6 +86,9 @@ Subtask pipeline: backlog → ready → implement → checks → (inline fix) �
 - **Learning extraction** (`src/worker/stages/learner.ts`) — after each task reaches a terminal state (done/failed), fire-and-forget `extractLearnings()` spawns `claude --print` with learner prompt to analyze execution and save project-specific patterns to `.claude/skills/learned/`. Non-blocking. Collects quantitative metrics (`recordLearning()`) and qualitative patterns (`extractLearnings()`).
 
 Subtasks execute serially. Parent creates single PR after all succeed.
+
+**Task fields** — See `src/types/index.ts` for all Task interface fields. Key chat-related field: `chatSessionId` (nullable string) stores the persistent Claude Code session ID for conversational spec building.
+
 See [docs/gotchas/subtasks.md](docs/gotchas/subtasks.md) for subtask pipeline pitfalls.
 See [docs/architecture/](docs/architecture/) for ADRs. See [docs/gotchas/](docs/gotchas/) for known pitfalls.
 
