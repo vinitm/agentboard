@@ -4,16 +4,28 @@ import * as queries from '../../db/queries.js';
 
 // NOTE: Run lifecycle events (run:started, run:updated, run:completed) are
 // emitted by the worker process, not by these read-only API routes.
+function parseTaskId(raw: string): number {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw Object.assign(new Error(`Invalid task ID: ${raw}`), { status: 400 });
+  }
+  return id;
+}
+
 export function createRunRoutes(db: Database.Database): Router {
   const router = Router();
 
   // GET /api/runs — list runs (query param: taskId required)
   router.get('/', (req, res) => {
-    const { taskId } = req.query as { taskId?: string };
-    if (!taskId) {
+    const { taskId: rawTaskId } = req.query as { taskId?: string };
+    if (!rawTaskId) {
       res.status(400).json({ error: 'taskId query param is required' });
       return;
     }
+    let taskId: number;
+    try { taskId = parseTaskId(rawTaskId); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
     const runs = queries.listRunsByTask(db, taskId);
     res.json(runs);
   });

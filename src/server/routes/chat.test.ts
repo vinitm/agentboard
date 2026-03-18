@@ -8,7 +8,7 @@ import type Database from 'better-sqlite3';
 
 describe('chat session persistence (DB layer)', () => {
   let db: Database.Database;
-  let taskId: string;
+  let taskId: number;
 
   beforeEach(() => {
     db = createTestDb();

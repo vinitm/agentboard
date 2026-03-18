@@ -31,7 +31,7 @@ const mockedExecFile = execFile as unknown as ReturnType<typeof vi.fn>;
 
 function makeTask(overrides?: Partial<Task>): Task {
   return {
-    id: 'task-1',
+    id: 1,
     projectId: 'proj-1',
     parentTaskId: null,
     title: 'Test task',
@@ -67,9 +67,9 @@ describe('code-quality', () => {
     ).run('proj-1', 'test', '/tmp/test', '/tmp/test/.agentboard/config.json', new Date().toISOString(), new Date().toISOString());
 
     db.prepare(
-      `INSERT INTO tasks (id, project_id, title, description, status, risk_level, priority, column_position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run('task-1', 'proj-1', 'Test task', 'A test task', 'code_quality', 'low', 1, 0, new Date().toISOString(), new Date().toISOString());
+      `INSERT INTO tasks (project_id, title, description, status, risk_level, priority, column_position, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('proj-1', 'Test task', 'A test task', 'code_quality', 'low', 1, 0, new Date().toISOString(), new Date().toISOString());
   });
 
   it('exports runCodeQuality function', () => {
@@ -197,7 +197,7 @@ describe('code-quality', () => {
 
       await runCodeQuality(db, makeTask(), '/tmp/worktree', config);
 
-      const runs = db.prepare('SELECT * FROM runs WHERE task_id = ?').all('task-1') as Array<Record<string, unknown>>;
+      const runs = db.prepare('SELECT * FROM runs WHERE task_id = ?').all(1) as Array<Record<string, unknown>>;
       expect(runs.length).toBeGreaterThanOrEqual(1);
       expect(runs[0].stage).toBe('code_quality');
     });

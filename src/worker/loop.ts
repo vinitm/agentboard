@@ -215,11 +215,11 @@ export function createWorkerLoop(
    * task's persistent log file.
    */
   function createLogStreamer(
-    taskId: string,
+    taskId: number,
     runId: string,
     logger?: TaskLogger,
     stage?: string,
-    subtaskId?: string
+    subtaskId?: number
   ): (chunk: string) => void {
     return (chunk: string) => {
       broadcastLog(io, {
@@ -240,7 +240,7 @@ export function createWorkerLoop(
    * so the EventsTimeline component can deduplicate correctly.
    */
   function createAndBroadcastEvent(
-    taskId: string,
+    taskId: number,
     type: string,
     payload: string,
     runId?: string
@@ -1234,7 +1234,7 @@ export function createWorkerLoop(
       try {
         broadcastLog(io, {
           taskId: task.id,
-          runId: task.id,
+          runId: String(task.id),
           chunk: `[error] Task failed: ${errorMessage}\n`,
           timestamp: new Date().toISOString(),
         });

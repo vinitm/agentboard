@@ -112,8 +112,13 @@ describe('GET /api/tasks/:id', () => {
     expect(res.body.title).toBe('Find Me Task');
   });
 
-  it('returns 404 for unknown task id', async () => {
+  it('returns 400 for non-numeric task id', async () => {
     const res = await request(app).get('/api/tasks/not-a-real-id');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for unknown task id', async () => {
+    const res = await request(app).get('/api/tasks/99999');
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
@@ -134,7 +139,7 @@ describe('PUT /api/tasks/:id', () => {
 
   it('returns 404 for unknown task id', async () => {
     const res = await request(app)
-      .put('/api/tasks/not-a-real-id')
+      .put('/api/tasks/99999')
       .send({ title: 'Ghost' });
 
     expect(res.status).toBe(404);
@@ -167,7 +172,7 @@ describe('DELETE /api/tasks/:id', () => {
   });
 
   it('returns 404 for unknown task id', async () => {
-    const res = await request(app).delete('/api/tasks/not-a-real-id');
+    const res = await request(app).delete('/api/tasks/99999');
     expect(res.status).toBe(404);
   });
 });
@@ -249,7 +254,7 @@ describe('POST /api/tasks/:id/move', () => {
 
   it('returns 404 for unknown task id', async () => {
     const res = await request(app)
-      .post('/api/tasks/not-a-real-id/move')
+      .post('/api/tasks/99999/move')
       .send({ column: 'ready' });
 
     expect(res.status).toBe(404);
@@ -300,7 +305,7 @@ describe('POST /api/tasks/:id/answer', () => {
 
   it('returns 404 for unknown task id', async () => {
     const res = await request(app)
-      .post('/api/tasks/not-a-real-id/answer')
+      .post('/api/tasks/99999/answer')
       .send({ answers: 'Some answer' });
 
     expect(res.status).toBe(404);
@@ -308,8 +313,8 @@ describe('POST /api/tasks/:id/answer', () => {
 });
 
 describe('Subtask autonomy guardrails', () => {
-  let parentId: string;
-  let subtaskId: string;
+  let parentId: number;
+  let subtaskId: number;
 
   beforeEach(() => {
     const parent = queries.createTask(db, {
@@ -372,7 +377,7 @@ describe('Subtask autonomy guardrails', () => {
 
     // Move subtask to done via cancel (only allowed manual move)
     // Simulate done state directly since move to done requires needs_human_review
-    queries.updateTask(db, subtaskId, { status: 'done' });
+    queries.updateTask(db, subtaskId, { status: 'done' as queries.UpdateTaskData['status'] });
 
     // Cancel subtask to trigger handleSubtaskTerminal
     const res = await request(app)
@@ -768,5 +773,180 @@ describe('POST /api/tasks/:id/review-plan', () => {
     expect(rejectionEvent).toBeDefined();
     const payload = JSON.parse(rejectionEvent!.payload) as { reason: string };
     expect(payload.reason).toBe('Approach is too complex');
+  });
+});
+
+describe('Frontend: TaskForm passes existingTaskId on submit', () => {
+  it('computes existingTaskId from taskId when not editing', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    // Should compute existingTaskId from taskId when not in edit mode
+    expect(formSource).toContain('const existingTaskId = (!isEditing && taskId) ? taskId : undefined');
+  });
+
+  it('passes existingTaskId in the onSubmit call', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    // Should include existingTaskId in the data passed to onSubmit
+    expect(formSource).toContain('existingTaskId,');
+    // The onSubmit call should contain existingTaskId in its argument object
+    expect(formSource).toContain('await onSubmit({');
+  });
+
+  it('onSubmit prop type includes existingTaskId as optional string', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    // The Props interface should declare existingTaskId as optional in the onSubmit data type
+    expect(formSource).toContain('existingTaskId?: string');
+  });
+});
+
+describe('Frontend: Board.tsx handles existingTaskId branch', () => {
+  it('handleCreateOrEdit has a branch for data.existingTaskId', () => {
+    const fs = require('node:fs');
+    const boardSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/Board.tsx'),
+      'utf-8',
+    );
+
+    // Should have a conditional branch checking for existingTaskId
+    expect(boardSource).toContain('data.existingTaskId');
+  });
+
+  it('existingTaskId branch calls updateTask (not createTask)', () => {
+    const fs = require('node:fs');
+    const boardSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/Board.tsx'),
+      'utf-8',
+    );
+
+    // Should destructure existingTaskId and call updateTask with it
+    expect(boardSource).toContain('const { existingTaskId, ...updateData } = data');
+    expect(boardSource).toContain('await updateTask(existingTaskId, updateData)');
+  });
+
+  it('existingTaskId branch calls moveTask with ready', () => {
+    const fs = require('node:fs');
+    const boardSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/Board.tsx'),
+      'utf-8',
+    );
+
+    // Should move the chat-created task to ready after updating
+    expect(boardSource).toContain("await moveTask(existingTaskId, 'ready')");
+  });
+});
+
+describe('Frontend: TaskForm validates spec completeness before submit', () => {
+  it('handleSubmit checks for empty spec fields before calling onSubmit', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    // Should filter spec fields that are empty
+    expect(formSource).toContain("filter((k) => !spec[k].trim())");
+    // Should check emptyFields length and set error
+    expect(formSource).toContain('if (emptyFields.length > 0)');
+  });
+
+  it('uses SPEC_LABELS to build the error message', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    // Should map empty field keys to their labels via SPEC_LABELS
+    expect(formSource).toContain('.map((k) => SPEC_LABELS[k])');
+    // Should join labels into the error message
+    expect(formSource).toContain("emptyFields.join(', ')");
+    // Error message should mention spec fields must be filled
+    expect(formSource).toContain('spec fields must be filled');
+  });
+
+  it('returns early if any spec fields are empty (preventing submission)', () => {
+    const fs = require('node:fs');
+    const formSource = fs.readFileSync(
+      require('node:path').resolve(__dirname, '../../../ui/src/components/TaskForm.tsx'),
+      'utf-8',
+    );
+
+    // The handleSubmit function should have the emptyFields check before setSubmitting(true)
+    const handleSubmitStart = formSource.indexOf('const handleSubmit');
+    const setSubmittingTrue = formSource.indexOf('setSubmitting(true)', handleSubmitStart);
+    const emptyFieldsCheck = formSource.indexOf('emptyFields.length > 0', handleSubmitStart);
+
+    // emptyFields check should come BEFORE setSubmitting(true)
+    expect(emptyFieldsCheck).toBeGreaterThan(-1);
+    expect(setSubmittingTrue).toBeGreaterThan(-1);
+    expect(emptyFieldsCheck).toBeLessThan(setSubmittingTrue);
+  });
+});
+
+describe('API integration: PUT + move simulates chat-created task flow', () => {
+  it('creates a backlog task, updates spec via PUT, then moves to ready', async () => {
+    // Step 1: Create a minimal task in backlog (simulates what happens on first chat message)
+    const createRes = await request(app)
+      .post('/api/tasks')
+      .send({ projectId, title: 'Chat draft' });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.status).toBe('backlog');
+    const taskId = createRes.body.id;
+
+    // Step 2: PUT to update its spec, title, etc. (simulates the frontend updateTask call)
+    const spec = JSON.stringify({
+      goal: 'Build a notification system',
+      userScenarios: 'P1 — Given a user event, When triggered, Then notify all subscribers',
+      successCriteria: 'All subscribers receive notification within 5 seconds',
+    });
+
+    const updateRes = await request(app)
+      .put(`/api/tasks/${taskId}`)
+      .send({
+        title: 'Notification system',
+        description: 'Real-time notification pipeline',
+        spec,
+        riskLevel: 'medium',
+        priority: 2,
+      });
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.title).toBe('Notification system');
+    expect(updateRes.body.spec).toBe(spec);
+    // Status should still be backlog (PUT does not change status)
+    expect(updateRes.body.status).toBe('backlog');
+
+    // Step 3: POST /move to move it to ready (simulates the frontend moveTask call)
+    const moveRes = await request(app)
+      .post(`/api/tasks/${taskId}/move`)
+      .send({ column: 'ready' });
+
+    expect(moveRes.status).toBe(200);
+    expect(moveRes.body.status).toBe('ready');
+
+    // Step 4: Verify the final state has all updated fields AND status ready
+    const getRes = await request(app).get(`/api/tasks/${taskId}`);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.title).toBe('Notification system');
+    expect(getRes.body.description).toBe('Real-time notification pipeline');
+    expect(getRes.body.spec).toBe(spec);
+    expect(getRes.body.status).toBe('ready');
+    expect(getRes.body.riskLevel).toBe('medium');
+    expect(getRes.body.priority).toBe(2);
   });
 });

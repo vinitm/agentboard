@@ -32,11 +32,11 @@ export function recoverStaleTasks(db: Database.Database): number {
          WHERE status = ? AND claimed_at IS NOT NULL AND claimed_at < ?`
       )
       .all(status, cutoff) as Array<{
-      id: string;
+      id: number;
       title: string;
       status: string;
       claimed_at: string;
-      parent_task_id: string | null;
+      parent_task_id: number | null;
     }>;
 
     for (const row of rows) {
@@ -87,14 +87,14 @@ function recoverStalledSubtaskChains(db: Database.Database): number {
        JOIN tasks c ON c.parent_task_id = t.id
        WHERE t.status = 'implementing'`
     )
-    .all() as Array<{ id: string; title: string }>;
+    .all() as Array<{ id: number; title: string }>;
 
   let recovered = 0;
 
   for (const parent of parents) {
     const children = db
       .prepare('SELECT id, status FROM tasks WHERE parent_task_id = ?')
-      .all(parent.id) as Array<{ id: string; status: string }>;
+      .all(parent.id) as Array<{ id: number; status: string }>;
 
     const hasActive = children.some(c => activeStatuses.includes(c.status));
     const hasBacklog = children.some(c => c.status === 'backlog');
@@ -106,7 +106,7 @@ function recoverStalledSubtaskChains(db: Database.Database): number {
           `SELECT id, title FROM tasks WHERE parent_task_id = ? AND status = 'backlog'
            ORDER BY created_at ASC, rowid ASC LIMIT 1`
         )
-        .get(parent.id) as { id: string; title: string } | undefined;
+        .get(parent.id) as { id: number; title: string } | undefined;
 
       if (nextChild) {
         db.prepare(

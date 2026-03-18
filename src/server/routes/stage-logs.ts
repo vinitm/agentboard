@@ -12,12 +12,24 @@ function toClientStageLog(log: StageLog): Omit<StageLog, 'filePath' | 'projectId
   return clientLog;
 }
 
+function parseTaskId(raw: string): number {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw Object.assign(new Error(`Invalid task ID: ${raw}`), { status: 400 });
+  }
+  return id;
+}
+
 export function createStageLogRoutes(db: Database.Database): Router {
   const router = Router({ mergeParams: true });
 
   // GET /api/tasks/:id/stages
   router.get('/', (req, res) => {
-    const { id } = req.params as { id: string };
+    const params = req.params as Record<string, string>;
+    let id: number;
+    try { id = parseTaskId(params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
     const task = getTaskById(db, id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
 
@@ -27,7 +39,12 @@ export function createStageLogRoutes(db: Database.Database): Router {
 
   // GET /api/tasks/:id/stages/:stageLogId/logs
   router.get('/:stageLogId/logs', (req, res) => {
-    const { id, stageLogId } = req.params as { id: string; stageLogId: string };
+    const params = req.params as Record<string, string>;
+    let id: number;
+    try { id = parseTaskId(params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const stageLogId = params.stageLogId;
     const stageLog = getStageLogById(db, stageLogId);
 
     if (!stageLog || stageLog.taskId !== id) {

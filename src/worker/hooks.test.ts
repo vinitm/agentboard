@@ -5,7 +5,7 @@ import type { Task } from '../types/index.js';
 
 function makeContext(): HookContext {
   const task: Task = {
-    id: 'task-1',
+    id: 1,
     projectId: 'proj-1',
     parentTaskId: null,
     title: 'Test Task',
@@ -70,6 +70,6 @@ describe('runHook', () => {
     const ctx = makeContext();
     await runHook(hooks, 'onError', ctx);
     expect(errorSpy).toHaveBeenCalledOnce();
-    expect(errorSpy).toHaveBeenCalledWith('task-1');
+    expect(errorSpy).toHaveBeenCalledWith(1);
   });
 });

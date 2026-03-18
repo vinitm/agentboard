@@ -7,7 +7,7 @@ import * as queries from '../../db/queries.js';
 let db: Database.Database;
 let app: ReturnType<typeof createTestApp>['app'];
 let projectId: string;
-let taskId: string;
+let taskId: number;
 
 function uniquePath(label = 'project'): string {
   return `/test/${label}-${Date.now()}-${Math.random().toString(36).slice(2)}`;

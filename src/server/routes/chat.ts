@@ -20,7 +20,7 @@ const systemPrompt = fs.readFileSync(
 );
 
 // Concurrency guard: one in-flight chat request per task
-const inFlightTasks = new Set<string>();
+const inFlightTasks = new Set<number>();
 
 interface SSEChunkEvent {
   type: 'chunk';
@@ -43,12 +43,24 @@ function sendSSE(res: import('express').Response, event: SSEEvent): void {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function parseTaskId(raw: string): number {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw Object.assign(new Error(`Invalid task ID: ${raw}`), { status: 400 });
+  }
+  return id;
+}
+
 export function createChatRoutes(db: Database.Database, io: Server): Router {
   const router = Router();
 
   // GET /api/tasks/:id/chat/messages — retrieve persisted chat history
   router.get('/:id/chat/messages', (req, res) => {
-    const task = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
       return;
@@ -59,7 +71,11 @@ export function createChatRoutes(db: Database.Database, io: Server): Router {
 
   // POST /api/tasks/:id/chat/stream — SSE streaming chat endpoint
   router.post('/:id/chat/stream', (req, res) => {
-    const task = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
       return;
@@ -316,7 +332,7 @@ function handleStreamEvent(
   event: Record<string, unknown>,
   res: import('express').Response,
   io: Server,
-  taskId: string,
+  taskId: number,
   state: StreamState
 ): void {
   const eventType = event.type as string;
@@ -369,7 +385,7 @@ function handleStreamEvent(
 function spawnFallbackSession(
   db: Database.Database,
   io: Server,
-  task: { id: string; projectId: string; title: string; description: string; spec: string | null },
+  task: { id: number; projectId: string; title: string; description: string; spec: string | null },
   currentMessage: string,
   projectPath: string | undefined,
   res: import('express').Response

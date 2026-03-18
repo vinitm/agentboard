@@ -5,7 +5,7 @@ import { buildTaskSummary, type TaskMetrics } from './learner.js';
 
 function createTestMetrics(overrides: Partial<TaskMetrics> = {}): TaskMetrics {
   return {
-    taskId: 'task-123',
+    taskId: 123,
     title: 'Add user authentication',
     riskLevel: 'medium',
     outcome: 'success',

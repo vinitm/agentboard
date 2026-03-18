@@ -20,11 +20,19 @@ describe('GET /api/tasks/:id/stages', () => {
     expect(res.body).toEqual({ stages: [] });
   });
 
-  it('returns 404 for non-existent task', async () => {
+  it('returns 400 for non-numeric task id', async () => {
     const db = createTestDb();
     const { app } = createTestApp(db);
 
     const res = await request(app).get('/api/tasks/nonexistent/stages');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for non-existent task', async () => {
+    const db = createTestDb();
+    const { app } = createTestApp(db);
+
+    const res = await request(app).get('/api/tasks/99999/stages');
     expect(res.status).toBe(404);
     expect(res.body).toHaveProperty('error', 'Task not found');
   });
@@ -86,11 +94,19 @@ describe('GET /api/tasks/:id/stages/:stageLogId/logs', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('returns 404 when task does not exist', async () => {
+  it('returns 400 when task id is non-numeric', async () => {
     const db = createTestDb();
     const { app } = createTestApp(db);
 
     const res = await request(app).get('/api/tasks/nonexistent/stages/someid/logs');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when task does not exist', async () => {
+    const db = createTestDb();
+    const { app } = createTestApp(db);
+
+    const res = await request(app).get('/api/tasks/99999/stages/someid/logs');
     expect(res.status).toBe(404);
   });
 

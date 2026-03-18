@@ -13,7 +13,7 @@ describe('StageRunner', () => {
   let db: Database.Database;
   let io: Server;
   let projectId: string;
-  let taskId: string;
+  let taskId: number;
   let logsDir: string;
 
   beforeEach(() => {
@@ -47,7 +47,7 @@ describe('StageRunner', () => {
     expect(logs[0].status).toBe('completed');
     expect(logs[0].summary).toBe('Found 3 subtasks');
 
-    const filePath = path.join(logsDir, taskId, 'planning.log');
+    const filePath = path.join(logsDir, String(taskId), 'planning.log');
     expect(fs.existsSync(filePath)).toBe(true);
     const content = fs.readFileSync(filePath, 'utf-8');
     expect(content).toContain('chunk 1');
@@ -70,7 +70,7 @@ describe('StageRunner', () => {
   });
 
   it('handles subtaskId for nested stages', async () => {
-    const subtaskId = 'st-1';
+    const subtaskId = 2;
     const runner = createStageRunner({ taskId, projectId, subtaskId, io, db, logsDir, projectRoot: logsDir });
 
     await runner.execute('implementing', (onOutput) => {
@@ -81,7 +81,7 @@ describe('StageRunner', () => {
     const logs = listStageLogsByTask(db, taskId);
     expect(logs[0].subtaskId).toBe(subtaskId);
 
-    const filePath = path.join(logsDir, taskId, `subtask-${subtaskId}`, 'implementing.log');
+    const filePath = path.join(logsDir, String(taskId), `subtask-${subtaskId}`, 'implementing.log');
     expect(fs.existsSync(filePath)).toBe(true);
   });
 
@@ -102,7 +102,7 @@ describe('StageRunner', () => {
     expect(logs).toHaveLength(2);
     expect(logs[1].attempt).toBe(2);
 
-    const retryFile = path.join(logsDir, taskId, 'planning-2.log');
+    const retryFile = path.join(logsDir, String(taskId), 'planning-2.log');
     expect(fs.existsSync(retryFile)).toBe(true);
   });
 

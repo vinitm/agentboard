@@ -33,7 +33,7 @@ describe('broadcastLog', () => {
   it('emits run:log event with the provided data', () => {
     const io = { emit: vi.fn() } as unknown as Server;
     const logData = {
-      taskId: 'task-123',
+      taskId: 123,
       runId: 'run-456',
       chunk: 'some output chunk',
       timestamp: '2024-01-01T00:00:00.000Z',
@@ -49,7 +49,7 @@ describe('broadcastLog', () => {
     const io = { emit: vi.fn() } as unknown as Server;
 
     broadcastLog(io, {
-      taskId: 't1',
+      taskId: 1,
       runId: 'r1',
       chunk: 'hello',
       timestamp: '2024-01-01T00:00:00.000Z',
@@ -62,10 +62,10 @@ describe('broadcastLog', () => {
   it('includes optional stage and subtaskId when provided', () => {
     const io = { emit: vi.fn() } as unknown as Server;
     const logData = {
-      taskId: 'task-123',
+      taskId: 123,
       runId: 'run-456',
       stage: 'implementing',
-      subtaskId: 'subtask-789',
+      subtaskId: 789,
       chunk: 'implementing feature',
       timestamp: '2024-01-01T00:00:00.000Z',
     };
@@ -78,7 +78,7 @@ describe('broadcastLog', () => {
   it('omits stage and subtaskId when not provided', () => {
     const io = { emit: vi.fn() } as unknown as Server;
     const logData = {
-      taskId: 'task-123',
+      taskId: 123,
       runId: 'run-456',
       chunk: 'some output',
       timestamp: '2024-01-01T00:00:00.000Z',
@@ -96,7 +96,7 @@ describe('broadcastStageTransition', () => {
   it('emits stage:transition event with the provided data', () => {
     const io = { emit: vi.fn() } as unknown as Server;
     const transitionData = {
-      taskId: 'task-123',
+      taskId: 123,
       stage: 'implementing' as const,
       status: 'running' as const,
       summary: 'Starting implementation',
@@ -111,9 +111,9 @@ describe('broadcastStageTransition', () => {
   it('includes optional subtaskId when provided', () => {
     const io = { emit: vi.fn() } as unknown as Server;
     const transitionData = {
-      taskId: 'task-123',
+      taskId: 123,
       stage: 'code_quality' as const,
-      subtaskId: 'subtask-456',
+      subtaskId: 456,
       status: 'completed' as const,
     } as const;
 
@@ -126,7 +126,7 @@ describe('broadcastStageTransition', () => {
     const io = { emit: vi.fn() } as unknown as Server;
 
     broadcastStageTransition(io, {
-      taskId: 't1',
+      taskId: 1,
       stage: 'planning' as const,
       status: 'running' as const,
     });

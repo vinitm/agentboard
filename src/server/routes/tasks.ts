@@ -18,6 +18,14 @@ const AGENT_CONTROLLED_COLUMNS: TaskStatus[] = [
   'final_review',
 ];
 
+function parseTaskId(raw: string): number {
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw Object.assign(new Error(`Invalid task ID: ${raw}`), { status: 400 });
+  }
+  return id;
+}
+
 export function createTaskRoutes(db: Database.Database, io: Server): Router {
   const router = Router();
 
@@ -25,7 +33,7 @@ export function createTaskRoutes(db: Database.Database, io: Server): Router {
    * After a subtask reaches a terminal state via the API, promote next sibling
    * or update parent. Mirrors the worker loop's checkAndUpdateParentStatus.
    */
-  function handleSubtaskTerminal(task: { parentTaskId: string | null; status: TaskStatus }): void {
+  function handleSubtaskTerminal(task: { parentTaskId: number | null; status: TaskStatus }): void {
     if (!task.parentTaskId) return;
 
     const parent = queries.getTaskById(db, task.parentTaskId);
@@ -188,7 +196,11 @@ Task description: ${description.trim()}`;
 
   // GET /api/tasks/:id — get task by id
   router.get('/:id', (req, res) => {
-    const task = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
       return;
@@ -198,7 +210,11 @@ Task description: ${description.trim()}`;
 
   // PUT /api/tasks/:id — update task
   router.put('/:id', (req, res) => {
-    const existing = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const existing = queries.getTaskById(db, id);
     if (!existing) {
       res.status(404).json({ error: 'Task not found' });
       return;
@@ -206,7 +222,7 @@ Task description: ${description.trim()}`;
     // Strip `status` — all status changes must go through POST /:id/move
     const { title, description, riskLevel, priority, columnPosition, spec, blockedReason, parentTaskId } =
       req.body as Omit<queries.UpdateTaskData, 'status'>;
-    const task = queries.updateTask(db, req.params.id, {
+    const task = queries.updateTask(db, id, {
       title,
       description,
       riskLevel,
@@ -222,23 +238,31 @@ Task description: ${description.trim()}`;
 
   // DELETE /api/tasks/:id — delete task
   router.delete('/:id', async (req, res) => {
-    const existing = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const existing = queries.getTaskById(db, id);
     if (!existing) {
       res.status(404).json({ error: 'Task not found' });
       return;
     }
     // Unclaim if currently claimed
-    queries.unclaimTask(db, req.params.id);
+    queries.unclaimTask(db, id);
     // Best-effort worktree cleanup before deleting DB records (cascade)
-    await cleanupTaskWorktree(db, req.params.id).catch(() => {});
-    queries.deleteTask(db, req.params.id);
-    broadcast(io, 'task:deleted', { id: req.params.id });
+    await cleanupTaskWorktree(db, id).catch(() => {});
+    queries.deleteTask(db, id);
+    broadcast(io, 'task:deleted', { id });
     res.json({ ok: true });
   });
 
   // POST /api/tasks/:id/move — move task to column
   router.post('/:id/move', (req, res) => {
-    const task = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
       return;
@@ -265,11 +289,11 @@ Task description: ${description.trim()}`;
     // Can move to cancelled from any state
     if (column === 'cancelled') {
       // Unclaim if claimed
-      queries.unclaimTask(db, req.params.id);
-      const updated = queries.moveToColumn(db, req.params.id, column, 0);
+      queries.unclaimTask(db, id);
+      const updated = queries.moveToColumn(db, id, column, 0);
       broadcast(io, 'task:moved', updated);
       // Best-effort worktree cleanup in background
-      cleanupTaskWorktree(db, req.params.id).catch(() => {});
+      cleanupTaskWorktree(db, id).catch(() => {});
       // Promote next sibling or update parent
       handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'cancelled' });
       res.json(updated);
@@ -288,7 +312,7 @@ Task description: ${description.trim()}`;
         res.status(400).json({ error: 'Task must have a spec before moving to ready' });
         return;
       }
-      const updated = queries.moveToColumn(db, req.params.id, column, 0);
+      const updated = queries.moveToColumn(db, id, column, 0);
       broadcast(io, 'task:moved', updated);
       res.json(updated);
       return;
@@ -300,7 +324,7 @@ Task description: ${description.trim()}`;
         res.status(400).json({ error: 'Can only move to backlog from ready' });
         return;
       }
-      const updated = queries.moveToColumn(db, req.params.id, column, 0);
+      const updated = queries.moveToColumn(db, id, column, 0);
       broadcast(io, 'task:moved', updated);
       res.json(updated);
       return;
@@ -312,10 +336,10 @@ Task description: ${description.trim()}`;
         res.status(400).json({ error: 'Can only move to done from needs_human_review' });
         return;
       }
-      const updated = queries.moveToColumn(db, req.params.id, column, 0);
+      const updated = queries.moveToColumn(db, id, column, 0);
       broadcast(io, 'task:moved', updated);
       // Best-effort worktree cleanup in background
-      cleanupTaskWorktree(db, req.params.id).catch(() => {});
+      cleanupTaskWorktree(db, id).catch(() => {});
       // Promote next sibling or update parent
       handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'done' });
       res.json(updated);
@@ -328,7 +352,11 @@ Task description: ${description.trim()}`;
 
   // POST /api/tasks/:id/answer — provide answers to blocked task
   router.post('/:id/answer', (req, res) => {
-    const task = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
       return;
@@ -348,7 +376,7 @@ Task description: ${description.trim()}`;
     }
     // Record the answers as an event
     queries.createEvent(db, {
-      taskId: req.params.id,
+      taskId: id,
       type: 'answer_provided',
       payload: JSON.stringify({ answers }),
     });
@@ -358,7 +386,7 @@ Task description: ${description.trim()}`;
     // stage the task was blocked at and resume from that exact stage instead
     // of starting over from 'ready'. For now we set 'ready' as a pragmatic
     // fallback — the M2 worker loop will implement exact resumption logic.
-    const updated = queries.updateTask(db, req.params.id, {
+    const updated = queries.updateTask(db, id, {
       blockedReason: null,
       status: 'ready',
     });
@@ -566,7 +594,11 @@ Return ONLY valid JSON with no markdown fences:
 
   // POST /api/tasks/:id/review-plan — engineer approves or rejects AI-generated plan
   router.post('/:id/review-plan', (req, res) => {
-    const task = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
       return;
@@ -628,7 +660,11 @@ Return ONLY valid JSON with no markdown fences:
 
   // POST /api/tasks/:id/retry — retry failed task (deletes subtasks, cleans up worktrees, starts fresh)
   router.post('/:id/retry', async (req, res) => {
-    const task = queries.getTaskById(db, req.params.id);
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
       return;
@@ -655,13 +691,13 @@ Return ONLY valid JSON with no markdown fences:
     }
 
     // Clean up parent's worktree and git refs
-    await cleanupTaskWorktree(db, req.params.id);
-    const oldRefs = queries.listGitRefsByTask(db, req.params.id);
+    await cleanupTaskWorktree(db, id);
+    const oldRefs = queries.listGitRefsByTask(db, id);
     for (const ref of oldRefs) {
       queries.deleteGitRef(db, ref.id);
     }
 
-    const updated = queries.updateTask(db, req.params.id, {
+    const updated = queries.updateTask(db, id, {
       status: 'ready',
     });
     broadcast(io, 'task:updated', updated);
@@ -671,7 +707,7 @@ Return ONLY valid JSON with no markdown fences:
   /**
    * Best-effort cleanup of a task's git worktree and update git ref status.
    */
-  async function cleanupTaskWorktree(database: Database.Database, taskId: string): Promise<void> {
+  async function cleanupTaskWorktree(database: Database.Database, taskId: number): Promise<void> {
     const gitRefs = queries.listGitRefsByTask(database, taskId);
     if (gitRefs.length === 0) return;
 

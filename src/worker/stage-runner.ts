@@ -7,9 +7,9 @@ import { createStageLog, updateStageLog } from '../db/stage-log-queries.js';
 import { broadcastLog, broadcastStageTransition } from '../server/ws.js';
 
 export interface StageRunnerOptions {
-  taskId: string;
+  taskId: number;
   projectId: string;
-  subtaskId?: string;
+  subtaskId?: number;
   io: Server;
   db: Database.Database;
   logsDir: string;
@@ -36,8 +36,8 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
 
   function getFilePath(stage: StageLogStage, attempt: number): string {
     const dir = subtaskId
-      ? path.join(logsDir, taskId, `subtask-${subtaskId}`)
-      : path.join(logsDir, taskId);
+      ? path.join(logsDir, String(taskId), `subtask-${subtaskId}`)
+      : path.join(logsDir, String(taskId));
     const fileName = attempt > 1 ? `${stage}-${attempt}.log` : `${stage}.log`;
     return path.join(dir, fileName);
   }

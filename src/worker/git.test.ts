@@ -26,15 +26,15 @@ describe('createWorktree', () => {
   it('creates a directory and returns the correct branch name', async () => {
     const { worktreePath, branch } = await createWorktree(
       repoPath,
-      'task-1',
+      1,
       'my-feature',
       'master',
       'agentboard/'
     );
 
-    expect(branch).toBe('agentboard/task-1-my-feature');
+    expect(branch).toBe('agentboard/1-my-feature');
     expect(fs.existsSync(worktreePath)).toBe(true);
-    expect(worktreePath).toBe(path.join(repoPath, '.agentboard', 'worktrees', 'task-1'));
+    expect(worktreePath).toBe(path.join(repoPath, '.agentboard', 'worktrees', '1'));
   });
 });
 
@@ -42,7 +42,7 @@ describe('cleanupWorktree', () => {
   it('removes the worktree directory', async () => {
     const { worktreePath, branch } = await createWorktree(
       repoPath,
-      'task-2',
+      2,
       'cleanup-test',
       'master',
       'agentboard/'
@@ -63,7 +63,7 @@ describe('commitChanges', () => {
   it('stages and commits changes and returns a SHA', async () => {
     const { worktreePath } = await createWorktree(
       repoPath,
-      'task-3',
+      3,
       'commit-test',
       'master',
       'agentboard/'
@@ -78,7 +78,7 @@ describe('commitChanges', () => {
   it('returns empty string when there are no changes to commit', async () => {
     const { worktreePath } = await createWorktree(
       repoPath,
-      'task-4',
+      4,
       'no-changes',
       'master',
       'agentboard/'

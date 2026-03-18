@@ -14,10 +14,10 @@ export function broadcast(io: Server, event: string, data: unknown): void {
 export function broadcastLog(
   io: Server,
   data: {
-    taskId: string;
+    taskId: number;
     runId: string;
     stage?: string;
-    subtaskId?: string;
+    subtaskId?: number;
     chunk: string;
     timestamp: string;
   }

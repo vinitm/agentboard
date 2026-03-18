@@ -55,7 +55,7 @@ export interface TaskLogger {
   stageEnd(status: string, tokens?: number, durationMs?: number): void;
 
   /** Write a subtask section header. */
-  subtaskStart(index: number, total: number, title: string, subtaskId: string): void;
+  subtaskStart(index: number, total: number, title: string, subtaskId: number): void;
 
   /** Write a parallel section header (e.g. reviewer role). */
   parallelSectionStart(label: string, runId: string): void;
@@ -78,7 +78,7 @@ export interface TaskLogger {
 
 export function createTaskLogger(
   configDir: string,
-  taskId: string,
+  taskId: number,
   title: string,
   riskLevel: string
 ): TaskLogger {
@@ -118,7 +118,7 @@ export function createTaskLogger(
       fs.appendFileSync(logPath, parts.join(' ') + '\n', 'utf-8');
     },
 
-    subtaskStart(index: number, total: number, title: string, subtaskId: string): void {
+    subtaskStart(index: number, total: number, title: string, subtaskId: number): void {
       const line = `\n${STAGE_SEP}SUBTASK ${index}/${total}: ${title} (${subtaskId}) ${'─'.repeat(30)}\n\n`;
       fs.appendFileSync(logPath, line, 'utf-8');
     },
@@ -186,7 +186,7 @@ export function openTaskLogger(logPath: string): TaskLogger {
       fs.appendFileSync(logPath, parts.join(' ') + '\n', 'utf-8');
     },
 
-    subtaskStart(index: number, total: number, title: string, subtaskId: string): void {
+    subtaskStart(index: number, total: number, title: string, subtaskId: number): void {
       const line = `\n${STAGE_SEP}SUBTASK ${index}/${total}: ${title} (${subtaskId}) ${'─'.repeat(30)}\n\n`;
       fs.appendFileSync(logPath, line, 'utf-8');
     },

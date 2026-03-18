@@ -22,13 +22,13 @@ async function git(
  */
 export async function createWorktree(
   repoPath: string,
-  taskId: string,
+  taskId: number,
   slug: string,
   baseBranch: string,
   branchPrefix: string
 ): Promise<{ worktreePath: string; branch: string }> {
   const branch = `${branchPrefix}${taskId}-${slug}`;
-  const worktreePath = path.join(repoPath, '.agentboard', 'worktrees', taskId);
+  const worktreePath = path.join(repoPath, '.agentboard', 'worktrees', String(taskId));
 
   await git(
     ['worktree', 'add', '-b', branch, worktreePath, baseBranch],
