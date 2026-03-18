@@ -74,6 +74,7 @@ Subtask pipeline: backlog → ready → implement → checks → (inline fix) �
 - **Spec authoring** — PM builds spec conversationally via chat UI with persistent session continuity (Claude Code `--session-id` / `--resume`). Brainstorming agent has read-only guardrails (Read, Glob, Grep tools only) and is confined to spec building via role boundaries (no edits, no shell, no code changes). AI assists through a specify→clarify loop, asking follow-up questions to refine requirements. Falls back to history-replay session if resume fails.
 - **Spec review** (`src/worker/stages/spec-review.ts`) — after spec is built, AI reviews the spec for completeness, clarity, and feasibility before planning begins.
 - **Plan review** — after AI planning, task pauses at `needs_plan_review`. Engineer reviews/edits plan via `POST /api/tasks/:id/review-plan` (approve with optional edits, or reject with required reason). Rejection feedback flows into re-planning context.
+- **Task routing** — Clicking a task card on the board navigates to `/tasks/:id` (full page). No inline modal. `TaskPage` has all action panels (BlockedPanel, PRPanel, PlanReviewPanel, move/retry/delete). `TaskDetail.tsx` was removed.
 - **Learnings UI** — `/learnings` page displays: extracted skills from `.claude/skills/learned/` (with frontmatter parsing), analytics on pipeline performance (first-pass check rate, avg attempts, common failures), and task history with metrics (duration, tokens, outcome). Backed by `GET /api/projects/:projectId/learning`, `GET /api/projects/:projectId/learning/history`, and `GET /api/projects/:projectId/learning/skills`.
 - **Stages** (`src/worker/stages/`) — spec-review, planner, implementer, checks, code-quality, final-review, pr-creator, learner
 - **Implementer** (`src/worker/stages/implementer.ts`) — writes code in the worktree. Returns structured status: DONE (implementation complete), NEEDS_CONTEXT (missing information), or BLOCKED (cannot proceed).
@@ -86,6 +87,8 @@ Subtask pipeline: backlog → ready → implement → checks → (inline fix) �
 - **Learning extraction** (`src/worker/stages/learner.ts`) — after each task reaches a terminal state (done/failed), fire-and-forget `extractLearnings()` spawns `claude --print` with learner prompt to analyze execution and save project-specific patterns to `.claude/skills/learned/`. Non-blocking. Collects quantitative metrics (`recordLearning()`) and qualitative patterns (`extractLearnings()`).
 
 Subtasks execute serially. Parent creates single PR after all succeed.
+
+**Task IDs** — Global auto-incrementing integers (`INTEGER PRIMARY KEY AUTOINCREMENT`), not UUIDs. `Task.id` is `number` throughout. URLs are `/tasks/123`. All FK columns referencing tasks are `INTEGER`. A data-preserving migration in `schema.ts` (`migrateTaskIdsToInteger`) converts old UUID-based DBs at startup.
 
 **Task fields** — See `src/types/index.ts` for all Task interface fields. Key chat-related field: `chatSessionId` (nullable string) stores the persistent Claude Code session ID for conversational spec building.
 
