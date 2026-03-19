@@ -16,6 +16,8 @@ npm start              # Run compiled dist/bin/agentboard.js
 npm test               # Run backend tests
 npm run test:watch     # Watch mode
 npm run test:coverage  # Backend tests with coverage report
+npm run test:browser   # Browser tests (Playwright + Lightpanda)
+npm run lightpanda:start  # Start Lightpanda headless browser on port 9222
 
 ### CLI
 
@@ -94,9 +96,10 @@ See [.claude/rules/common/development-workflow.md](.claude/rules/common/developm
 - [Index](docs/gotchas/README.md) — selection criteria and file list
 - [Imports](docs/gotchas/imports.md) | [Worker](docs/gotchas/worker.md) | [Subtasks](docs/gotchas/subtasks.md) | [Database](docs/gotchas/database.md)
 
-### Ruflo
+### Ruflo (enabled by default)
 - [Ruflo Setup](docs/ruflo-setup.md) — hooks, memory, daemon, neural models, debugging
 - [Ruflo Replication](docs/ruflo-replication-guide.md) — replicate ruflo to other repos
+- Config: `ruflo.enabled` in `.agentboard/config.json` (set `false` to disable)
 
 ### Rules (auto-loaded per task)
 - [.claude/rules/common/](.claude/rules/common/) — coding style, git, security, testing, workflow, hooks, learning

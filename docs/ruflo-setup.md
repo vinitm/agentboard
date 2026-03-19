@@ -1,6 +1,20 @@
 # Ruflo Integration Setup
 
-Complete ruflo v3.5 integration for agentboard. Automatic on every session, cross-device portable, self-documenting.
+Complete ruflo v3.5 integration for agentboard. Enabled by default on `agentboard init`, cross-device portable, self-documenting.
+
+## Enabling Ruflo
+
+Ruflo is **enabled by default** when you run `agentboard init`. The setting lives in `.agentboard/config.json`:
+
+```json
+{
+  "ruflo": {
+    "enabled": true
+  }
+}
+```
+
+To disable ruflo for a project, set `enabled: false`. When disabled, hooks still fire (they're in `.claude/settings.json`) but ruflo-specific features (daemon workers, neural models, memory seeding) are skipped by the worker.
 
 ## What's Configured
 

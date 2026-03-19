@@ -161,6 +161,8 @@ describe('code-quality', () => {
         output: passResponse,
         exitCode: 0,
         tokensUsed: 500,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 3000,
       });
 
@@ -185,6 +187,8 @@ describe('code-quality', () => {
         output: failResponse,
         exitCode: 0,
         tokensUsed: 500,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 3000,
       });
 
@@ -202,6 +206,8 @@ describe('code-quality', () => {
         output: JSON.stringify({ passed: true, issues: [], summary: 'OK' }),
         exitCode: 0,
         tokensUsed: 100,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 1000,
       });
 
@@ -221,6 +227,8 @@ describe('code-quality', () => {
         output: 'Error: something went wrong',
         exitCode: 1,
         tokensUsed: 0,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 1000,
       });
 
@@ -238,6 +246,8 @@ describe('code-quality', () => {
         output: JSON.stringify({ passed: true, issues: [], summary: 'OK' }),
         exitCode: 0,
         tokensUsed: 100,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 1000,
       });
 

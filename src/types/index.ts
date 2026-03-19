@@ -139,6 +139,9 @@ export interface Event {
   createdAt: string;
 }
 
+// ── Failure classification for retry intelligence ──────────────────
+export type FailureType = 'type_error' | 'lint_error' | 'test_failure' | 'security_violation' | 'timeout' | 'unknown';
+
 // ── Implementer structured status ───────────────────────────────────
 export type ImplementerStatus = 'DONE' | 'DONE_WITH_CONCERNS' | 'NEEDS_CONTEXT' | 'BLOCKED';
 
@@ -194,6 +197,17 @@ export interface FinalReviewResult {
   summary: string;
 }
 
+// ── Planning result with confidence ─────────────────────────────────
+export interface PlanningResultMeta {
+  confidence: number;           // 0-1 confidence score from planner
+  subtaskCount: number;
+  totalFiles: number;
+  hasAssumptions: boolean;
+}
+
+// ── Auto-merge mode ─────────────────────────────────────────────────
+export type AutoMergeMode = 'off' | 'draft-only' | 'low-risk' | 'all';
+
 // ── Config interface ─────────────────────────────────────────────────
 
 export interface ModelDefaults {
@@ -231,6 +245,10 @@ export interface AgentboardConfig {
   maxSubcardDepth: number;
   prDraft: boolean;
   autoMerge: boolean;
+  autoMergeMode: AutoMergeMode;
+  autoPlanApproval: boolean;
+  maxCostPerTask: number | null;
+  maxInlineFixAttempts: number;
   securityMode: string;
   commitPolicy: string;
   formatPolicy: string;

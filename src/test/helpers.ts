@@ -69,6 +69,10 @@ export function createTestConfig(overrides?: Record<string, unknown>): Agentboar
     maxSubcardDepth: 2,
     prDraft: true,
     autoMerge: false,
+    autoMergeMode: 'off',
+    autoPlanApproval: false,
+    maxCostPerTask: null,
+    maxInlineFixAttempts: 2,
     securityMode: 'strict',
     commitPolicy: 'squash',
     formatPolicy: 'auto',
@@ -96,7 +100,7 @@ export function createTestConfig(overrides?: Record<string, unknown>): Agentboar
       terminal: false,
     },
     ruflo: {
-      enabled: false,
+      enabled: true,
     },
     ...overrides,
   } as AgentboardConfig;

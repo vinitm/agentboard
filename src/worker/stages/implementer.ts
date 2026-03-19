@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import type { Task, AgentboardConfig, ImplementationResult, ImplementerStatus } from '../../types/index.js';
 import { buildTaskPacket } from '../context-builder.js';
 import { executeClaudeCode } from '../executor.js';
+import { selectModel } from '../model-selector.js';
 import { getToolsForStage, getPermissionModeForStage } from '../stage-tools.js';
 import { createRun, updateRun } from '../../db/queries.js';
 
@@ -87,8 +88,7 @@ export async function runImplementation(
   attempt: number,
   onOutput?: (chunk: string) => void,
 ): Promise<ImplementationResult> {
-  // Always use Opus for implementation
-  const model = 'opus';
+  const model = selectModel('implementing', task.riskLevel, config);
 
   const taskPacket = buildTaskPacket(db, task, {
     includeFailures: attempt > 1,

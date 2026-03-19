@@ -17,21 +17,23 @@ export interface ExecuteResult {
   output: string;
   exitCode: number;
   tokensUsed: number;
+  inputTokens: number;
+  outputTokens: number;
   duration: number;
 }
 
 /**
  * Spawn a Claude Code CLI subprocess and capture results.
  *
- * Uses `claude --print --model <model>` for non-interactive mode,
- * piping the prompt to stdin.
+ * Uses `claude --print --output-format json --model <model>` for non-interactive mode,
+ * piping the prompt to stdin. The JSON output format provides structured token usage data.
  */
 export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResult> {
   const { prompt, worktreePath, model, timeout = 300_000, tools, permissionMode = 'acceptEdits', onOutput } = options;
   const startTime = Date.now();
 
   return new Promise<ExecuteResult>((resolve) => {
-    const args = ['--print', '--model', model, '--permission-mode', permissionMode];
+    const args = ['--print', '--output-format', 'json', '--model', model, '--permission-mode', permissionMode];
 
     if (tools && tools.length > 0) {
       args.push('--tools', tools.join(','));
@@ -58,6 +60,8 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
         output: `Failed to spawn claude process: ${err.message}`,
         exitCode: 1,
         tokensUsed: 0,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: Date.now() - startTime,
       });
     });
@@ -84,27 +88,74 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
       const timeoutSuffix = timedOut
         ? `\n[timeout] Process killed after ${Math.round(timeout / 1000)}s timeout`
         : '';
-      const output = stdout + (stderr ? `\n[stderr]\n${stderr}` : '') + timeoutSuffix;
       const exitCode = timedOut ? 124 : (code ?? 1);
 
-      // Try to parse token usage from output
-      const tokensUsed = parseTokenUsage(output);
+      // Try to parse structured JSON output from Claude CLI
+      const parsed = parseJsonOutput(stdout);
+
+      const output = (parsed?.result ?? stdout) + (stderr ? `\n[stderr]\n${stderr}` : '') + timeoutSuffix;
+      const inputTokens = parsed?.inputTokens ?? 0;
+      const outputTokens = parsed?.outputTokens ?? 0;
+      const tokensUsed = inputTokens + outputTokens || parseTokenUsageFallback(output);
 
       resolve({
         output,
         exitCode,
         tokensUsed,
+        inputTokens,
+        outputTokens,
         duration,
       });
     });
   });
 }
 
+interface ParsedJsonOutput {
+  result: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 /**
- * Attempt to parse token usage from Claude CLI output.
+ * Parse structured JSON output from `claude --output-format json`.
+ * Returns the text result and token counts, or null if parsing fails.
+ */
+function parseJsonOutput(stdout: string): ParsedJsonOutput | null {
+  try {
+    const parsed = JSON.parse(stdout.trim()) as Record<string, unknown>;
+
+    // Claude CLI JSON output contains 'result' (the text output) and 'usage' or top-level token fields
+    const result = typeof parsed.result === 'string' ? parsed.result : stdout;
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    // Check for usage object (standard Claude CLI JSON format)
+    if (parsed.usage && typeof parsed.usage === 'object') {
+      const usage = parsed.usage as Record<string, unknown>;
+      inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
+      outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
+    }
+
+    // Also check top-level fields
+    if (typeof parsed.input_tokens === 'number') {
+      inputTokens = parsed.input_tokens;
+    }
+    if (typeof parsed.output_tokens === 'number') {
+      outputTokens = parsed.output_tokens;
+    }
+
+    return { result, inputTokens, outputTokens };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fallback: attempt to parse token usage from plain-text Claude CLI output.
  * Falls back to an estimate based on output length.
  */
-function parseTokenUsage(output: string): number {
+function parseTokenUsageFallback(output: string): number {
   // Look for common patterns like "tokens used: 1234" or "Total tokens: 1234"
   const patterns = [
     /tokens?\s*used\s*[:=]\s*(\d+)/i,

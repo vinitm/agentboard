@@ -49,6 +49,7 @@ function createTestTask(db: ReturnType<typeof createTestDb>): Task {
 function buildPlanJson(overrides?: Partial<PlanningResult>): string {
   const plan: PlanningResult = {
     planSummary: 'Implement JWT authentication',
+    confidence: 0.9,
     subtasks: [
       {
         title: 'Create auth middleware',
@@ -103,6 +104,7 @@ describe('PlanningResult interface', () => {
   it('subtask steps and files are optional', () => {
     const result: PlanningResult = {
       planSummary: 'Simple fix',
+      confidence: 0.95,
       subtasks: [{ title: 'Fix bug', description: 'One-liner' }],
       assumptions: [],
       fileMap: ['src/foo.ts'],
@@ -125,12 +127,16 @@ describe('runPlanning', () => {
         output: planJson,
         exitCode: 0,
         tokensUsed: 1000,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 5000,
       })
       .mockResolvedValueOnce({
         output: JSON.stringify({ approved: true, issues: [] }),
         exitCode: 0,
         tokensUsed: 500,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 2000,
       });
 
@@ -173,6 +179,8 @@ describe('runPlanning', () => {
         output: weakPlan,
         exitCode: 0,
         tokensUsed: 800,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 4000,
       })
       // First review: reject
@@ -183,6 +191,8 @@ describe('runPlanning', () => {
         }),
         exitCode: 0,
         tokensUsed: 300,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 1500,
       })
       // Second plan attempt
@@ -190,6 +200,8 @@ describe('runPlanning', () => {
         output: goodPlan,
         exitCode: 0,
         tokensUsed: 1000,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 5000,
       })
       // Second review: approve
@@ -197,6 +209,8 @@ describe('runPlanning', () => {
         output: JSON.stringify({ approved: true, issues: [] }),
         exitCode: 0,
         tokensUsed: 500,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 2000,
       });
 
@@ -246,6 +260,8 @@ describe('runPlanning', () => {
       output: 'Something went wrong',
       exitCode: 1,
       tokensUsed: 0,
+      inputTokens: 0,
+      outputTokens: 0,
       duration: 1000,
     });
 
@@ -267,12 +283,16 @@ describe('runPlanning', () => {
         output: fencedOutput,
         exitCode: 0,
         tokensUsed: 1000,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 5000,
       })
       .mockResolvedValueOnce({
         output: JSON.stringify({ approved: true, issues: [] }),
         exitCode: 0,
         tokensUsed: 500,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 2000,
       });
 
@@ -291,12 +311,16 @@ describe('runPlanning', () => {
         output: 'Here is my plan in plain text without any JSON...',
         exitCode: 0,
         tokensUsed: 200,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 2000,
       })
       .mockResolvedValueOnce({
         output: JSON.stringify({ approved: true, issues: [] }),
         exitCode: 0,
         tokensUsed: 100,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 1000,
       });
 
@@ -318,12 +342,16 @@ describe('runPlanning', () => {
         output: planJson,
         exitCode: 0,
         tokensUsed: 1000,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 5000,
       })
       .mockResolvedValueOnce({
         output: JSON.stringify({ approved: true, issues: [] }),
         exitCode: 0,
         tokensUsed: 500,
+        inputTokens: 0,
+        outputTokens: 0,
         duration: 2000,
       });
 

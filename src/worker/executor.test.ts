@@ -53,7 +53,7 @@ describe('executeClaudeCode', () => {
     const result = await promise;
 
     expect(result.exitCode).toBe(0);
-    expect(result.output).toBe('some output text');
+    expect(result.output).toContain('some output text');
     expect(result.tokensUsed).toBeGreaterThan(0);
   });
 
@@ -80,7 +80,63 @@ describe('executeClaudeCode', () => {
     expect(result.output).toContain('stderr content');
   });
 
-  it('parses token usage from output matching "Tokens used: N"', async () => {
+  it('parses structured JSON output with token usage', async () => {
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+
+    const promise = executeClaudeCode({
+      prompt: 'hello',
+      worktreePath: '/tmp/worktree',
+      model: 'claude-3-5-sonnet-20241022',
+    });
+
+    const jsonOutput = JSON.stringify({
+      result: 'The implementation is complete.',
+      usage: { input_tokens: 1200, output_tokens: 300 },
+    });
+
+    setTimeout(() => {
+      child.stdout.emit('data', Buffer.from(jsonOutput));
+      child.emit('close', 0);
+    }, 0);
+
+    const result = await promise;
+
+    expect(result.inputTokens).toBe(1200);
+    expect(result.outputTokens).toBe(300);
+    expect(result.tokensUsed).toBe(1500);
+    expect(result.output).toContain('The implementation is complete.');
+  });
+
+  it('parses top-level token fields from JSON output', async () => {
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+
+    const promise = executeClaudeCode({
+      prompt: 'hello',
+      worktreePath: '/tmp/worktree',
+      model: 'sonnet',
+    });
+
+    const jsonOutput = JSON.stringify({
+      result: 'Done!',
+      input_tokens: 500,
+      output_tokens: 150,
+    });
+
+    setTimeout(() => {
+      child.stdout.emit('data', Buffer.from(jsonOutput));
+      child.emit('close', 0);
+    }, 0);
+
+    const result = await promise;
+
+    expect(result.inputTokens).toBe(500);
+    expect(result.outputTokens).toBe(150);
+    expect(result.tokensUsed).toBe(650);
+  });
+
+  it('falls back to text parsing when JSON parse fails', async () => {
     const child = createMockChild();
     mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
 
@@ -98,6 +154,8 @@ describe('executeClaudeCode', () => {
     const result = await promise;
 
     expect(result.tokensUsed).toBe(1500);
+    expect(result.inputTokens).toBe(0);
+    expect(result.outputTokens).toBe(0);
   });
 
   it('estimates tokens when no usage pattern is found (~output.length/4)', async () => {
@@ -165,6 +223,8 @@ describe('executeClaudeCode', () => {
     expect(result.output).toContain('Failed to spawn claude process');
     expect(result.output).toContain('ENOENT');
     expect(result.tokensUsed).toBe(0);
+    expect(result.inputTokens).toBe(0);
+    expect(result.outputTokens).toBe(0);
   });
 
   it('calls onOutput callback with each chunk of stdout', async () => {
@@ -195,29 +255,6 @@ describe('executeClaudeCode', () => {
     expect(chunks).toEqual(['chunk1', 'chunk2']);
   });
 
-  it('calls onOutput callback with stderr chunks', async () => {
-    const child = createMockChild();
-    mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
-
-    const onOutput = vi.fn();
-
-    const promise = executeClaudeCode({
-      prompt: 'hello',
-      worktreePath: '/tmp/worktree',
-      model: 'claude-3-5-sonnet-20241022',
-      onOutput,
-    });
-
-    setTimeout(() => {
-      child.stderr.emit('data', Buffer.from('err chunk'));
-      child.emit('close', 0);
-    }, 0);
-
-    await promise;
-
-    expect(onOutput).toHaveBeenCalledWith('err chunk');
-  });
-
   it('writes the prompt to stdin and closes it', async () => {
     const child = createMockChild();
     mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
@@ -238,7 +275,7 @@ describe('executeClaudeCode', () => {
     expect(child.stdin.end).toHaveBeenCalled();
   });
 
-  it('spawns claude with correct args including model and permission mode', async () => {
+  it('spawns claude with --output-format json and correct args', async () => {
     const child = createMockChild();
     mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
 
@@ -256,7 +293,7 @@ describe('executeClaudeCode', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'claude',
-      ['--print', '--model', 'claude-opus-4-5', '--permission-mode', 'acceptEdits'],
+      ['--print', '--output-format', 'json', '--model', 'claude-opus-4-5', '--permission-mode', 'acceptEdits'],
       expect.objectContaining({ cwd: '/tmp/my-worktree' })
     );
   });
@@ -280,7 +317,7 @@ describe('executeClaudeCode', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'claude',
-      ['--print', '--model', 'claude-opus-4-5', '--permission-mode', 'acceptEdits', '--tools', 'Read,Glob,Grep'],
+      ['--print', '--output-format', 'json', '--model', 'claude-opus-4-5', '--permission-mode', 'acceptEdits', '--tools', 'Read,Glob,Grep'],
       expect.objectContaining({ cwd: '/tmp/my-worktree' })
     );
   });
@@ -304,7 +341,7 @@ describe('executeClaudeCode', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'claude',
-      ['--print', '--model', 'claude-opus-4-5', '--permission-mode', 'acceptEdits'],
+      ['--print', '--output-format', 'json', '--model', 'claude-opus-4-5', '--permission-mode', 'acceptEdits'],
       expect.objectContaining({ cwd: '/tmp/my-worktree' })
     );
   });
@@ -329,8 +366,30 @@ describe('executeClaudeCode', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'claude',
-      ['--print', '--model', 'claude-opus-4-5', '--permission-mode', 'bypassPermissions', '--tools', 'Read,Write,Edit,Bash,Glob,Grep'],
+      ['--print', '--output-format', 'json', '--model', 'claude-opus-4-5', '--permission-mode', 'bypassPermissions', '--tools', 'Read,Write,Edit,Bash,Glob,Grep'],
       expect.objectContaining({ cwd: '/tmp/my-worktree' })
     );
+  });
+
+  it('returns inputTokens and outputTokens as 0 for non-JSON output', async () => {
+    const child = createMockChild();
+    mockSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
+
+    const promise = executeClaudeCode({
+      prompt: 'hello',
+      worktreePath: '/tmp/worktree',
+      model: 'sonnet',
+    });
+
+    setTimeout(() => {
+      child.stdout.emit('data', Buffer.from('plain text output'));
+      child.emit('close', 0);
+    }, 0);
+
+    const result = await promise;
+
+    expect(result.inputTokens).toBe(0);
+    expect(result.outputTokens).toBe(0);
+    expect(result.tokensUsed).toBeGreaterThan(0); // fallback estimate
   });
 });

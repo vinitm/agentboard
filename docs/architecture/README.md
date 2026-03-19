@@ -28,11 +28,12 @@ ADRs capture the "why" behind key choices — context not inferable from code. E
 | [002-polling-worker](002-polling-worker.md) | Poll-based worker loop with event-driven wake-up | Accepted |
 | [003-worktree-isolation](003-worktree-isolation.md) | Git worktrees for task isolation, shared by subtasks | Accepted |
 | [004-serial-subtasks](004-serial-subtasks.md) | Serial subtask execution with single parent PR | Accepted |
-| [005-model-selection](005-model-selection.md) | Stage-and-risk-driven model selection | Superseded (opus everywhere) |
+| [005-model-selection](005-model-selection.md) | Stage-and-risk-driven model selection | Accepted |
 | [006-claude-code-executor](006-claude-code-executor.md) | Spawn Claude Code as child process in non-interactive mode | Accepted |
 | [007-superpowers-workflow](007-superpowers-workflow.md) | Superpowers-inspired pipeline rewrite | Accepted |
 
 ## Related Documentation
 
 - [Gotchas](../gotchas/) — Failure-backed troubleshooting by subsystem
+- [Browser Testing](../browser-testing.md) — Playwright + Lightpanda setup for UI testing
 - [Decision Log](../decisions.md) — Quick-reference decision diary (complements ADRs)

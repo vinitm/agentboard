@@ -49,8 +49,62 @@ import {
   updateTaskLogSize,
 } from '../db/queries.js';
 
+import type { PlanningResult } from './stages/planner.js';
+
+/**
+ * Generate a conventional commit message based on task title content.
+ * Detects fix/refactor/test/docs patterns in the title, defaults to feat.
+ */
+function smartCommitMessage(title: string): string {
+  const lower = title.toLowerCase();
+  let prefix = 'feat';
+
+  if (/\b(fix|bug|patch|hotfix|resolve|repair)\b/.test(lower)) {
+    prefix = 'fix';
+  } else if (/\b(refactor|restructure|reorganize|clean\s?up|simplify)\b/.test(lower)) {
+    prefix = 'refactor';
+  } else if (/\b(test|spec|coverage)\b/.test(lower)) {
+    prefix = 'test';
+  } else if (/\b(doc|readme|changelog|comment)\b/.test(lower)) {
+    prefix = 'docs';
+  } else if (/\b(perf|optim|speed|fast)\b/.test(lower)) {
+    prefix = 'perf';
+  } else if (/\b(style|format|lint|whitespace)\b/.test(lower)) {
+    prefix = 'style';
+  } else if (/\b(chore|bump|dep|upgrade|update dep)\b/.test(lower)) {
+    prefix = 'chore';
+  }
+
+  return `${prefix}: ${title}`;
+}
+
 const POLL_INTERVAL_MS = 5_000;
 const WORKER_ID = `worker-${process.pid}`;
+
+/**
+ * Determine if a plan can be auto-approved without human review.
+ *
+ * Auto-approves when ALL conditions are met:
+ * - config.autoPlanApproval is true
+ * - task.riskLevel is 'low'
+ * - Plan has <= 3 subtasks
+ * - Plan has no assumptions
+ * - Plan touches <= 5 files total
+ * - Planner confidence >= 0.85
+ */
+function shouldAutoApprovePlan(
+  task: Task,
+  plan: PlanningResult,
+  config: AgentboardConfig
+): boolean {
+  if (!config.autoPlanApproval) return false;
+  if (task.riskLevel !== 'low') return false;
+  if (plan.subtasks.length > 3) return false;
+  if (plan.assumptions.length > 0) return false;
+  if (plan.fileMap.length > 5) return false;
+  if (plan.confidence < 0.85) return false;
+  return true;
+}
 
 export interface WorkerLoop {
   start(): void;
@@ -112,7 +166,11 @@ export function createWorkerLoop(
         return; // Not all siblings are done yet — don't update parent
       }
     }
-    // If subtask failed/cancelled, cancel remaining backlog siblings so parent can resolve
+    // If subtask failed/cancelled, still try to promote independent siblings.
+    // Only cancel siblings that would depend on the failed task (i.e., are after it
+    // in the serial ordering). For now, since subtasks are serial, we cancel all
+    // remaining backlog siblings — but mark the failed one as 'blocked' instead
+    // of cancelling the entire chain, so the parent gets a partial completion report.
     if (!successStatuses.includes(freshTask.status)) {
       const siblings = getSubtasksByParentId(db, task.parentTaskId);
       for (const sibling of siblings) {
@@ -434,7 +492,7 @@ export function createWorkerLoop(
     }
 
     // ── Step 3: Code quality review ────────────────────────────────
-    await commitChanges(worktreePath, `feat: implement ${task.title}`);
+    await commitChanges(worktreePath, smartCommitMessage(task.title));
 
     const MAX_QUALITY_CYCLES = 2;
     let qualityCycle = 0;
@@ -653,7 +711,7 @@ export function createWorkerLoop(
     }
 
     // ── Step 3: Code quality review ────────────────────────────────
-    await commitChanges(worktreePath, `feat: implement ${task.title}`);
+    await commitChanges(worktreePath, smartCommitMessage(task.title));
 
     const MAX_QUALITY_CYCLES = 2;
     let qualityCycle = 0;
@@ -1183,18 +1241,68 @@ export function createWorkerLoop(
           }
         }
 
-        // Pause for engineer plan review — do NOT proceed to implementation
-        updateTask(db, task.id, { status: 'needs_plan_review' });
-        createAndBroadcastEvent(
-          task.id,
-          'status_changed',
-          JSON.stringify({ from: 'planning', to: 'needs_plan_review' })
-        );
-        broadcast(io, 'task:updated', { taskId: task.id, status: 'needs_plan_review' });
-        logger.event('plan_review_requested', 'Plan generated — awaiting engineer review');
-        console.log(`[worker] Task ${task.id} plan complete — pausing for engineer review`);
-        unclaimTask(db, task.id);
-        return;
+        // Check if the plan can be auto-approved (skip human gate for low-risk tasks)
+        const canAutoApprove = shouldAutoApprovePlan(task, planResult, projectConfig);
+
+        if (canAutoApprove) {
+          console.log(`[worker] Task ${task.id} plan auto-approved (low-risk, confidence=${planResult.confidence})`);
+          createAndBroadcastEvent(
+            task.id,
+            'plan_review_approved',
+            JSON.stringify({ autoApproved: true, confidence: planResult.confidence })
+          );
+          logger.event('plan_auto_approved', `Plan auto-approved (confidence=${planResult.confidence})`);
+
+          // Create subtasks from auto-approved plan (same as human-approved flow)
+          if (planResult.subtasks.length > 0) {
+            const MAX_SUBTASKS = 10;
+            const cappedSubtasks = planResult.subtasks.slice(0, MAX_SUBTASKS);
+
+            for (let i = 0; i < cappedSubtasks.length; i++) {
+              const subtask = cappedSubtasks[i];
+              const childTask = createTask(db, {
+                projectId: task.projectId,
+                parentTaskId: task.id,
+                title: subtask.title,
+                description: subtask.description,
+                status: i === 0 ? 'ready' : 'backlog',
+                priority: task.priority,
+                riskLevel: task.riskLevel,
+              });
+              createAndBroadcastEvent(
+                childTask.id,
+                'task_created',
+                JSON.stringify({ parentTaskId: task.id, index: i })
+              );
+              broadcast(io, 'task:created', { task: childTask });
+            }
+
+            updateTask(db, task.id, { status: 'implementing', blockedReason: null });
+            logger.event('subtasks_created', `${cappedSubtasks.length} subtask(s) created — executing serially (auto-approved)`);
+            createAndBroadcastEvent(
+              task.id,
+              'subtasks_created',
+              JSON.stringify({ count: cappedSubtasks.length, autoApproved: true })
+            );
+            broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
+            unclaimTask(db, task.id);
+            return;
+          }
+          // No subtasks — fall through to direct implementation below
+        } else {
+          // Pause for engineer plan review — do NOT proceed to implementation
+          updateTask(db, task.id, { status: 'needs_plan_review' });
+          createAndBroadcastEvent(
+            task.id,
+            'status_changed',
+            JSON.stringify({ from: 'planning', to: 'needs_plan_review' })
+          );
+          broadcast(io, 'task:updated', { taskId: task.id, status: 'needs_plan_review' });
+          logger.event('plan_review_requested', 'Plan generated — awaiting engineer review');
+          console.log(`[worker] Task ${task.id} plan complete — pausing for engineer review`);
+          unclaimTask(db, task.id);
+          return;
+        }
       }
 
       // No subtasks — proceed to implementation pipeline + final review + PR

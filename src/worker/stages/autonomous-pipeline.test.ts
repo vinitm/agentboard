@@ -23,7 +23,7 @@ function createTestProject(db: ReturnType<typeof createTestDb>) {
 describe('Planner: PlanningResult parsing', () => {
   it('planner prompt instructs agent to use assumptions, not questions', () => {
     const fs = require('node:fs');
-    const prompt = fs.readFileSync(repoRoot('prompts/planner.md'), 'utf-8');
+    const prompt = fs.readFileSync(repoRoot('prompts/planner-v2.md'), 'utf-8');
 
     expect(prompt).not.toContain('"questions"');
     expect(prompt).toContain('"assumptions"');
@@ -32,7 +32,7 @@ describe('Planner: PlanningResult parsing', () => {
 
   it('implementer prompt instructs agent to never ask for input', () => {
     const fs = require('node:fs');
-    const prompt = fs.readFileSync(repoRoot('prompts/implementer.md'), 'utf-8');
+    const prompt = fs.readFileSync(repoRoot('prompts/implementer-v2.md'), 'utf-8');
 
     expect(prompt).not.toContain('needs_user_input');
     expect(prompt).toContain('Never ask for human input');

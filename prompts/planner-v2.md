@@ -27,6 +27,7 @@ Return a single JSON object with this exact structure:
 ```json
 {
   "planSummary": "Brief description of the implementation approach",
+  "confidence": 0.9,
   "subtasks": [
     {
       "title": "Short name for this subtask",
@@ -51,6 +52,11 @@ Return a single JSON object with this exact structure:
 - Every subtask that adds behavior MUST have a test step before the implementation step.
 - `files` on each subtask lists only the files that subtask touches.
 - `fileMap` is the union of all `files` across all subtasks — no duplicates.
+- `confidence` is a number between 0 and 1 indicating how confident you are in the plan:
+  - 0.9-1.0: High confidence — clear spec, well-understood codebase, no ambiguity
+  - 0.7-0.9: Medium confidence — some ambiguity but reasonable assumptions made
+  - 0.5-0.7: Low confidence — significant assumptions, unclear requirements
+  - Below 0.5: Very low confidence — major unknowns, likely needs human input
 - Do NOT return questions. If there are ambiguities not covered in the spec, make a reasonable assumption based on the codebase context and document it in `assumptions`.
 - Keep subtasks focused: each should be completable in under 15 minutes of autonomous work.
 - If the task is trivially simple (single-line fix), you may have 1-2 subtasks without TDD steps.

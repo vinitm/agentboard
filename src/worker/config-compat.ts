@@ -28,5 +28,23 @@ export function normalizeConfig(raw: Record<string, unknown>): AgentboardConfig 
     }
   }
 
+  // Default new config fields
+  if (raw.autoMergeMode === undefined) {
+    // Migrate boolean autoMerge to autoMergeMode
+    raw.autoMergeMode = raw.autoMerge === true ? 'low-risk' : 'off';
+  }
+
+  if (raw.autoPlanApproval === undefined) {
+    raw.autoPlanApproval = false;
+  }
+
+  if (raw.maxCostPerTask === undefined) {
+    raw.maxCostPerTask = null;
+  }
+
+  if (raw.maxInlineFixAttempts === undefined) {
+    raw.maxInlineFixAttempts = 2;
+  }
+
   return raw as unknown as AgentboardConfig;
 }

@@ -50,6 +50,10 @@ export default async function init(): Promise<void> {
     maxSubcardDepth: 2,
     prDraft: true,
     autoMerge: false,
+    autoMergeMode: 'off',
+    autoPlanApproval: false,
+    maxCostPerTask: null,
+    maxInlineFixAttempts: 2,
     securityMode: 'lightweight',
     commitPolicy: 'after-checks-pass',
     formatPolicy: 'auto-fix-separate-commit',
@@ -70,7 +74,7 @@ export default async function init(): Promise<void> {
       terminal: true,
     },
     ruflo: {
-      enabled: false,
+      enabled: true,
     },
     maxRalphIterations: 5,
   };

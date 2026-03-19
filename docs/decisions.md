@@ -104,4 +104,10 @@ Architectural and design decisions for agentboard. Read this before working on t
 **Context:** Need automated agent routing, cross-session learning, and portable intelligence. Ruflo v3.5 connected as MCP server but unconfigured.
 **Decision:** Integrate ruflo v3.5 with all features: hooks (SessionStart, UserPromptSubmit, PostToolUse, Stop, PreCompact), daemon workers (12), memory (sql.js + HNSW with 384-dim embeddings), neural training (3 models), guidance compilation, AI defense, GitHub integration, swarm coordination, workflow templates (4), cross-device portability via `.ruflo/` directory.
 **Why:** Single-developer needs maximum automation. Zero-manual-effort sessions. Cross-session learning via HNSW-indexed semantic search. Intelligent agent routing via Q-learning + neural models. Portable state across devices.
-**Consequences:** `.claude/settings.json` grows with hook config (backed up as `.pre-ruflo`). `.ruflo/` directory committed for portability. Ruflo daemon runs in background. 12 workers for continuous analysis. See `docs/ruflo-setup.md` for complete setup documentation and `docs/architecture/008-ruflo-integration.md` for ADR.
+**Consequences:** `.claude/settings.json` grows with hook config (backed up as `.pre-ruflo`). `.ruflo/` directory committed for portability. Ruflo daemon runs in background. 12 workers for continuous analysis. Enabled by default via `ruflo.enabled: true` in `.agentboard/config.json`. See `docs/ruflo-setup.md` for complete setup documentation and `docs/architecture/008-ruflo-integration.md` for ADR.
+
+## 2026-03-19: Lightpanda + Playwright for browser testing
+**Context:** Agentboard React UI had zero browser tests. Need fast, lightweight headless browser for dev testing.
+**Decision:** Use Lightpanda (Zig-based headless browser) as CDP backend for Playwright. Install via npm (`@lightpanda/browser`). Docker fallback for unsupported platforms. Tests in `browser-tests/` directory.
+**Why:** 11x faster than Chrome, 9x less memory. CDP-compatible = drop-in for Playwright. npm package = zero manual setup. Purpose-built for automation (no rendering bloat).
+**Consequences:** Dev-only for now (not integrated into pipeline checks). Lightpanda is beta — may need Docker fallback on some platforms. Tests connect via `connectOverCDP()`.
