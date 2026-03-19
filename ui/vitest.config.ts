@@ -1,9 +1,16 @@
 import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  plugins: [react()],
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
-    environment: 'node',
-    globals: false,
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test-setup.ts'],
+    environmentMatchGlobs: [
+      // non-DOM tests use node environment
+      ['src/lib/**/*.test.ts', 'node'],
+    ],
   },
 });
