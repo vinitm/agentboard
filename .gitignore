@@ -3,3 +3,14 @@ dist
 .agentboard/
 *.db
 .env
+
+# Ruflo runtime state (not portable)
+.agents/
+.claude-flow/
+.ruflo/session-export.json
+
+# Keep committed (portable state):
+# .ruflo/memory-export.json
+# .ruflo/q-table.json
+# .ruflo/config-export.json
+# .ruflo/models/

@@ -1,0 +1,27 @@
+{
+  "pinataContent": {
+    "type": "learning-pattern",
+    "version": "1.0.0",
+    "name": "claude-flow-model-1773904413336",
+    "exportedAt": "2026-03-19T07:13:33.336Z",
+    "modelId": "all",
+    "patterns": [],
+    "metadata": {
+      "sourceVersion": "3.0.0-alpha",
+      "piiStripped": true,
+      "signed": true,
+      "accuracy": 0.85,
+      "totalUsage": 0
+    }
+  },
+  "pinataMetadata": {
+    "name": "claude-flow-model-1773904413336",
+    "keyvalues": {
+      "type": "learning-pattern",
+      "version": "1.0.0",
+      "signed": "true"
+    }
+  },
+  "signature": "56e065acdef5e745007aebb881f0dbfa48181738dcd8dcd0ae5d1bff527b88b6648ea11fe000f0da089cb3cebfa659fb0c830a64b7a314e0b783389f9c925d08",
+  "publicKey": "ed25519:ad6c5c1f83d0d021cf19c217b9010e852634bbcc146cb46d92aae57a73d88091"
+}

@@ -12,6 +12,19 @@
         "openIssues": 9,
         "openPRs": 8
       }
+    },
+    "vinitm/agentboard": {
+      "owner": "vinitm",
+      "name": "agentboard",
+      "branch": "main",
+      "lastAnalyzed": "2026-03-19T07:13:14.333Z",
+      "metrics": {
+        "commits": 657,
+        "branches": 18,
+        "contributors": 46,
+        "openIssues": 25,
+        "openPRs": 7
+      }
     }
   },
   "prs": {},

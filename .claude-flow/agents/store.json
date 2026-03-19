@@ -125,6 +125,34 @@
       "domain": "documentation",
       "model": "sonnet",
       "modelRoutedBy": "explicit"
+    },
+    "ruflo-docs-researcher": {
+      "agentId": "ruflo-docs-researcher",
+      "agentType": "researcher",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-19T06:33:21.691Z",
+      "domain": "research",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "plan-reviewer": {
+      "agentId": "plan-reviewer",
+      "agentType": "reviewer",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-03-19T06:44:21.316Z",
+      "domain": "architecture",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
     }
   },
   "version": "3.0.0"

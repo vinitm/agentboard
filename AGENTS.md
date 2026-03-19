@@ -88,9 +88,43 @@ Interactive sessions: Research → Plan → TDD → Review → Docs & Learn → 
 See `.claude/rules/common/development-workflow.md` for details.
 Architectural decisions → [docs/decisions.md](docs/decisions.md)
 
+## Ruflo Integration
+
+Ruflo hooks fire automatically via Claude Code settings.json. No manual steps needed.
+
+### Automatic (via hooks)
+- **SessionStart:** Restores session context, checks pretrain freshness
+- **UserPromptSubmit:** Routes task to optimal agent + model
+- **PostToolUse:** Learns from edit/command outcomes
+- **Stop:** Saves session, exports memory, persists patterns
+- **PreCompact:** Checkpoints before context compaction
+
+### Before starting work
+- `memory_search(query)` — check for existing patterns/gotchas
+- `agentdb_hierarchical-recall(namespace)` — recall subsystem-specific knowledge
+- `guidance retrieve` — get task-relevant AGENTS.md shards
+- `hooks_route(task)` — optimal agent suggestion
+- `hooks_model-route(task)` — optimal model (haiku/sonnet/opus)
+
+### After completing work
+- `hooks_post-task(taskId, success)` — record outcome for learning
+- `analyze_diff(ref)` — risk assessment before PR
+- `memory_store(key, value)` — persist new gotchas/patterns
+- `aidefence_scan(input)` — scan for security issues in generated code
+
+### For complex tasks
+- `workflow_run(template: "feature-implementation")` — full pipeline
+- `workflow_run(template: "bug-fix")` — diagnose → fix → verify
+- `workflow_run(template: "security-audit")` — full security scan
+
+### Cross-device sync
+- `scripts/ruflo-bootstrap.sh` — bootstrap on new device from committed state
+- Memory, Q-table, config, and models are committed in `.ruflo/`
+
 ## References
 
 - [docs/architecture/](docs/architecture/) — ADRs and orchestration architecture
 - [docs/gotchas/](docs/gotchas/) — Known pitfalls by subsystem
+- [docs/ruflo-setup.md](docs/ruflo-setup.md) — Complete ruflo setup documentation
 - [prompts/](prompts/) — Prompt templates for each pipeline stage
 - [src/types/index.ts](src/types/index.ts) — All shared interfaces
