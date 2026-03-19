@@ -45,7 +45,7 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
             const parsed = JSON.parse(planningRun.output) as Record<string, unknown>;
             planData = {
               planSummary: (parsed.planSummary as string) || '',
-              subtasks: Array.isArray(parsed.subtasks) ? parsed.subtasks as Array<{ title: string; description: string }> : [],
+              steps: Array.isArray(parsed.steps) ? parsed.steps as Array<{ title: string; description: string }> : Array.isArray(parsed.subtasks) ? parsed.subtasks as Array<{ title: string; description: string }> : [],
               assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions as string[] : [],
               fileHints: Array.isArray(parsed.fileHints) ? parsed.fileHints as string[] : [],
               riskAssessment: (parsed.riskAssessment as string) || undefined,
@@ -60,7 +60,7 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
           if (planArtifact) {
             planData = {
               planSummary: planArtifact.content,
-              subtasks: [],
+              steps: [],
               assumptions: [],
               fileHints: [],
             };
@@ -70,7 +70,7 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
         if (planData) {
           setPlan(planData);
           setEditedSummary(planData.planSummary);
-          setEditedSubtasks(planData.subtasks.map((s) => ({ ...s })));
+          setEditedSubtasks(planData.steps.map((s) => ({ ...s })));
         } else {
           setError('Could not parse plan data from planning run.');
         }
@@ -82,9 +82,9 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
   const hasEdits = (): boolean => {
     if (!plan) return false;
     if (editedSummary !== plan.planSummary) return true;
-    if (editedSubtasks.length !== plan.subtasks.length) return true;
+    if (editedSubtasks.length !== plan.steps.length) return true;
     return editedSubtasks.some((s, i) =>
-      s.title !== plan.subtasks[i]?.title || s.description !== plan.subtasks[i]?.description
+      s.title !== plan.steps[i]?.title || s.description !== plan.steps[i]?.description
     );
   };
 
@@ -95,7 +95,7 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
       if (hasEdits()) {
         action.edits = {
           planSummary: editedSummary,
-          subtasks: editedSubtasks,
+          steps: editedSubtasks,
         };
       }
       await onReview(task.id, action);
@@ -197,7 +197,7 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
       <div className="mb-4">
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wide">
-            Subtasks ({editedSubtasks.length})
+            Steps ({editedSubtasks.length})
           </span>
           <button
             type="button"
@@ -208,7 +208,7 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
           </button>
         </div>
         {editedSubtasks.length === 0 ? (
-          <p className="text-[11px] text-text-tertiary italic">No subtasks — task will be implemented directly.</p>
+          <p className="text-[11px] text-text-tertiary italic">No steps — task will be implemented directly.</p>
         ) : (
           <div className="space-y-2">
             {editedSubtasks.map((sub, i) => (
@@ -219,7 +219,7 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
                       value={sub.title}
                       onChange={(e) => updateSubtask(i, 'title', e.target.value)}
                       className={`${inputClasses} !min-h-0 py-1.5`}
-                      placeholder="Subtask title"
+                      placeholder="Step title"
                     />
                     <textarea
                       value={sub.description}

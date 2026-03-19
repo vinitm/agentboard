@@ -671,42 +671,6 @@ describe('Frontend: TaskForm passes existingTaskId on submit', () => {
   });
 });
 
-describe('Frontend: Board.tsx handles existingTaskId branch', () => {
-  it('handleCreateOrEdit has a branch for data.existingTaskId', () => {
-    const fs = require('node:fs');
-    const boardSource = fs.readFileSync(
-      require('node:path').resolve(__dirname, '../../../ui/src/components/Board.tsx'),
-      'utf-8',
-    );
-
-    // Should have a conditional branch checking for existingTaskId
-    expect(boardSource).toContain('data.existingTaskId');
-  });
-
-  it('existingTaskId branch calls updateTask (not createTask)', () => {
-    const fs = require('node:fs');
-    const boardSource = fs.readFileSync(
-      require('node:path').resolve(__dirname, '../../../ui/src/components/Board.tsx'),
-      'utf-8',
-    );
-
-    // Should destructure existingTaskId and call updateTask with it
-    expect(boardSource).toContain('const { existingTaskId, ...updateData } = data');
-    expect(boardSource).toContain('await updateTask(existingTaskId, updateData)');
-  });
-
-  it('existingTaskId branch calls moveTask with ready', () => {
-    const fs = require('node:fs');
-    const boardSource = fs.readFileSync(
-      require('node:path').resolve(__dirname, '../../../ui/src/components/Board.tsx'),
-      'utf-8',
-    );
-
-    // Should move the chat-created task to ready after updating
-    expect(boardSource).toContain("await moveTask(existingTaskId, 'ready')");
-  });
-});
-
 describe('Frontend: TaskForm validates spec completeness before submit', () => {
   it('handleSubmit checks for empty spec fields before calling onSubmit', () => {
     const fs = require('node:fs');

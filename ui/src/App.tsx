@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { Board } from './components/Board';
 import { Settings } from './components/Settings';
 import { TaskPage } from './components/TaskPage';
 import { ActivityFeed } from './components/ActivityFeed';
@@ -37,7 +36,7 @@ const AppContent: React.FC = () => {
     });
   }, [toast]);
 
-  const { tasks, loading, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask, reviewPlan } =
+  const { tasks, loading, createTask, updateTask, deleteTask, answerTask, retryTask, reviewPlan } =
     useTasks(projectId);
 
   const runningCount = tasks.filter((t) => t.claimedBy).length;
@@ -158,27 +157,7 @@ const AppContent: React.FC = () => {
             <div id="main-content" className="flex-1 overflow-auto">
               <ErrorBoundary>
               <Routes>
-                <Route
-                  path="/"
-                  element={
-                    <Board
-                      tasks={tasks}
-                      loading={loading}
-                      projectId={projectId}
-                      createTask={createTask}
-                      updateTask={updateTask}
-                      moveTask={moveTask}
-                      deleteTask={deleteTask}
-                      answerTask={answerTask}
-                      retryTask={retryTask}
-                      reviewPlan={reviewPlan}
-                      showNewTask={showNewTask}
-                      onOpenNewTask={() => setShowNewTask(true)}
-                      onCloseNewTask={() => setShowNewTask(false)}
-                      filters={filters}
-                    />
-                  }
-                />
+                <Route path="/" element={<div className="p-6 text-text-primary">TaskGrid coming soon</div>} />
                 <Route path="/tasks/:id" element={<TaskPage />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/activity" element={<ActivityFeed projectId={projectId} tasks={tasks} />} />

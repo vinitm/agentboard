@@ -86,7 +86,7 @@ export function useTasks(projectId: string) {
   const updateTask = useCallback(
     async (
       id: number,
-      data: Partial<Pick<Task, 'title' | 'description' | 'spec' | 'riskLevel' | 'priority' | 'columnPosition'>>,
+      data: Partial<Pick<Task, 'title' | 'description' | 'spec' | 'riskLevel' | 'priority'>>,
     ) => {
       const updated = await api.put<Task>(`/api/tasks/${id}`, data);
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));

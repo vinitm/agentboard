@@ -35,7 +35,6 @@ export interface StageLog {
   taskId: number;
   runId: string | null;
   stage: StageLogStage;
-  subtaskId: number | null;
   attempt: number;
   status: StageLogStatus;
   summary: string | null;
@@ -48,7 +47,6 @@ export interface StageLog {
 export interface StageTransitionEvent {
   taskId: number;
   stage: StageLogStage;
-  subtaskId?: number;
   status: StageLogStatus;
   summary?: string;
   durationMs?: number;
@@ -70,13 +68,11 @@ export interface Project {
 export interface Task {
   id: number;
   projectId: string;
-  parentTaskId: number | null;
   title: string;
   description: string;
   status: TaskStatus;
   riskLevel: RiskLevel;
   priority: number;
-  columnPosition: number;
   spec: string | null;
   blockedReason: string | null;
   blockedAtStage: string | null;
@@ -175,13 +171,13 @@ export interface PlanReviewAction {
   reason?: string;
   edits?: {
     planSummary?: string;
-    subtasks?: Array<{ title: string; description: string }>;
+    steps?: Array<{ title: string; description: string }>;
   };
 }
 
 export interface PlanReviewData {
   planSummary: string;
-  subtasks: Array<{ title: string; description: string }>;
+  steps: Array<{ title: string; description: string }>;
   assumptions: string[];
   fileHints: string[];
   riskAssessment?: string;

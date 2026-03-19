@@ -8,7 +8,6 @@ import { PRPanel } from './PRPanel';
 import { PlanReviewPanel } from './PlanReviewPanel';
 import { RunHistory } from './RunHistory';
 import { EventsTimeline } from './EventsTimeline';
-import { SubtaskMiniCard } from './SubtaskMiniCard';
 import { StageAccordion } from './StageAccordion';
 import { TaskForm } from './TaskForm';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -18,18 +17,6 @@ import type { Task, Run, TaskStatus, RiskLevel, PlanReviewAction } from '../type
 
 type Tab = 'stages' | 'events' | 'runs';
 const ACTIVE_STATUSES: TaskStatus[] = ['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'];
-
-/** For subtasks, collapse internal pipeline states into simplified labels. */
-function getSubtaskDisplayStatus(task: Task): string {
-  switch (task.status) {
-    case 'done': return 'done';
-    case 'failed': return 'failed';
-    case 'blocked': return 'blocked';
-    case 'cancelled': return 'cancelled';
-    case 'backlog': return 'queued';
-    default: return task.claimedBy ? 'running' : 'next';
-  }
-}
 
 function getInitialTab(): Tab {
   const hash = window.location.hash.slice(1);
@@ -80,15 +67,13 @@ export const TaskPage: React.FC = () => {
   const taskId = id ? Number(id) : undefined;
   const navigate = useNavigate();
   const [task, setTask] = useState<Task | null>(null);
-  const [parentTask, setParentTask] = useState<Task | null>(null);
-  const [subtasks, setSubtasks] = useState<Task[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [tab, setTab] = useState<Tab>(getInitialTab);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [confirmAction, setConfirmAction] = useState<'delete' | 'skip' | null>(null);
-  const [deleteImpact, setDeleteImpact] = useState<{ subtaskCount: number; activeSubtasks: number; isSubtask: boolean; parentWillComplete?: boolean; nextSiblingWillPromote?: boolean } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'delete' | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<{ isTask: boolean } | null>(null);
   const [editing, setEditing] = useState(false);
   const { toast } = useToast();
   const socket = useSocket();
@@ -106,17 +91,9 @@ export const TaskPage: React.FC = () => {
   useEffect(() => {
     if (taskId === undefined || isNaN(taskId)) return;
     setLoading(true);
-    setParentTask(null);
-    setSubtasks([]);
     Promise.all([api.get<Task>(`/api/tasks/${taskId}`), api.get<Run[]>(`/api/runs?taskId=${taskId}`), api.get<EventRecord[]>(`/api/events?taskId=${taskId}`)])
       .then(async ([t, r, e]) => {
         setTask(t); setRuns(r); setEvents(e);
-        if (t.parentTaskId) {
-          api.get<Task>(`/api/tasks/${t.parentTaskId}`).then(setParentTask).catch(() => {});
-        }
-        api.get<Task[]>(`/api/tasks?projectId=${t.projectId}`).then((all) => {
-          setSubtasks(all.filter((s) => s.parentTaskId === t.id));
-        }).catch(() => {});
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load task'))
       .finally(() => setLoading(false));
@@ -173,9 +150,8 @@ export const TaskPage: React.FC = () => {
     </div>
   );
 
-  const isSubtask = !!task.parentTaskId;
   const isActive = ACTIVE_STATUSES.includes(task.status);
-  const displayStatus = isSubtask ? getSubtaskDisplayStatus(task) : task.status.replace(/_/g, ' ');
+  const displayStatus = task.status.replace(/_/g, ' ');
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: 'stages', label: 'Stages' },
     { key: 'events', label: 'Events', count: events.length },
@@ -193,12 +169,6 @@ export const TaskPage: React.FC = () => {
             </svg>
             Board
           </Link>
-          {parentTask && (
-            <>
-              <span className="text-text-tertiary">/</span>
-              <Link to={`/tasks/${parentTask.id}`} className="text-text-secondary hover:text-text-primary truncate max-w-[150px] transition-colors">{parentTask.title}</Link>
-            </>
-          )}
         </div>
         <h1 className="text-base font-semibold text-white flex-1 truncate">{task.title}</h1>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -214,14 +184,13 @@ export const TaskPage: React.FC = () => {
           )}
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          {!isSubtask && !isActive && (
+          {!isActive && (
             <button onClick={() => setEditing(true)}
               className="px-3 py-1 rounded-lg text-xs font-semibold border border-border-hover text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
               Edit
             </button>
           )}
-          {!isSubtask && (
-            <select
+          <select
               value=""
               onChange={async (e) => {
                 const column = e.target.value;
@@ -243,14 +212,9 @@ export const TaskPage: React.FC = () => {
               <option value="" disabled>Move to...</option>
               {MOVABLE_COLUMNS.map((col) => <option key={col} value={col}>{col}</option>)}
             </select>
-          )}
           {(task.status === 'failed' || task.status === 'blocked') && (
             <button onClick={async () => { await api.post(`/api/tasks/${task.id}/retry`); const t = await api.get<Task>(`/api/tasks/${task.id}`); setTask(t); }}
               className="px-3 py-1 rounded-lg text-xs font-semibold bg-accent-amber text-white hover:bg-amber-600 transition-colors">Retry</button>
-          )}
-          {isSubtask && (task.status === 'blocked' || task.status === 'failed') && (
-            <button onClick={() => setConfirmAction('skip')}
-              className="px-3 py-1 rounded-lg text-xs font-semibold border border-text-tertiary text-text-secondary hover:bg-bg-tertiary transition-colors">Skip</button>
           )}
           {task.claimedBy && task.claimedAt && (Date.now() - new Date(task.claimedAt).getTime() > 10 * 60 * 1000) && (
             <button onClick={async () => {
@@ -272,7 +236,7 @@ export const TaskPage: React.FC = () => {
       </div>
 
       {/* Pipeline progress */}
-      {ACTIVE_STATUSES.includes(task.status) && !isSubtask && (
+      {ACTIVE_STATUSES.includes(task.status) && (
         <div className="px-5 py-2 border-b border-border-default flex-shrink-0">
           <div className="flex items-center gap-1">
             {(['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'] as TaskStatus[]).map((stage, i) => {
@@ -295,23 +259,6 @@ export const TaskPage: React.FC = () => {
         </div>
       )}
 
-      {/* Subtasks */}
-      {subtasks.length > 0 && (
-        <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">Subtasks</h3>
-            <span className="text-[11px] text-text-tertiary bg-bg-tertiary px-2 py-0.5 rounded-full font-medium">
-              {subtasks.filter((s) => s.status === 'done').length}/{subtasks.length} done
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-3">
-            {subtasks
-              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-              .map((sub) => <SubtaskMiniCard key={sub.id} task={sub} />)}
-          </div>
-        </div>
-      )}
-
       {/* Action panels */}
       {task.status === 'needs_plan_review' && (
         <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
@@ -322,27 +269,13 @@ export const TaskPage: React.FC = () => {
           }} />
         </div>
       )}
-      {task.status === 'blocked' && task.blockedReason && !isSubtask && (
+      {task.status === 'blocked' && task.blockedReason && (
         <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
           <BlockedPanel taskId={task.id} blockedReason={task.blockedReason} onAnswer={async (taskIdParam: number, answers: string) => {
             const answered = await api.post<Task>(`/api/tasks/${taskIdParam}/answer`, { answers });
             setTask(answered);
             return answered;
           }} />
-        </div>
-      )}
-      {task.status === 'blocked' && task.blockedReason && isSubtask && (
-        <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
-          <div className="rounded-lg border border-accent-amber/30 bg-accent-amber/5 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <svg className="w-4 h-4 text-accent-amber flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-              </svg>
-              <span className="text-sm font-semibold text-accent-amber">Subtask Blocked</span>
-            </div>
-            <p className="text-sm text-text-secondary whitespace-pre-wrap">{task.blockedReason}</p>
-            <p className="text-xs text-text-tertiary mt-2">Use Retry to re-run this subtask, or Skip to cancel it and continue with the next one.</p>
-          </div>
         </div>
       )}
       {task.status === 'needs_human_review' && (
@@ -374,8 +307,6 @@ export const TaskPage: React.FC = () => {
         {tab === 'stages' && (
           <StageAccordion
             taskId={task.id}
-            parentTaskId={isSubtask ? task.parentTaskId! : undefined}
-            subtasks={subtasks.map(s => ({ id: s.id, title: s.title, status: s.status }))}
           />
         )}
         {tab === 'events' && <EventsTimeline taskId={task.id} events={events} />}
@@ -385,16 +316,7 @@ export const TaskPage: React.FC = () => {
       <ConfirmDialog
         open={confirmAction === 'delete'}
         title="Delete this task?"
-        description={
-          deleteImpact
-            ? [
-                deleteImpact.subtaskCount > 0 && `This will also delete ${deleteImpact.subtaskCount} subtask(s)${deleteImpact.activeSubtasks > 0 ? ` (${deleteImpact.activeSubtasks} still active)` : ''}.`,
-                deleteImpact.isSubtask && deleteImpact.nextSiblingWillPromote && 'The next queued subtask will be promoted.',
-                deleteImpact.isSubtask && deleteImpact.parentWillComplete && 'The parent task will complete after this deletion.',
-                'This action cannot be undone.',
-              ].filter(Boolean).join(' ')
-            : 'This will permanently delete the task and all its data. This action cannot be undone.'
-        }
+        description="This will permanently delete the task and all its data. This action cannot be undone."
         confirmLabel="Delete"
         variant="danger"
         onConfirm={async () => {
@@ -404,19 +326,6 @@ export const TaskPage: React.FC = () => {
           navigate('/');
         }}
         onCancel={() => { setConfirmAction(null); setDeleteImpact(null); }}
-      />
-      <ConfirmDialog
-        open={confirmAction === 'skip'}
-        title="Skip this subtask?"
-        description="It will be cancelled and the next subtask will be promoted."
-        confirmLabel="Skip"
-        variant="warning"
-        onConfirm={async () => {
-          setConfirmAction(null);
-          const updated = await api.post<Task>(`/api/tasks/${task.id}/skip`);
-          setTask(updated);
-        }}
-        onCancel={() => setConfirmAction(null)}
       />
       {editing && task && (
         <TaskForm

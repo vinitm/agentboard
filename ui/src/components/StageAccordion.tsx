@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client';
 import { useSocket } from '../hooks/useSocket';
 import { StageRow } from './StageRow';
-import { SubtaskStages } from './SubtaskStages';
 import type { StageLog, StageTransitionEvent } from '../types';
 
 interface LogChunkEvent {
@@ -11,21 +10,13 @@ interface LogChunkEvent {
   chunk: string;
   timestamp: string;
   stage?: string;
-  subtaskId?: number;
 }
 
 interface Props {
   taskId: number;
-  /** For subtasks: the parent task ID, used to listen for WebSocket events (which broadcast under parentTaskId). */
-  parentTaskId?: number;
-  subtasks?: Array<{ id: number; title: string; status: string }>;
 }
 
-export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks = [] }) => {
-  // For subtasks, WebSocket events use the parent's taskId
-  const wsTaskId = parentTaskId ?? taskId;
-  // For subtasks, only show stages matching this subtask
-  const filterSubtaskId = parentTaskId ? taskId : undefined;
+export const StageAccordion: React.FC<Props> = ({ taskId }) => {
   const [stages, setStages] = useState<StageLog[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [followMode, setFollowMode] = useState(true);
@@ -43,11 +34,8 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
       .then(({ stages: s }) => {
         setStages(s);
         // Auto-expand the running stage or the most recent one
-        const candidates = filterSubtaskId
-          ? s.filter(st => st.subtaskId === filterSubtaskId)
-          : s.filter(st => !st.subtaskId);
-        const running = candidates.find(st => st.status === 'running');
-        const lastCompleted = [...candidates].reverse().find(st => st.status === 'completed' || st.status === 'failed');
+        const running = s.find(st => st.status === 'running');
+        const lastCompleted = [...s].reverse().find(st => st.status === 'completed' || st.status === 'failed');
         const toExpand = running || lastCompleted;
         if (toExpand) setExpandedId(toExpand.id);
       })
@@ -60,15 +48,12 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
     if (!socket) return;
 
     const onTransition = (event: StageTransitionEvent) => {
-      if (event.taskId !== wsTaskId) return;
-      // On a subtask page, only accept events for this subtask
-      if (filterSubtaskId && (event.subtaskId || null) !== filterSubtaskId) return;
+      if (event.taskId !== taskId) return;
 
       setStages(prev => {
         // Find existing stage matching this event
         const idx = prev.findIndex(s =>
           s.stage === event.stage &&
-          s.subtaskId === (event.subtaskId || null) &&
           (s.status === 'running' || event.status === 'running')
         );
 
@@ -89,11 +74,10 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
         if (event.status === 'running') {
           // New stage starting — add it
           const newStage: StageLog = {
-            id: `live-${event.stage}-${event.subtaskId || 'parent'}-${Date.now()}`,
-            taskId: wsTaskId,
+            id: `live-${event.stage}-${Date.now()}`,
+            taskId,
             runId: null,
             stage: event.stage,
-            subtaskId: event.subtaskId || null,
             attempt: 1,
             status: 'running',
             summary: event.summary || null,
@@ -109,12 +93,9 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
       });
 
       // Auto-follow: expand new running stage
-      const matchesFilter = filterSubtaskId
-        ? event.subtaskId === filterSubtaskId
-        : !event.subtaskId;
-      if (event.status === 'running' && matchesFilter && followModeRef.current) {
+      if (event.status === 'running' && followModeRef.current) {
         setStages(prev => {
-          const found = prev.find(s => s.stage === event.stage && s.subtaskId === (event.subtaskId || null) && s.status === 'running');
+          const found = prev.find(s => s.stage === event.stage && s.status === 'running');
           if (found) setExpandedId(found.id);
           return prev;
         });
@@ -122,11 +103,8 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
     };
 
     const onLogChunk = (entry: LogChunkEvent) => {
-      if (entry.taskId !== wsTaskId) return;
-      if (filterSubtaskId && (entry.subtaskId || null) !== filterSubtaskId) return;
-      const key = entry.subtaskId
-        ? `${entry.subtaskId}-${entry.stage || ''}`
-        : `parent-${entry.stage || ''}`;
+      if (entry.taskId !== taskId) return;
+      const key = `parent-${entry.stage || ''}`;
 
       setLiveChunks(prev => {
         const next = new Map(prev);
@@ -143,7 +121,7 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
       socket.off('stage:transition', onTransition);
       socket.off('run:log', onLogChunk);
     };
-  }, [socket, wsTaskId, filterSubtaskId]);
+  }, [socket, taskId]);
 
   const handleToggle = useCallback((stageId: string) => {
     setExpandedId(prev => {
@@ -157,10 +135,7 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
 
   const reengageFollow = useCallback(() => {
     setFollowMode(true);
-    // Find currently running stage and expand it
-    const running = filterSubtaskId
-      ? stages.find(s => s.status === 'running' && s.subtaskId === filterSubtaskId)
-      : stages.find(s => s.status === 'running' && !s.subtaskId);
+    const running = stages.find(s => s.status === 'running');
     if (running) setExpandedId(running.id);
   }, [stages]);
 
@@ -174,12 +149,7 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
     );
   }
 
-  // When viewing a subtask, filter to only its stages
-  const visibleStages = filterSubtaskId
-    ? stages.filter(s => s.subtaskId === filterSubtaskId)
-    : stages;
-
-  if (visibleStages.length === 0) {
+  if (stages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-text-secondary animate-fade-in">
         <svg className="w-10 h-10 text-text-tertiary mb-3 opacity-50" viewBox="0 0 20 20" fill="currentColor">
@@ -191,10 +161,7 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
     );
   }
 
-  // Separate parent-level stages and subtask stages
-  const parentStages = visibleStages.filter(s => !s.subtaskId);
-  const subtaskStages = visibleStages.filter(s => s.subtaskId);
-  const hasRunningStage = visibleStages.some(s => s.status === 'running');
+  const hasRunningStage = stages.some(s => s.status === 'running');
 
   return (
     <div className="space-y-2 animate-fade-in">
@@ -210,9 +177,8 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
         </div>
       )}
 
-      {/* Subtask view: show subtask stages as top-level rows */}
-      {filterSubtaskId && subtaskStages.map(stage => {
-        const chunkKey = `${filterSubtaskId}-${stage.stage}`;
+      {stages.map(stage => {
+        const chunkKey = `parent-${stage.stage}`;
         return (
           <StageRow
             key={stage.id}
@@ -225,50 +191,6 @@ export const StageAccordion: React.FC<Props> = ({ taskId, parentTaskId, subtasks
           />
         );
       })}
-
-      {/* Parent view: show parent stages with subtask stages nested */}
-      {!filterSubtaskId && parentStages.map(stage => {
-        // If this is the "implementing" stage and we have subtask stages, render subtask section after it
-        const isImplementing = stage.stage === 'implementing';
-        const chunkKey = `parent-${stage.stage}`;
-
-        return (
-          <React.Fragment key={stage.id}>
-            <StageRow
-              stageLog={stage}
-              taskId={taskId}
-              isActive={stage.status === 'running'}
-              isExpanded={expandedId === stage.id}
-              onToggle={() => handleToggle(stage.id)}
-              liveChunks={liveChunks.get(chunkKey) || []}
-            />
-
-            {/* Subtask stages nested under implementing */}
-            {isImplementing && subtaskStages.length > 0 && (
-              <div className="ml-4 border-l-2 border-border-default pl-3">
-                <SubtaskStages
-                  stages={subtaskStages}
-                  taskId={taskId}
-                  subtasks={subtasks}
-                  liveChunks={liveChunks}
-                />
-              </div>
-            )}
-          </React.Fragment>
-        );
-      })}
-
-      {/* If no parent implementing stage but we have subtask stages, show them standalone */}
-      {!filterSubtaskId && !parentStages.some(s => s.stage === 'implementing') && subtaskStages.length > 0 && (
-        <div className="ml-4 border-l-2 border-border-default pl-3">
-          <SubtaskStages
-            stages={subtaskStages}
-            taskId={taskId}
-            subtasks={subtasks}
-            liveChunks={liveChunks}
-          />
-        </div>
-      )}
     </div>
   );
 };

@@ -1,6 +1,4 @@
-import React, { useState } from 'react';
-import { useDraggable } from '@dnd-kit/core';
-import { SubtaskMiniCard } from './SubtaskMiniCard';
+import React from 'react';
 import { timeAgo } from '../lib/time';
 import type { Task } from '../types';
 
@@ -8,7 +6,6 @@ interface Props {
   task: Task;
   onClick: () => void;
   selected?: boolean;
-  subtasks?: Task[];
 }
 
 const riskDotColor: Record<string, string> = {
@@ -83,37 +80,17 @@ const PipelineIndicator: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
-export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = [] }) => {
-  const [expanded, setExpanded] = useState(false);
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: task.id,
-    data: { task },
-  });
-
-  const hasSubtasks = subtasks.length > 0;
-  const doneCount = subtasks.filter((s) => s.status === 'done' || s.status === 'needs_human_review').length;
-  const failedCount = subtasks.filter((s) => s.status === 'failed').length;
-  const subtasksRunning = subtasks.some((s) => s.claimedBy);
+export const TaskCard: React.FC<Props> = ({ task, onClick, selected }) => {
   const isRunning = !!task.claimedBy;
-
-  const style: React.CSSProperties = transform
-    ? { transform: `translate(${transform.x}px, ${transform.y}px)${isDragging ? ' rotate(2deg)' : ''}` }
-    : {};
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       tabIndex={0}
       role="button"
       aria-label={`Task #${task.id}: ${task.title}, ${task.riskLevel} risk, ${task.status.replace(/_/g, ' ')}`}
-      className={`bg-bg-secondary rounded-lg p-3 mb-2 border border-border-default border-l-[3px] ${leftBorderClass(task)} cursor-grab transition-all duration-150 animate-fade-in ${
-        isDragging ? 'shadow-2xl opacity-85 scale-[1.02]' : 'shadow-sm hover:bg-bg-tertiary hover:border-border-hover hover:shadow-md'
-      } ${selected ? 'ring-2 ring-accent-blue' : ''} ${isRunning ? 'card-running' : ''}`}
+      className={`bg-bg-secondary rounded-lg p-3 mb-2 border border-border-default border-l-[3px] ${leftBorderClass(task)} transition-all duration-150 animate-fade-in shadow-sm hover:bg-bg-tertiary hover:border-border-hover hover:shadow-md ${selected ? 'ring-2 ring-accent-blue' : ''} ${isRunning ? 'card-running' : ''}`}
     >
       {/* Title */}
       <div className="flex items-center gap-1.5 mb-1">
@@ -143,56 +120,10 @@ export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = 
             </svg>
           </span>
         )}
-        {subtasksRunning && !isRunning && (
-          <span className="flex items-center gap-1 text-accent-purple" aria-label="Subtasks running">
-            <svg className="w-3 h-3 animate-spin-slow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-              <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-            </svg>
-          </span>
-        )}
       </div>
 
       {/* Pipeline stage indicator */}
       <PipelineIndicator status={task.status} />
-
-      {/* Subtask progress */}
-      {hasSubtasks && (
-        <div className="mt-2 pt-2 border-t border-border-default">
-          <div
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); setExpanded(!expanded); }}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="flex items-center gap-2 cursor-pointer text-xs text-text-tertiary select-none hover:text-text-secondary transition-colors"
-          >
-            <span className={`text-[10px] transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}>▶</span>
-            {/* Multi-segment progress bar */}
-            <div className="flex-1 h-1.5 rounded-full bg-bg-elevated overflow-hidden flex">
-              {doneCount > 0 && (
-                <div
-                  className="h-full bg-accent-green transition-all duration-300"
-                  style={{ width: `${(doneCount / subtasks.length) * 100}%` }}
-                />
-              )}
-              {failedCount > 0 && (
-                <div
-                  className="h-full bg-accent-red transition-all duration-300"
-                  style={{ width: `${(failedCount / subtasks.length) * 100}%` }}
-                />
-              )}
-            </div>
-            <span className="tabular-nums">{doneCount}/{subtasks.length}</span>
-          </div>
-
-          {expanded && (
-            <div className="mt-1.5 space-y-1">
-              {subtasks
-                .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-                .map((sub) => (
-                  <SubtaskMiniCard key={sub.id} task={sub} />
-                ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
