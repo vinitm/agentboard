@@ -46,11 +46,7 @@ agentboard doctor      # Verify prerequisites + show registered projects
 
 3 layers: CLI (`src/cli/`) → Server+Worker (`src/server/`, `src/worker/`) → DB (`src/db/`)
 
-Pipeline: backlog → ready → spec_review → planning → needs_plan_review → implementing → [per-subtask: implement → checks → code_quality] → final_review → pr_creation → needs_human_review|done
-Subtask: backlog → ready → implement → checks → (inline fix) → code_quality → done|failed|blocked
-
-Subtasks execute serially. Parent creates single PR after all succeed.
-See [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestration.md) for full architecture.
+See [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestration.md) for the full system design, pipeline state machine, and stage contracts.
 
 ## Available Agents
 
@@ -85,46 +81,27 @@ See [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestra
 ## Workflow
 
 Interactive sessions: Research → Plan → TDD → Review → Docs & Learn → Commit
-See `.claude/rules/common/development-workflow.md` for details.
-Architectural decisions → [docs/decisions.md](docs/decisions.md)
-
-## Ruflo Integration
-
-Ruflo hooks fire automatically via Claude Code settings.json. No manual steps needed.
-
-### Automatic (via hooks)
-- **SessionStart:** Restores session context, checks pretrain freshness
-- **UserPromptSubmit:** Routes task to optimal agent + model
-- **PostToolUse:** Learns from edit/command outcomes
-- **Stop:** Saves session, exports memory, persists patterns
-- **PreCompact:** Checkpoints before context compaction
-
-### Before starting work
-- `memory_search(query)` — check for existing patterns/gotchas
-- `agentdb_hierarchical-recall(namespace)` — recall subsystem-specific knowledge
-- `guidance retrieve` — get task-relevant AGENTS.md shards
-- `hooks_route(task)` — optimal agent suggestion
-- `hooks_model-route(task)` — optimal model (haiku/sonnet/opus)
-
-### After completing work
-- `hooks_post-task(taskId, success)` — record outcome for learning
-- `analyze_diff(ref)` — risk assessment before PR
-- `memory_store(key, value)` — persist new gotchas/patterns
-- `aidefence_scan(input)` — scan for security issues in generated code
-
-### For complex tasks
-- `workflow_run(template: "feature-implementation")` — full pipeline
-- `workflow_run(template: "bug-fix")` — diagnose → fix → verify
-- `workflow_run(template: "security-audit")` — full security scan
-
-### Cross-device sync
-- `scripts/ruflo-bootstrap.sh` — bootstrap on new device from committed state
-- Memory, Q-table, config, and models are committed in `.ruflo/`
+See [.claude/rules/common/development-workflow.md](.claude/rules/common/development-workflow.md) for the full process.
 
 ## References
 
-- [docs/architecture/](docs/architecture/) — ADRs and orchestration architecture
-- [docs/gotchas/](docs/gotchas/) — Known pitfalls by subsystem
-- [docs/ruflo-setup.md](docs/ruflo-setup.md) — Complete ruflo setup documentation
-- [prompts/](prompts/) — Prompt templates for each pipeline stage
-- [src/types/index.ts](src/types/index.ts) — All shared interfaces
+### Architecture
+- [Agent Orchestration](docs/architecture/agent-orchestration.md) — full system design, pipeline state machine, stage contracts, DB schema
+- [ADR Index](docs/architecture/README.md) — why key decisions were made (8 ADRs)
+- [Decision Log](docs/decisions.md) — quick-reference decision diary (complements ADRs)
+
+### Gotchas (failure-backed)
+- [Index](docs/gotchas/README.md) — selection criteria and file list
+- [Imports](docs/gotchas/imports.md) | [Worker](docs/gotchas/worker.md) | [Subtasks](docs/gotchas/subtasks.md) | [Database](docs/gotchas/database.md)
+
+### Ruflo
+- [Ruflo Setup](docs/ruflo-setup.md) — hooks, memory, daemon, neural models, debugging
+- [Ruflo Replication](docs/ruflo-replication-guide.md) — replicate ruflo to other repos
+
+### Rules (auto-loaded per task)
+- [.claude/rules/common/](.claude/rules/common/) — coding style, git, security, testing, workflow, hooks, learning
+- [.claude/rules/typescript/](.claude/rules/typescript/) — TS patterns, style, security
+
+### Pipeline
+- [prompts/](prompts/) — one prompt template per pipeline stage
+- [src/types/index.ts](src/types/index.ts) — all shared interfaces
