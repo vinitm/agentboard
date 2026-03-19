@@ -12,7 +12,9 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "test:browser": "npx playwright test",
+    "test:browser": "npx playwright test --project=lightpanda",
+    "test:visual": "npx playwright test --project=visual",
+    "test:visual:update": "npx playwright test --project=visual --update-snapshots",
     "lightpanda:start": "$HOME/.cache/lightpanda-node/lightpanda serve --host 127.0.0.1 --port 9222"
   },
   "bin": {

@@ -4,6 +4,10 @@ dist
 *.db
 .env
 
+# Playwright visual test results (baselines in browser-tests/*.visual.spec.ts-snapshots/ ARE tracked)
+test-results/
+playwright-report/
+
 # Ruflo runtime state (not portable)
 .agents/
 .claude-flow/

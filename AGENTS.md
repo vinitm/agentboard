@@ -16,7 +16,9 @@ npm start              # Run compiled dist/bin/agentboard.js
 npm test               # Run backend tests
 npm run test:watch     # Watch mode
 npm run test:coverage  # Backend tests with coverage report
-npm run test:browser   # Browser tests (Playwright + Lightpanda)
+npm run test:browser   # Functional browser tests (Playwright + Lightpanda)
+npm run test:visual    # Visual regression tests (Playwright + Chromium)
+npm run test:visual:update  # Update visual baselines after UI changes
 npm run lightpanda:start  # Start Lightpanda headless browser on port 9222
 
 ### CLI

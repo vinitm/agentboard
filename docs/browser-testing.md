@@ -1,83 +1,165 @@
 # Browser Testing
 
-Browser tests for Agentboard's React UI using Playwright with Lightpanda as the headless browser backend.
+Two Playwright projects for testing Agentboard's React UI:
 
-## Why Lightpanda
-
-[Lightpanda](https://github.com/lightpanda-io/browser) is a Zig-based headless browser purpose-built for automation:
-- **11x faster** than Chrome headless
-- **9x less memory** usage
-- **CDP-compatible** — drop-in backend for Playwright via `connectOverCDP()`
-- No rendering bloat — built for testing and scraping, not display
-
-## Prerequisites
-
-The `@lightpanda/browser` npm package auto-downloads the binary for your platform. No manual install needed.
-
-**Docker fallback** for unsupported platforms:
-```bash
-LIGHTPANDA_DOCKER=1 npm run test:browser
-```
+| Project | Browser | Purpose | Speed |
+|---------|---------|---------|-------|
+| **lightpanda** | Lightpanda (CDP) | Functional tests — DOM presence, navigation, interaction | ~3s for 10 tests |
+| **visual** | Chromium | Visual regression — screenshot comparison across viewports | ~5s for 10 tests |
 
 ## Running Tests
 
 ```bash
-# Run all browser tests (starts dev server + Lightpanda automatically)
+# Functional tests (Lightpanda — fast, no rendering)
 npm run test:browser
+
+# Visual regression tests (Chromium — screenshots)
+npm run test:visual
+
+# Update visual baselines after intentional UI changes
+npm run test:visual:update
 
 # Start Lightpanda manually (for debugging)
 npm run lightpanda:start
 ```
 
-## Writing New Tests
+## Why Two Browsers
+
+**Lightpanda** is a Zig-based headless browser purpose-built for automation:
+- 11x faster than Chrome headless, 9x less memory
+- CDP-compatible — connects via `connectOverCDP()`
+- No rendering engine — cannot take screenshots or evaluate visibility
+
+**Chromium** (via Playwright) provides:
+- Full rendering engine for pixel-accurate screenshots
+- `toHaveScreenshot()` for visual regression with diff detection
+- Responsive viewport testing (mobile, tablet, desktop)
+
+## Writing Functional Tests (Lightpanda)
 
 ### File conventions
 
-- Tests live in `browser-tests/*.spec.ts`
-- Use the custom fixture from `browser-tests/fixtures.ts` (connects via CDP)
+- Tests live in `browser-tests/*.spec.ts` (not `*.visual.spec.ts`)
 - Import `test` and `expect` from `./fixtures.js`, not from `@playwright/test`
+- The custom fixture connects to Lightpanda via CDP
 
-### Example test
+### Lightpanda limitations
+
+Lightpanda doesn't support all Playwright APIs. Follow these rules:
+
+| Instead of | Use | Why |
+|-----------|-----|-----|
+| `toBeVisible()` | `toBeAttached()` | No layout engine — visibility can't be computed |
+| `getByRole('button')` | `page.locator('button', { hasText: /text/i })` | Incomplete ARIA role computation |
+| `response.status()` | `toHaveTitle()` or `toBeAttached()` | CDP default context may return null response |
+| `toHaveScreenshot()` | Move to a `*.visual.spec.ts` file | No rendering engine |
+
+### Example
 
 ```typescript
 import { test, expect } from './fixtures.js';
 
-test('page loads', async ({ page }) => {
+test('board columns render', async ({ page }) => {
   await page.goto('/');
-  await expect(page).toHaveTitle(/Agentboard/);
+  await page.waitForLoadState('networkidle');
+
+  const column = page.getByText('Backlog', { exact: true }).first();
+  await expect(column).toBeAttached();
 });
 ```
 
 ### Custom fixture
 
-The `test` fixture in `browser-tests/fixtures.ts` connects Playwright to Lightpanda via CDP instead of launching a browser:
+The fixture in `browser-tests/fixtures.ts` handles two Lightpanda quirks:
+
+1. **Reuses the default CDP context** instead of creating a new one (avoids unsupported `Emulation.setLocaleOverride` calls)
+2. **Resolves relative URLs** against `baseURL` manually (the default CDP context doesn't inherit Playwright config)
+
+## Writing Visual Tests (Chromium)
+
+### File conventions
+
+- Tests live in `browser-tests/*.visual.spec.ts`
+- Import `test` and `expect` from `@playwright/test` (standard Playwright, not the CDP fixture)
+- Baseline screenshots are stored in `browser-tests/*.visual.spec.ts-snapshots/`
+
+### Example
 
 ```typescript
-const browser = await chromium.connectOverCDP('http://localhost:9222');
-const context = await browser.newContext();
+import { test, expect } from '@playwright/test';
+
+test('board page renders correctly', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await expect(page).toHaveScreenshot('board-full.png', {
+    fullPage: true,
+  });
+});
 ```
 
-This means every test gets a fresh browser context connected to the running Lightpanda instance.
+### Visual test configuration
+
+In `playwright.config.ts`:
+- **Max diff pixel ratio:** 1% — small rendering variations are tolerated
+- **Animations:** disabled — prevents flaky diffs from CSS transitions
+- **Device:** Desktop Chrome (1280x720 default viewport)
+
+### Updating baselines
+
+When you intentionally change the UI:
+
+```bash
+npm run test:visual:update
+```
+
+Review the updated PNGs in the `*-snapshots/` directories before committing.
+
+### Current visual tests
+
+| File | What it covers |
+|------|----------------|
+| `board.visual.spec.ts` | Full board page, kanban columns, sidebar |
+| `task-form.visual.spec.ts` | New task dialog, form fields |
+| `task-page.visual.spec.ts` | Task detail view, settings page |
+| `responsive.visual.spec.ts` | Mobile (375px), tablet (768px), wide (1920px) |
+
+## Prerequisites
+
+**Lightpanda:** The `@lightpanda/browser` npm package auto-downloads the binary. Docker fallback for unsupported platforms:
+```bash
+LIGHTPANDA_DOCKER=1 npm run test:browser
+```
+
+**Chromium:** Installed via Playwright:
+```bash
+npx playwright install chromium
+npx playwright install-deps chromium  # system libraries
+```
 
 ## Architecture
 
-### Lifecycle
+### Playwright projects
 
-1. **Global setup** (`browser-tests/global-setup.ts`) — starts Lightpanda before any tests
-2. **Playwright config** (`playwright.config.ts`) — starts `npm run dev` as the web server
-3. **Tests run** — each test gets a `page` connected to Lightpanda via CDP
-4. **Global teardown** (`browser-tests/global-teardown.ts`) — stops Lightpanda after all tests
+The `playwright.config.ts` defines two projects:
 
-### Two modes
+- **lightpanda** — matches `*.spec.ts` (excludes `*.visual.spec.ts`), uses CDP fixture, has global setup/teardown for Lightpanda process
+- **visual** — matches `*.visual.spec.ts`, uses standard Playwright with Chromium
+
+Both share the same web server config (`npm run dev` on port 4200).
+
+### Lightpanda lifecycle
+
+1. **Global setup** (`browser-tests/global-setup.ts`) — starts Lightpanda before tests
+2. **Tests run** — each test gets a `page` from the default CDP context
+3. **Global teardown** (`browser-tests/global-teardown.ts`) — stops Lightpanda
+
+### Lightpanda modes
 
 | Mode | Trigger | How |
 |------|---------|-----|
-| **npm binary** (default) | Normal run | `npx @lightpanda/browser --headless --port 9222` |
+| **npm binary** (default) | Normal run | Binary from `~/.cache/lightpanda-node/` |
 | **Docker** (fallback) | `LIGHTPANDA_DOCKER=1` | `docker run lightpanda/browser:nightly` |
-
-### CDP connection
-
-Lightpanda exposes a Chrome DevTools Protocol endpoint on port 9222. Playwright connects via `chromium.connectOverCDP()`. The global setup waits for `http://localhost:9222/json/version` to respond before tests start.
 
 ## Troubleshooting
 
@@ -87,62 +169,36 @@ Lightpanda exposes a Chrome DevTools Protocol endpoint on port 9222. Playwright 
 - Try Docker fallback: `LIGHTPANDA_DOCKER=1 npm run test:browser`
 - Enable debug output: `LIGHTPANDA_DEBUG=1 npm run test:browser`
 
+### Visual tests fail after UI change
+
+Run `npm run test:visual:update` to regenerate baselines, then review the new screenshots.
+
+### Chromium missing system libraries
+
+```bash
+npx playwright install-deps chromium
+```
+
 ### Port conflicts
 
 Change the port in `browser-tests/helpers.ts` (`DEFAULT_PORT`) and set `CDP_ENDPOINT` env var for the fixture.
 
-### Docker fallback
-
-If the npm binary doesn't work on your platform:
-```bash
-# Pull the image
-docker pull lightpanda/browser:nightly
-
-# Run tests with Docker
-LIGHTPANDA_DOCKER=1 npm run test:browser
-```
-
 ## MCP Browser Tools (agent-browser)
 
-The claude-flow MCP server exposes `browser_open`, `browser_snapshot`, `browser_click`, etc. These tools call the `agent-browser` CLI (installed as a dev dependency) which connects to Lightpanda via CDP.
+The claude-flow MCP server exposes `browser_open`, `browser_snapshot`, `browser_click`, etc. These tools call the `agent-browser` CLI which connects to Lightpanda via CDP.
 
 ### Setup
 
 1. `agent-browser` is installed as a dev dependency (`npm install`)
 2. `.mcp.json` sets `AGENT_BROWSER_CDP=9222` and adds `node_modules/.bin` to `PATH`
-3. Start Lightpanda before using MCP browser tools:
-
-```bash
-npm run lightpanda:start
-```
+3. Start Lightpanda before using MCP browser tools: `npm run lightpanda:start`
 
 ### Manual testing
 
 ```bash
-# Open a page
 npx agent-browser --cdp 9222 --json open http://localhost:3000
-
-# Get accessibility snapshot
 npx agent-browser --cdp 9222 --json snapshot
-
-# Click an element ref
 npx agent-browser --cdp 9222 --json click @e2
 ```
 
-### Via MCP tools
-
-Once Lightpanda is running and the claude-flow MCP server is connected, use the browser tools directly:
-
-- `browser_open` — navigate to a URL
-- `browser_snapshot` — get AI-optimized accessibility tree
-- `browser_click` — click an element by ref or selector
-- `browser_fill` — fill an input field
-
 See [.claude/skills/browser/SKILL.md](../.claude/skills/browser/SKILL.md) for the full command reference.
-
-## Limitations
-
-- Lightpanda is in beta — some Web APIs may not be fully supported
-- No visual rendering (headless only) — screenshots may differ from Chrome
-- CDP support covers most Playwright operations but edge cases may vary
-- Dev-only tool — not integrated into the agentboard pipeline or CI checks
