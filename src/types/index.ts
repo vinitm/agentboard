@@ -37,7 +37,6 @@ export interface StageLog {
   projectId: string;
   runId: string | null;
   stage: StageLogStage;
-  subtaskId: number | null;
   attempt: number;
   filePath: string;
   status: StageLogStatus;
@@ -52,7 +51,6 @@ export interface StageLog {
 export interface StageTransitionEvent {
   taskId: number;
   stage: StageLogStage;
-  subtaskId?: number;
   status: StageLogStatus;
   summary?: string;
   durationMs?: number;
@@ -82,13 +80,11 @@ export interface Project {
 export interface Task {
   id: number;
   projectId: string;
-  parentTaskId: number | null;
   title: string;
   description: string;
   status: TaskStatus;
   riskLevel: RiskLevel;
   priority: number;
-  columnPosition: number;
   spec: string | null;        // JSON text for template fields
   blockedReason: string | null;
   blockedAtStage: string | null;
@@ -198,14 +194,6 @@ export interface FinalReviewResult {
   summary: string;
 }
 
-// ── Planning result with confidence ─────────────────────────────────
-export interface PlanningResultMeta {
-  confidence: number;           // 0-1 confidence score from planner
-  subtaskCount: number;
-  totalFiles: number;
-  hasAssumptions: boolean;
-}
-
 // ── Auto-merge mode ─────────────────────────────────────────────────
 export type AutoMergeMode = 'off' | 'draft-only' | 'low-risk' | 'all';
 
@@ -243,7 +231,6 @@ export interface AgentboardConfig {
   maxConcurrentTasks: number;
   maxAttemptsPerTask: number;
   maxReviewCycles: number;
-  maxSubcardDepth: number;
   prDraft: boolean;
   autoMerge: boolean;
   autoMergeMode: AutoMergeMode;
@@ -261,7 +248,6 @@ export interface AgentboardConfig {
   commands: Commands;
   notifications: Notifications;
   ruflo: RufloConfig;
-  maxRalphIterations: number;
 }
 
 // ── Server-level config (stored at ~/.agentboard/server.json) ───────
@@ -303,6 +289,6 @@ export interface PlanReviewAction {
   reason?: string;
   edits?: {
     planSummary?: string;
-    subtasks?: Array<{ title: string; description: string }>;
+    steps?: Array<{ title: string; description: string }>;
   };
 }
