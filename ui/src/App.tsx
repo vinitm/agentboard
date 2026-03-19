@@ -11,6 +11,8 @@ import { TopBar } from './components/TopBar';
 import { emptyFilters } from './components/TopBar';
 import type { FilterState } from './components/TopBar';
 import { ToastProvider, useToast } from './components/Toast';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ShortcutsModal } from './components/ShortcutsModal';
 import { useTasks } from './hooks/useTasks';
 import { api } from './api/client';
 import type { Project } from './types';
@@ -21,6 +23,7 @@ const AppContent: React.FC = () => {
   const [initError, setInitError] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
   const { toast } = useToast();
   const location = useLocation();
@@ -56,6 +59,10 @@ const AppContent: React.FC = () => {
       if (e.key === 'n' && !isInput && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setShowNewTask(true);
+      }
+      if (e.key === '?' && !isInput && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setShowShortcuts((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handler);
@@ -118,6 +125,7 @@ const AppContent: React.FC = () => {
               onFiltersChange={isBoard ? setFilters : undefined}
             />
             <div className="flex-1 overflow-auto">
+              <ErrorBoundary>
               <Routes>
                 <Route
                   path="/"
@@ -145,10 +153,12 @@ const AppContent: React.FC = () => {
                 <Route path="/learnings" element={<Learnings projectId={projectId} />} />
                 <Route path="/costs" element={<CostDashboard projectId={projectId} />} />
               </Routes>
+              </ErrorBoundary>
             </div>
           </>
         )}
       </div>
+      <ShortcutsModal open={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
   );
 };

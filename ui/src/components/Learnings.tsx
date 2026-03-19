@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
+import { timeAgo, formatDuration } from '../lib/time';
 
 interface LearningAnalysis {
   averageTokensPerTask: number;
@@ -40,25 +41,6 @@ interface Props {
   projectId: string;
 }
 
-function formatDuration(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
-function timeAgo(dateStr: string): string {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
 const StatCard: React.FC<{ label: string; value: string | number; sub?: string }> = ({ label, value, sub }) => (
   <div className="bg-bg-secondary border border-border-default rounded-lg p-4">
     <div className="text-[11px] uppercase tracking-wider text-text-tertiary mb-1">{label}</div>
@@ -94,7 +76,24 @@ export const Learnings: React.FC<Props> = ({ projectId }) => {
   }, [projectId]);
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-text-secondary">Loading learnings...</div>;
+    return (
+      <div className="p-5 max-w-4xl mx-auto animate-fade-in">
+        <div className="flex gap-1 mb-6 border-b border-border-default pb-2">
+          {[1, 2, 3].map(i => <div key={i} className="skeleton h-4 w-24 mx-2" />)}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="bg-bg-secondary border border-border-default rounded-lg p-4">
+              <div className="skeleton h-3 w-16 mb-2" />
+              <div className="skeleton h-6 w-12" />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => <div key={i} className="skeleton h-16 w-full rounded-lg" />)}
+        </div>
+      </div>
+    );
   }
 
   const tabs: { key: Tab; label: string; count?: number }[] = [

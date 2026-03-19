@@ -1,5 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { useConnectionStatus } from '../hooks/useSocket';
+import type { ConnectionStatus } from '../hooks/useSocket';
 import type { Project } from '../types';
 
 interface Props {
@@ -12,44 +14,44 @@ interface Props {
 }
 
 const BoardIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
     <path d="M3 4a1 1 0 011-1h3a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm5 0a1 1 0 011-1h3a1 1 0 011 1v12a1 1 0 01-1 1H9a1 1 0 01-1-1V4zm6-1a1 1 0 00-1 1v12a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3z" />
   </svg>
 );
 
 const ActivityIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
   </svg>
 );
 
 const LearningsIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
     <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z" />
   </svg>
 );
 
 const CostsIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
     <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z" />
     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clipRule="evenodd" />
   </svg>
 );
 
 const SettingsIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
     <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
   </svg>
 );
 
 const ChevronLeftIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
     <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
   </svg>
 );
 
 const ChevronRightIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
     <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
   </svg>
 );
@@ -62,6 +64,18 @@ const navItems = [
   { to: '/settings', label: 'Settings', Icon: SettingsIcon },
 ];
 
+const CONNECTION_LABELS: Record<ConnectionStatus, string> = {
+  connected: 'Connected',
+  reconnecting: 'Reconnecting...',
+  disconnected: 'Disconnected',
+};
+
+const CONNECTION_COLORS: Record<ConnectionStatus, string> = {
+  connected: 'bg-accent-green',
+  reconnecting: 'bg-accent-amber animate-pulse-dot',
+  disconnected: 'bg-accent-red',
+};
+
 export const Sidebar: React.FC<Props> = ({
   projects,
   activeProjectId,
@@ -70,6 +84,8 @@ export const Sidebar: React.FC<Props> = ({
   onToggleCollapse,
   runningCount,
 }) => {
+  const connectionStatus = useConnectionStatus();
+
   return (
     <aside
       className={`flex flex-col bg-bg-secondary border-r border-border-default h-screen flex-shrink-0 transition-[width] duration-200 ${
@@ -91,7 +107,7 @@ export const Sidebar: React.FC<Props> = ({
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-0.5 px-2 mt-3">
+      <nav className="flex flex-col gap-0.5 px-2 mt-3" aria-label="Main navigation">
         {navItems.map(({ to, label, Icon }) => (
           <NavLink
             key={to}
@@ -151,8 +167,25 @@ export const Sidebar: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Connection status */}
+      <div className={`px-2 mt-auto ${collapsed ? 'flex justify-center' : ''}`}>
+        <div
+          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] ${
+            connectionStatus !== 'connected' ? 'bg-bg-tertiary' : ''
+          } ${collapsed ? 'justify-center' : ''}`}
+          title={CONNECTION_LABELS[connectionStatus]}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${CONNECTION_COLORS[connectionStatus]}`} />
+          {!collapsed && (
+            <span className={`text-text-tertiary ${connectionStatus !== 'connected' ? 'text-accent-amber' : ''}`}>
+              {CONNECTION_LABELS[connectionStatus]}
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Collapse toggle */}
-      <div className="mt-auto px-2 py-3 border-t border-border-default">
+      <div className="px-2 py-3 border-t border-border-default">
         <button
           onClick={onToggleCollapse}
           className="flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-tertiary transition-colors duration-150 text-xs"

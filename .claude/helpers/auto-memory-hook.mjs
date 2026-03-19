@@ -210,13 +210,12 @@ function readConfig() {
 // ============================================================================
 
 async function doImport() {
-  log('Importing auto memory files into bridge...');
-
   const memPkg = await loadMemoryPackage();
   if (!memPkg || !memPkg.AutoMemoryBridge) {
-    dim('Memory package not available — skipping auto memory import');
+    // Memory package not installed — this is normal when using MCP server directly
     return;
   }
+  log('Importing auto memory files into bridge...');
 
   const config = readConfig();
   const backend = new JsonFileBackend(STORE_PATH);
@@ -263,13 +262,11 @@ async function doImport() {
 }
 
 async function doSync() {
-  log('Syncing insights to auto memory files...');
-
   const memPkg = await loadMemoryPackage();
   if (!memPkg || !memPkg.AutoMemoryBridge) {
-    dim('Memory package not available — skipping sync');
     return;
   }
+  log('Syncing insights to auto memory files...');
 
   const config = readConfig();
   const backend = new JsonFileBackend(STORE_PATH);

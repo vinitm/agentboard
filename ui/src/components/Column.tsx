@@ -120,10 +120,10 @@ export const Column: React.FC<Props> = ({ status, tasks, onTaskClick, subtasksBy
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto min-h-[60px]">
+      <div className="flex-1 overflow-y-auto min-h-[60px]" role="list" aria-label={`${COLUMN_LABELS[status]} tasks`}>
         {tasks.length === 0 && (
           <div className="border-2 border-dashed border-border-default rounded-lg h-16 flex items-center justify-center text-xs text-text-tertiary gap-1.5">
-            <svg className="w-3.5 h-3.5 opacity-50" viewBox="0 0 20 20" fill="currentColor">
+            <svg className="w-3.5 h-3.5 opacity-50" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
             Drop here
@@ -132,13 +132,14 @@ export const Column: React.FC<Props> = ({ status, tasks, onTaskClick, subtasksBy
         {tasks
           .sort((a, b) => a.columnPosition - b.columnPosition || b.priority - a.priority)
           .map((task) => (
-            <div key={task.id} className="relative">
+            <div key={task.id} className="relative" role="listitem">
               {selectedIds && onToggleSelect && (
                 <input
                   type="checkbox"
                   checked={selectedIds.has(task.id)}
                   onClick={(e) => onToggleSelect(task.id, e)}
                   onChange={() => {}}
+                  aria-label={`Select task #${task.id}`}
                   className="absolute top-2 right-2 z-10 cursor-pointer accent-accent-blue"
                 />
               )}

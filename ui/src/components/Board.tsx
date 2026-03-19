@@ -4,13 +4,16 @@ import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, u
 import { Column } from './Column';
 import { TaskCard } from './TaskCard';
 import { TaskForm } from './TaskForm';
+import { ConfirmDialog } from './ConfirmDialog';
+import { useToast } from './Toast';
 import type { Task, TaskStatus, RiskLevel, PlanReviewAction } from '../types';
 import type { FilterState } from './TopBar';
 
-const MAIN_COLUMNS: TaskStatus[] = [
-  'backlog', 'ready', 'spec_review', 'planning', 'needs_plan_review', 'implementing', 'checks',
-  'code_quality', 'final_review', 'pr_creation', 'needs_human_review', 'done',
-];
+// Pipeline phases for visual grouping
+const QUEUE_COLUMNS: TaskStatus[] = ['backlog', 'ready'];
+const PIPELINE_COLUMNS: TaskStatus[] = ['spec_review', 'planning', 'needs_plan_review', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'];
+const REVIEW_COLUMNS: TaskStatus[] = ['needs_human_review', 'done'];
+const MAIN_COLUMNS: TaskStatus[] = [...QUEUE_COLUMNS, ...PIPELINE_COLUMNS, ...REVIEW_COLUMNS];
 
 const EXTRA_COLUMNS: TaskStatus[] = ['blocked', 'failed', 'cancelled'];
 const MOVABLE_COLUMNS: TaskStatus[] = ['backlog', 'ready', 'cancelled', 'done'];
@@ -110,6 +113,8 @@ export const Board: React.FC<Props> = ({
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [collapsedColumns, setCollapsedColumns] = useState<Set<TaskStatus>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { toast } = useToast();
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -160,7 +165,7 @@ export const Board: React.FC<Props> = ({
     if (!task || task.status === targetColumn) return;
     moveTask(taskId, targetColumn).catch((err) => {
       console.error('Move failed:', err);
-      alert(`Cannot move task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast(`Cannot move task: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     });
   };
 
@@ -197,11 +202,11 @@ export const Board: React.FC<Props> = ({
   };
 
   const bulkDelete = async () => {
-    if (!confirm(`Delete ${selectedIds.size} selected tasks?`)) return;
     for (const id of selectedIds) {
       try { await deleteTask(id); } catch (err) { console.error(`Bulk delete failed for ${id}:`, err); }
     }
     setSelectedIds(new Set());
+    setConfirmDelete(false);
   };
 
   if (loading) {
@@ -247,24 +252,67 @@ export const Board: React.FC<Props> = ({
               {MOVABLE_COLUMNS.map((col) => <option key={col} value={col}>{col}</option>)}
             </select>
             <button onClick={() => bulkMove('cancelled')} className="px-2.5 py-1 rounded-md text-xs font-semibold bg-accent-amber text-white hover:bg-amber-600 transition-colors">Cancel</button>
-            <button onClick={bulkDelete} className="px-2.5 py-1 rounded-md text-xs font-semibold bg-accent-red text-white hover:bg-red-600 transition-colors">Delete</button>
+            <button onClick={() => setConfirmDelete(true)} className="px-2.5 py-1 rounded-md text-xs font-semibold bg-accent-red text-white hover:bg-red-600 transition-colors">Delete</button>
             <button onClick={() => setSelectedIds(new Set())} className="px-2.5 py-1 rounded-md text-xs border border-border-default text-text-secondary hover:text-text-primary transition-colors">Clear</button>
+          </div>
+        )}
+
+        {/* KPI Summary Bar */}
+        {!hasActiveFilters && (
+          <div className="flex items-center gap-4 mb-3 px-1 text-[11px] text-text-tertiary">
+            {(() => {
+              const running = filteredTasks.filter(t => t.claimedBy).length;
+              const blocked = filteredTasks.filter(t => t.status === 'blocked').length;
+              const needsReview = filteredTasks.filter(t => t.status === 'needs_human_review' || t.status === 'needs_plan_review').length;
+              const done = filteredTasks.filter(t => t.status === 'done').length;
+              return (
+                <>
+                  {running > 0 && <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-accent-purple animate-pulse-dot" />{running} running</span>}
+                  {blocked > 0 && <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-accent-amber" />{blocked} blocked</span>}
+                  {needsReview > 0 && <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-accent-pink" />{needsReview} needs review</span>}
+                  {done > 0 && <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-accent-green" />{done} done</span>}
+                </>
+              );
+            })()}
           </div>
         )}
 
         {/* No results from filter */}
         {hasActiveFilters && filteredTasks.length === 0 && (
           <div className="text-center py-12 animate-fade-in">
-            <svg className="w-10 h-10 text-text-tertiary mx-auto mb-3" viewBox="0 0 20 20" fill="currentColor">
+            <svg className="w-10 h-10 text-text-tertiary mx-auto mb-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
             <p className="text-sm text-text-secondary">No tasks match your filters</p>
           </div>
         )}
 
-        {/* Main columns */}
-        <div className="flex gap-2.5 overflow-x-auto pb-3">
-          {MAIN_COLUMNS.map((status) => (
+        {/* Main columns with phase grouping */}
+        <div className="flex gap-2.5 overflow-x-auto pb-3 board-scroll-container">
+          {/* Queue phase */}
+          {QUEUE_COLUMNS.map((status) => (
+            <Column key={status} status={status} tasks={tasksByStatus(status)} onTaskClick={(t) => navigate(`/tasks/${t.id}`)}
+              subtasksByParent={subtasksByParent}
+              selectedIds={selectedIds} onToggleSelect={toggleSelect}
+              collapsed={collapsedColumns.has(status)} onToggleCollapse={() => toggleColumn(status)} />
+          ))}
+
+          {/* Phase separator */}
+          <div className="w-px bg-border-default flex-shrink-0 my-2 opacity-50" />
+
+          {/* Autonomous pipeline phase */}
+          {PIPELINE_COLUMNS.map((status) => (
+            <Column key={status} status={status} tasks={tasksByStatus(status)} onTaskClick={(t) => navigate(`/tasks/${t.id}`)}
+              subtasksByParent={subtasksByParent}
+              selectedIds={selectedIds} onToggleSelect={toggleSelect}
+              collapsed={collapsedColumns.has(status)} onToggleCollapse={() => toggleColumn(status)} />
+          ))}
+
+          {/* Phase separator */}
+          <div className="w-px bg-border-default flex-shrink-0 my-2 opacity-50" />
+
+          {/* Review + done phase */}
+          {REVIEW_COLUMNS.map((status) => (
             <Column key={status} status={status} tasks={tasksByStatus(status)} onTaskClick={(t) => navigate(`/tasks/${t.id}`)}
               subtasksByParent={subtasksByParent}
               selectedIds={selectedIds} onToggleSelect={toggleSelect}
@@ -303,6 +351,16 @@ export const Board: React.FC<Props> = ({
           onCancel={() => { setEditingTask(undefined); onCloseNewTask?.(); }}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete selected tasks?"
+        description={`This will permanently delete ${selectedIds.size} task${selectedIds.size === 1 ? '' : 's'}. This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={bulkDelete}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </DndContext>
   );
 };

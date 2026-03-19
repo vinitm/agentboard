@@ -24,6 +24,18 @@
   --font-mono: 'JetBrains Mono', ui-monospace, 'Fira Code', monospace;
 }
 
+/* Global focus-visible ring for interactive elements */
+:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Remove default outline since we use focus-visible */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* Scrollbar styling */
 * {
   scrollbar-width: thin;

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TaskStatus, RiskLevel } from '../types';
 
 interface FilterState {
@@ -62,8 +62,24 @@ export const TopBar: React.FC<Props> = ({
 }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [localSearch, setLocalSearch] = useState(filters?.search ?? '');
   const searchRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const filterCount = filters ? countActiveFilters(filters) : 0;
+
+  const debouncedSearch = useCallback((value: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (filters && onFiltersChange) {
+        onFiltersChange({ ...filters, search: value });
+      }
+    }, 150);
+  }, [filters, onFiltersChange]);
+
+  // Sync external filter changes to local state
+  useEffect(() => {
+    setLocalSearch(filters?.search ?? '');
+  }, [filters?.search]);
 
   // Ctrl+K focuses search
   useEffect(() => {
@@ -103,22 +119,23 @@ export const TopBar: React.FC<Props> = ({
               <input
                 ref={searchRef}
                 type="text"
-                value={filters.search}
-                onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
+                value={localSearch}
+                onChange={(e) => { setLocalSearch(e.target.value); debouncedSearch(e.target.value); }}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setSearchFocused(false)}
                 placeholder="Search tasks..."
                 className="w-full pl-8 pr-8 py-1.5 text-[13px] bg-bg-tertiary border border-border-default rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent-blue focus:border-accent-blue transition-all"
               />
-              {!searchFocused && !filters.search && (
+              {!searchFocused && !localSearch && (
                 <kbd className="absolute right-2 text-[10px] text-text-tertiary bg-bg-elevated px-1.5 py-0.5 rounded border border-border-default font-mono pointer-events-none">
                   ⌘K
                 </kbd>
               )}
-              {filters.search && (
+              {localSearch && (
                 <button
-                  onClick={() => onFiltersChange({ ...filters, search: '' })}
+                  onClick={() => { setLocalSearch(''); onFiltersChange({ ...filters, search: '' }); }}
                   className="absolute right-2 text-text-tertiary hover:text-text-primary text-xs"
+                  aria-label="Clear search"
                 >
                   ✕
                 </button>

@@ -10,6 +10,8 @@ import { RunHistory } from './RunHistory';
 import { EventsTimeline } from './EventsTimeline';
 import { SubtaskMiniCard } from './SubtaskMiniCard';
 import { StageAccordion } from './StageAccordion';
+import { ConfirmDialog } from './ConfirmDialog';
+import { useToast } from './Toast';
 import type { Task, Run, TaskStatus, PlanReviewAction } from '../types';
 
 type Tab = 'stages' | 'events' | 'runs';
@@ -83,6 +85,8 @@ export const TaskPage: React.FC = () => {
   const [tab, setTab] = useState<Tab>(getInitialTab);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [confirmAction, setConfirmAction] = useState<'delete' | 'skip' | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (taskId === undefined || isNaN(taskId)) return;
@@ -166,7 +170,7 @@ export const TaskPage: React.FC = () => {
                   const moved = await api.post<Task>(`/api/tasks/${task.id}/move`, { column: e.target.value });
                   setTask(moved);
                 } catch (err) {
-                  alert(`Cannot move task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                  toast(`Cannot move task: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
                 }
                 e.target.value = '';
               }}
@@ -182,10 +186,10 @@ export const TaskPage: React.FC = () => {
               className="px-3 py-1 rounded-lg text-xs font-semibold bg-accent-amber text-white hover:bg-amber-600 transition-colors">Retry</button>
           )}
           {isSubtask && (task.status === 'blocked' || task.status === 'failed') && (
-            <button onClick={async () => { if (confirm('Skip this subtask? It will be cancelled and the next subtask will be promoted.')) { const updated = await api.post<Task>(`/api/tasks/${task.id}/skip`); setTask(updated); } }}
+            <button onClick={() => setConfirmAction('skip')}
               className="px-3 py-1 rounded-lg text-xs font-semibold border border-text-tertiary text-text-secondary hover:bg-bg-tertiary transition-colors">Skip</button>
           )}
-          <button onClick={async () => { if (confirm('Delete this task?')) { await api.del(`/api/tasks/${task.id}`); navigate('/'); } }}
+          <button onClick={() => setConfirmAction('delete')}
             className="px-3 py-1 rounded-lg text-xs font-semibold border border-accent-red text-accent-red hover:bg-accent-red hover:text-white transition-colors">Delete</button>
         </div>
       </div>
@@ -276,6 +280,33 @@ export const TaskPage: React.FC = () => {
         {tab === 'events' && <EventsTimeline taskId={task.id} events={events} />}
         {tab === 'runs' && <RunHistory runs={runs} />}
       </div>
+
+      <ConfirmDialog
+        open={confirmAction === 'delete'}
+        title="Delete this task?"
+        description="This will permanently delete the task and all its data. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={async () => {
+          setConfirmAction(null);
+          await api.del(`/api/tasks/${task.id}`);
+          navigate('/');
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction === 'skip'}
+        title="Skip this subtask?"
+        description="It will be cancelled and the next subtask will be promoted."
+        confirmLabel="Skip"
+        variant="warning"
+        onConfirm={async () => {
+          setConfirmAction(null);
+          const updated = await api.post<Task>(`/api/tasks/${task.id}/skip`);
+          setTask(updated);
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 };

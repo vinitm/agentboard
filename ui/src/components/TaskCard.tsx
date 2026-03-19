@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { SubtaskMiniCard } from './SubtaskMiniCard';
+import { timeAgo } from '../lib/time';
 import type { Task } from '../types';
 
 interface Props {
@@ -23,17 +24,6 @@ function leftBorderClass(task: Task): string {
   if (task.status === 'needs_plan_review') return 'border-l-accent-amber';
   if (task.claimedBy) return 'border-l-accent-purple';
   return 'border-l-transparent';
-}
-
-function timeAgo(dateStr: string): string {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 // Pipeline stages in order
@@ -113,6 +103,10 @@ export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = 
       {...listeners}
       {...attributes}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      tabIndex={0}
+      role="button"
+      aria-label={`Task #${task.id}: ${task.title}, ${task.riskLevel} risk, ${task.status.replace(/_/g, ' ')}`}
       className={`bg-bg-secondary rounded-lg p-3 mb-2 border border-border-default border-l-[3px] ${leftBorderClass(task)} cursor-grab transition-all duration-150 animate-fade-in ${
         isDragging ? 'shadow-2xl opacity-85 scale-[1.02]' : 'shadow-sm hover:bg-bg-tertiary hover:border-border-hover hover:shadow-md'
       } ${selected ? 'ring-2 ring-accent-blue' : ''} ${isRunning ? 'card-running' : ''}`}
@@ -139,15 +133,15 @@ export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = 
         )}
         <span className="text-text-tertiary ml-auto">{timeAgo(task.updatedAt)}</span>
         {isRunning && (
-          <span className="flex items-center gap-1 text-accent-purple font-medium">
-            <svg className="w-3 h-3 animate-spin-slow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <span className="flex items-center gap-1 text-accent-purple font-medium" aria-label="Running">
+            <svg className="w-3 h-3 animate-spin-slow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
               <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
             </svg>
           </span>
         )}
         {subtasksRunning && !isRunning && (
-          <span className="flex items-center gap-1 text-accent-purple">
-            <svg className="w-3 h-3 animate-spin-slow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <span className="flex items-center gap-1 text-accent-purple" aria-label="Subtasks running">
+            <svg className="w-3 h-3 animate-spin-slow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
               <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
             </svg>
           </span>

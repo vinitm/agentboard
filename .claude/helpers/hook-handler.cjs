@@ -42,9 +42,9 @@ function safeRequire(modulePath) {
   return null;
 }
 
-const router = safeRequire(path.join(helpersDir, 'router.js'));
-const session = safeRequire(path.join(helpersDir, 'session.js'));
-const memory = safeRequire(path.join(helpersDir, 'memory.js'));
+const router = safeRequire(path.join(helpersDir, 'router.cjs'));
+const session = safeRequire(path.join(helpersDir, 'session.cjs'));
+const memory = safeRequire(path.join(helpersDir, 'memory.cjs'));
 const intelligence = safeRequire(path.join(helpersDir, 'intelligence.cjs'));
 
 // Get the command from argv
@@ -84,7 +84,7 @@ async function main() {
 
 const handlers = {
   'route': () => {
-    // Inject ranked intelligence context before routing
+    // Inject ranked intelligence context
     if (intelligence && intelligence.getContext) {
       try {
         const ctx = intelligence.getContext(prompt);
@@ -93,48 +93,14 @@ const handlers = {
     }
     if (router && router.routeTask) {
       const result = router.routeTask(prompt);
-      // Format output for Claude Code hook consumption
-      const output = [
-        `[INFO] Routing task: ${prompt.substring(0, 80) || '(no prompt)'}`,
-        '',
-        'Routing Method',
-        '  - Method: keyword',
-        '  - Backend: keyword matching',
-        `  - Latency: ${(Math.random() * 0.5 + 0.1).toFixed(3)}ms`,
-        '  - Matched Pattern: keyword-fallback',
-        '',
-        'Semantic Matches:',
-        '  bugfix-task: 15.0%',
-        '  devops-task: 14.0%',
-        '  testing-task: 13.0%',
-        '',
-        '+------------------- Primary Recommendation -------------------+',
-        `| Agent: ${result.agent.padEnd(53)}|`,
-        `| Confidence: ${(result.confidence * 100).toFixed(1)}%${' '.repeat(44)}|`,
-        `| Reason: ${result.reason.substring(0, 53).padEnd(53)}|`,
-        '+--------------------------------------------------------------+',
-        '',
-        'Alternative Agents',
-        '+------------+------------+-------------------------------------+',
-        '| Agent Type | Confidence | Reason                              |',
-        '+------------+------------+-------------------------------------+',
-        '| researcher |      60.0% | Alternative agent for researcher... |',
-        '| tester     |      50.0% | Alternative agent for tester cap... |',
-        '+------------+------------+-------------------------------------+',
-        '',
-        'Estimated Metrics',
-        '  - Success Probability: 70.0%',
-        '  - Estimated Duration: 10-30 min',
-        '  - Complexity: LOW',
-      ];
-      console.log(output.join('\n'));
-    } else {
-      console.log('[INFO] Router not available, using default routing');
+      if (result.agent !== 'default') {
+        console.log(`[ROUTE] ${result.agent} (${Math.round(result.confidence * 100)}%) — ${result.reason}`);
+      }
     }
   },
 
   'pre-bash': () => {
-    // Basic command safety check — prefer stdin command data from Claude Code
+    // Basic command safety check
     const cmd = (hookInput.command || prompt).toLowerCase();
     const dangerous = ['rm -rf /', 'format c:', 'del /s /q c:\\', ':(){:|:&};:'];
     for (const d of dangerous) {
@@ -143,15 +109,13 @@ const handlers = {
         process.exit(1);
       }
     }
-    console.log('[OK] Command validated');
   },
 
   'post-edit': () => {
-    // Record edit for session metrics
+    // Record edit for session metrics (silent)
     if (session && session.metric) {
       try { session.metric('edits'); } catch (e) { /* no active session */ }
     }
-    // Record edit for intelligence consolidation — prefer stdin data from Claude Code
     if (intelligence && intelligence.recordEdit) {
       try {
         const file = hookInput.file_path || (hookInput.toolInput && hookInput.toolInput.file_path)
@@ -159,82 +123,41 @@ const handlers = {
         intelligence.recordEdit(file);
       } catch (e) { /* non-fatal */ }
     }
-    console.log('[OK] Edit recorded');
   },
 
   'session-restore': () => {
     if (session) {
-      // Try restore first, fall back to start
       const existing = session.restore && session.restore();
-      if (!existing) {
-        session.start && session.start();
-      }
-    } else {
-      // Minimal session restore output
-      const sessionId = `session-${Date.now()}`;
-      console.log(`[INFO] Restoring session: %SESSION_ID%`);
-      console.log('');
-      console.log(`[OK] Session restored from %SESSION_ID%`);
-      console.log(`New session ID: ${sessionId}`);
-      console.log('');
-      console.log('Restored State');
-      console.log('+----------------+-------+');
-      console.log('| Item           | Count |');
-      console.log('+----------------+-------+');
-      console.log('| Tasks          |     0 |');
-      console.log('| Agents         |     0 |');
-      console.log('| Memory Entries |     0 |');
-      console.log('+----------------+-------+');
+      if (!existing) session.start && session.start();
     }
-    // Initialize intelligence graph after session restore
+    // Initialize intelligence graph
     if (intelligence && intelligence.init) {
       try {
         const result = intelligence.init();
         if (result && result.nodes > 0) {
-          console.log(`[INTELLIGENCE] Loaded ${result.nodes} patterns, ${result.edges} edges`);
+          console.log(`[ruflo] ${result.nodes} patterns, ${result.edges} edges loaded`);
         }
       } catch (e) { /* non-fatal */ }
     }
   },
 
   'session-end': () => {
-    // Consolidate intelligence before ending session
     if (intelligence && intelligence.consolidate) {
-      try {
-        const result = intelligence.consolidate();
-        if (result && result.entries > 0) {
-          console.log(`[INTELLIGENCE] Consolidated: ${result.entries} entries, ${result.edges} edges${result.newEntries > 0 ? `, ${result.newEntries} new` : ''}, PageRank recomputed`);
-        }
-      } catch (e) { /* non-fatal */ }
+      try { intelligence.consolidate(); } catch (e) { /* non-fatal */ }
     }
-    if (session && session.end) {
-      session.end();
-    } else {
-      console.log('[OK] Session ended');
-    }
+    if (session && session.end) session.end();
   },
 
   'pre-task': () => {
     if (session && session.metric) {
       try { session.metric('tasks'); } catch (e) { /* no active session */ }
     }
-    // Route the task if router is available
-    if (router && router.routeTask && prompt) {
-      const result = router.routeTask(prompt);
-      console.log(`[INFO] Task routed to: ${result.agent} (confidence: ${result.confidence})`);
-    } else {
-      console.log('[OK] Task started');
-    }
   },
 
   'post-task': () => {
-    // Implicit success feedback for intelligence
     if (intelligence && intelligence.feedback) {
-      try {
-        intelligence.feedback(true);
-      } catch (e) { /* non-fatal */ }
+      try { intelligence.feedback(true); } catch (e) { /* non-fatal */ }
     }
-    console.log('[OK] Task completed');
   },
 
   'stats': () => {
@@ -255,8 +178,7 @@ const handlers = {
       console.log(`[WARN] Hook ${command} encountered an error: ${e.message}`);
     }
   } else if (command) {
-    // Unknown command - pass through without error
-    console.log(`[OK] Hook: ${command}`);
+    // Unknown command - silent pass-through
   } else {
     console.log('Usage: hook-handler.cjs <route|pre-bash|post-edit|session-restore|session-end|pre-task|post-task|stats>');
   }

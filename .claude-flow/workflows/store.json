@@ -351,6 +351,275 @@
       "currentStep": 0,
       "variables": {},
       "createdAt": "2026-03-19T07:12:55.351Z"
+    },
+    "workflow-1773917545607-0le3qb": {
+      "workflowId": "workflow-1773917545607-0le3qb",
+      "name": "feature-implementation",
+      "description": "Full feature implementation: route → plan → TDD → implement → review → docs → verify → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "route",
+          "type": "task",
+          "config": {
+            "description": "Route to appropriate agent"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "plan",
+          "type": "task",
+          "config": {
+            "description": "Create implementation plan"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "tdd",
+          "type": "task",
+          "config": {
+            "description": "Write tests first (RED)"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "implement",
+          "type": "task",
+          "config": {
+            "description": "Implement to pass tests (GREEN)"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "review",
+          "type": "parallel",
+          "config": {
+            "description": "Code review + security review in parallel"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-6",
+          "name": "docs",
+          "type": "task",
+          "config": {
+            "description": "Update documentation"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-7",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "description": "Run build + tests"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-8",
+          "name": "pre-commit",
+          "type": "task",
+          "config": {
+            "description": "Pre-commit checks"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-9",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "description": "Commit changes"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T10:52:25.607Z"
+    },
+    "workflow-1773917547340-ygmtgy": {
+      "workflowId": "workflow-1773917547340-ygmtgy",
+      "name": "bug-fix",
+      "description": "Bug fix workflow: diagnose → reproduce → fix → verify → learn → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "diagnose",
+          "type": "task",
+          "config": {
+            "description": "Identify root cause"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "reproduce",
+          "type": "task",
+          "config": {
+            "description": "Create failing test"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "fix",
+          "type": "task",
+          "config": {
+            "description": "Implement fix"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "description": "Run tests + build"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "learn",
+          "type": "task",
+          "config": {
+            "description": "Extract patterns"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-6",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "description": "Commit changes"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T10:52:27.340Z"
+    },
+    "workflow-1773917549942-ua2906": {
+      "workflowId": "workflow-1773917549942-ua2906",
+      "name": "docs-improvement",
+      "description": "Documentation improvement: audit → research → edit → verify → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "audit",
+          "type": "task",
+          "config": {
+            "description": "Audit existing docs"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "research",
+          "type": "parallel",
+          "config": {
+            "description": "Research best practices"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "edit",
+          "type": "task",
+          "config": {
+            "description": "Edit documentation"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "description": "Verify links and accuracy"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "description": "Commit changes"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T10:52:29.942Z"
+    },
+    "workflow-1773917551392-6oq6ad": {
+      "workflowId": "workflow-1773917551392-6oq6ad",
+      "name": "security-audit",
+      "description": "Security audit: scan → deps → review → fix → verify",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "scan",
+          "type": "task",
+          "config": {
+            "description": "Scan for vulnerabilities"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "deps",
+          "type": "task",
+          "config": {
+            "description": "Check dependencies"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "review",
+          "type": "task",
+          "config": {
+            "description": "Review findings"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "fix",
+          "type": "task",
+          "config": {
+            "description": "Fix issues"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "description": "Verify fixes"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T10:52:31.392Z"
     }
   },
   "templates": {

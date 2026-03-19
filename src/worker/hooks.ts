@@ -44,8 +44,9 @@ export async function runHook(
 
 /**
  * If ruflo is enabled in config, load ruflo-specific hooks.
- * For now this just logs that ruflo is enabled — actual ruflo
- * hook loading will be added when the ruflo integration is built.
+ * These hooks log stage transitions — ruflo intelligence is used
+ * during interactive Claude Code sessions via .claude/settings.json hooks,
+ * not in the autonomous pipeline.
  */
 export function loadRufloHooks(hooks: Hooks, config: AgentboardConfig): void {
   if (!config.ruflo.enabled) return;

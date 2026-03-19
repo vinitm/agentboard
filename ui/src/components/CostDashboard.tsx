@@ -163,8 +163,30 @@ export const CostDashboard: React.FC<Props> = ({ projectId }) => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-text-tertiary text-sm">
-        Loading cost data...
+      <div className="max-w-5xl mx-auto p-6 space-y-6 animate-fade-in">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="bg-bg-secondary border border-border-default rounded-lg p-4">
+              <div className="skeleton h-3 w-20 mb-2" />
+              <div className="skeleton h-7 w-16" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-bg-secondary border border-border-default rounded-lg p-5">
+          <div className="skeleton h-4 w-32 mb-4" />
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="flex items-center gap-3">
+                <div className="skeleton h-3 w-24" />
+                <div className="flex-1 skeleton h-5 rounded-full" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-bg-secondary border border-border-default rounded-lg p-5">
+          <div className="skeleton h-4 w-32 mb-4" />
+          <div className="skeleton h-32 w-full rounded" />
+        </div>
       </div>
     );
   }
