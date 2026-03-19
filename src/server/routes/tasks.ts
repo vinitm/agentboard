@@ -29,40 +29,6 @@ function parseTaskId(raw: string): number {
 export function createTaskRoutes(db: Database.Database, io: Server): Router {
   const router = Router();
 
-  /**
-   * After a subtask reaches a terminal state via the API, promote next sibling
-   * or update parent. Mirrors the worker loop's checkAndUpdateParentStatus.
-   */
-  function handleSubtaskTerminal(task: { parentTaskId: number | null; status: TaskStatus }): void {
-    if (!task.parentTaskId) return;
-
-    const parent = queries.getTaskById(db, task.parentTaskId);
-    const terminalStatuses: TaskStatus[] = ['done', 'failed', 'cancelled'];
-    const successStatuses: TaskStatus[] = ['done'];
-
-    if (!parent || terminalStatuses.includes(parent.status)) return;
-
-    // If succeeded, promote next backlog sibling
-    if (successStatuses.includes(task.status)) {
-      const nextSubtask = queries.getNextBacklogSubtask(db, task.parentTaskId);
-      if (nextSubtask) {
-        queries.updateTask(db, nextSubtask.id, { status: 'ready' });
-        broadcast(io, 'task:updated', { taskId: nextSubtask.id, status: 'ready' });
-        return;
-      }
-    }
-
-    // Check if all siblings are terminal
-    const siblings = queries.getSubtasksByParentId(db, task.parentTaskId);
-    const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
-    if (!allTerminal) return;
-
-    const anyFailed = siblings.some(s => s.status === 'failed');
-    const newStatus: TaskStatus = anyFailed ? 'failed' : 'needs_human_review';
-    queries.updateTask(db, task.parentTaskId, { status: newStatus, blockedReason: null });
-    broadcast(io, 'task:updated', { taskId: task.parentTaskId, status: newStatus });
-  }
-
   // GET /api/tasks — list tasks (query params: projectId, status)
   router.get('/', (req, res) => {
     const { projectId, status } = req.query as { projectId?: string; status?: string };
@@ -220,17 +186,15 @@ Task description: ${description.trim()}`;
       return;
     }
     // Strip `status` — all status changes must go through POST /:id/move
-    const { title, description, riskLevel, priority, columnPosition, spec, blockedReason, parentTaskId } =
+    const { title, description, riskLevel, priority, spec, blockedReason } =
       req.body as Omit<queries.UpdateTaskData, 'status'>;
     const task = queries.updateTask(db, id, {
       title,
       description,
       riskLevel,
       priority,
-      columnPosition,
       spec,
       blockedReason,
-      parentTaskId,
     });
     broadcast(io, 'task:updated', task);
     res.json(task);
@@ -253,10 +217,6 @@ Task description: ${description.trim()}`;
     await cleanupTaskWorktree(db, id).catch(() => {});
     queries.deleteTask(db, id);
     broadcast(io, 'task:deleted', { id });
-    // If deleted task was a subtask, recalculate parent status
-    if (existing.parentTaskId) {
-      handleSubtaskTerminal({ parentTaskId: existing.parentTaskId, status: 'cancelled' });
-    }
     res.json({ ok: true });
   });
 
@@ -278,12 +238,6 @@ Task description: ${description.trim()}`;
       return;
     }
 
-    // Subtasks are fully autonomous — only cancellation is allowed
-    if (task.parentTaskId && column !== 'cancelled') {
-      res.status(400).json({ error: 'Cannot manually move subtasks — they run autonomously. Only cancellation is allowed.' });
-      return;
-    }
-
     // Guardrails: can't manually move to agent-controlled columns
     if (AGENT_CONTROLLED_COLUMNS.includes(column)) {
       res.status(400).json({ error: `Cannot manually move task to agent-controlled column: ${column}` });
@@ -294,22 +248,10 @@ Task description: ${description.trim()}`;
     if (column === 'cancelled') {
       // Unclaim if claimed
       queries.unclaimTask(db, id);
-      const updated = queries.moveToColumn(db, id, column, 0);
+      const updated = queries.moveToColumn(db, id, column);
       broadcast(io, 'task:moved', updated);
       // Best-effort worktree cleanup in background
       cleanupTaskWorktree(db, id).catch(() => {});
-      // Promote next sibling or update parent
-      handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'cancelled' });
-      // Cancel all non-terminal subtasks if this is a parent task
-      const subtasks = queries.getSubtasksByParentId(db, id);
-      for (const sub of subtasks) {
-        const terminalStatuses: TaskStatus[] = ['done', 'failed', 'cancelled'];
-        if (!terminalStatuses.includes(sub.status)) {
-          queries.unclaimTask(db, sub.id);
-          queries.updateTask(db, sub.id, { status: 'cancelled', blockedReason: null });
-          broadcast(io, 'task:updated', { taskId: sub.id, status: 'cancelled' });
-        }
-      }
       res.json(updated);
       return;
     }
@@ -326,7 +268,7 @@ Task description: ${description.trim()}`;
         res.status(400).json({ error: 'Task must have a spec before moving to ready' });
         return;
       }
-      const updated = queries.moveToColumn(db, id, column, 0);
+      const updated = queries.moveToColumn(db, id, column);
       broadcast(io, 'task:moved', updated);
       res.json(updated);
       return;
@@ -338,7 +280,7 @@ Task description: ${description.trim()}`;
         res.status(400).json({ error: 'Can only move to backlog from ready or failed' });
         return;
       }
-      const updated = queries.moveToColumn(db, id, column, 0);
+      const updated = queries.moveToColumn(db, id, column);
       broadcast(io, 'task:moved', updated);
       res.json(updated);
       return;
@@ -350,12 +292,10 @@ Task description: ${description.trim()}`;
         res.status(400).json({ error: 'Can only move to done from needs_human_review' });
         return;
       }
-      const updated = queries.moveToColumn(db, id, column, 0);
+      const updated = queries.moveToColumn(db, id, column);
       broadcast(io, 'task:moved', updated);
       // Best-effort worktree cleanup in background
       cleanupTaskWorktree(db, id).catch(() => {});
-      // Promote next sibling or update parent
-      handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'done' });
       res.json(updated);
       return;
     }
@@ -371,7 +311,7 @@ Task description: ${description.trim()}`;
 
     // Can move to failed from needs_human_review (PR rejected outright)
     if (column === 'failed' && task.status === 'needs_human_review') {
-      const updated = queries.moveToColumn(db, id, 'failed', 0);
+      const updated = queries.moveToColumn(db, id, 'failed');
       broadcast(io, 'task:moved', updated);
       res.json(updated);
       return;
@@ -390,10 +330,6 @@ Task description: ${description.trim()}`;
     const task = queries.getTaskById(db, id);
     if (!task) {
       res.status(404).json({ error: 'Task not found' });
-      return;
-    }
-    if (task.parentTaskId) {
-      res.status(400).json({ error: 'Subtasks do not support answers — they run autonomously' });
       return;
     }
     if (task.status !== 'blocked') {
@@ -690,8 +626,6 @@ Return ONLY valid JSON with no markdown fences:
   });
 
   // POST /api/tasks/:id/retry — retry a failed/blocked task
-  // For parent tasks: deletes subtasks, cleans up worktrees, starts fresh
-  // For subtasks: resets to 'ready' to re-enter the per-subtask pipeline (reuses parent worktree)
   router.post('/:id/retry', async (req, res) => {
     let id: number;
     try { id = parseTaskId(req.params.id); }
@@ -708,36 +642,7 @@ Return ONLY valid JSON with no markdown fences:
       return;
     }
 
-    if (task.parentTaskId) {
-      // Subtask retry: reset to ready so the worker picks it up again
-      queries.unclaimTask(db, id);
-      const updated = queries.updateTask(db, id, {
-        status: 'ready',
-        blockedReason: null,
-      });
-      queries.createEvent(db, {
-        taskId: id,
-        type: 'status_changed',
-        payload: JSON.stringify({ from: task.status, to: 'ready', reason: 'subtask_retried' }),
-      });
-      broadcast(io, 'task:updated', updated);
-      res.json(updated);
-      return;
-    }
-
-    // Parent task retry: clean up subtasks and start fresh
-    const subtasks = queries.getSubtasksByParentId(db, task.id);
-    for (const subtask of subtasks) {
-      await cleanupTaskWorktree(db, subtask.id);
-      const subtaskRefs = queries.listGitRefsByTask(db, subtask.id);
-      for (const ref of subtaskRefs) {
-        queries.deleteGitRef(db, ref.id);
-      }
-      queries.deleteTask(db, subtask.id);
-      broadcast(io, 'task:deleted', { id: subtask.id });
-    }
-
-    // Clean up parent's worktree and git refs
+    // Clean up worktree and git refs
     await cleanupTaskWorktree(db, id);
     const oldRefs = queries.listGitRefsByTask(db, id);
     for (const ref of oldRefs) {
@@ -749,44 +654,6 @@ Return ONLY valid JSON with no markdown fences:
       blockedReason: null,
     });
     broadcast(io, 'task:updated', updated);
-    res.json(updated);
-  });
-
-  // POST /api/tasks/:id/skip — skip a blocked/failed subtask (cancel it, promote next sibling)
-  router.post('/:id/skip', (req, res) => {
-    let id: number;
-    try { id = parseTaskId(req.params.id); }
-    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
-
-    const task = queries.getTaskById(db, id);
-    if (!task) {
-      res.status(404).json({ error: 'Task not found' });
-      return;
-    }
-    if (!task.parentTaskId) {
-      res.status(400).json({ error: 'Only subtasks can be skipped' });
-      return;
-    }
-    if (task.status !== 'blocked' && task.status !== 'failed') {
-      res.status(400).json({ error: 'Can only skip blocked or failed subtasks' });
-      return;
-    }
-
-    queries.unclaimTask(db, id);
-    const updated = queries.updateTask(db, id, {
-      status: 'cancelled',
-      blockedReason: null,
-    });
-    queries.createEvent(db, {
-      taskId: id,
-      type: 'status_changed',
-      payload: JSON.stringify({ from: task.status, to: 'cancelled', reason: 'subtask_skipped' }),
-    });
-    broadcast(io, 'task:updated', updated);
-
-    // Promote next sibling or finalize parent
-    handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'cancelled' });
-
     res.json(updated);
   });
 
@@ -820,23 +687,9 @@ Return ONLY valid JSON with no markdown fences:
     const task = queries.getTaskById(db, id);
     if (!task) { res.status(404).json({ error: 'Task not found' }); return; }
 
-    const subtasks = queries.getSubtasksByParentId(db, id);
     const impact: Record<string, unknown> = {
       taskId: id,
-      isSubtask: !!task.parentTaskId,
-      subtaskCount: subtasks.length,
-      willDeleteSubtasks: subtasks.length > 0,
-      activeSubtasks: subtasks.filter(s => !['done', 'failed', 'cancelled'].includes(s.status)).length,
     };
-
-    if (task.parentTaskId) {
-      const siblings = queries.getSubtasksByParentId(db, task.parentTaskId);
-      const remaining = siblings.filter(s => s.id !== id);
-      const terminalSiblings = remaining.filter(s => ['done', 'failed', 'cancelled'].includes(s.status));
-      impact.siblingCount = remaining.length;
-      impact.parentWillComplete = remaining.length > 0 && terminalSiblings.length === remaining.length;
-      impact.nextSiblingWillPromote = remaining.some(s => s.status === 'backlog');
-    }
 
     res.json(impact);
   });

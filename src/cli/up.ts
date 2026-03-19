@@ -50,7 +50,6 @@ export default async function up(opts: {
     maxConcurrentTasks: serverConfig.maxConcurrentTasks,
     maxAttemptsPerTask: 10,
     maxReviewCycles: 3,
-    maxSubcardDepth: 2,
     prDraft: true,
     autoMerge: false,
     autoMergeMode: 'off',
@@ -81,7 +80,6 @@ export default async function up(opts: {
     },
     notifications: serverConfig.notifications,
     ruflo: { enabled: false },
-    maxRalphIterations: 5,
   };
 
   // 2. Open database at ~/.agentboard/agentboard.db

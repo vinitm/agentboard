@@ -17,8 +17,6 @@ import {
   getProjectById,
   listProjects,
   listGitRefsByTask,
-  getSubtasksByParentId,
-  getNextBacklogSubtask,
   createArtifact,
   getLatestRunByTaskAndStage,
   listEventsByTask,
@@ -132,134 +130,7 @@ export function createWorkerLoop(
   const hooks = createHooks();
   loadRufloHooks(hooks, config);
 
-  /** After a subtask reaches a terminal state, promote next sibling or update parent. */
-  async function checkAndUpdateParentStatus(task: Task): Promise<void> {
-    if (!task.parentTaskId) return;
-
-    // Re-fetch the task to get current status (the in-memory task object may be stale)
-    const freshTask = getTaskById(db, task.id);
-    if (!freshTask) return;
-
-    const parent = getTaskById(db, task.parentTaskId);
-    const terminalStatuses: TaskStatus[] = ['done', 'failed', 'cancelled'];
-    const successStatuses: TaskStatus[] = ['done'];
-
-    // Skip if parent is already terminal (e.g., manually cancelled)
-    if (!parent || terminalStatuses.includes(parent.status)) return;
-
-    // If this subtask succeeded, promote the next backlog sibling to ready
-    if (successStatuses.includes(freshTask.status)) {
-      const nextSubtask = getNextBacklogSubtask(db, task.parentTaskId);
-      if (nextSubtask) {
-        updateTask(db, nextSubtask.id, { status: 'ready' });
-        createAndBroadcastEvent(
-          nextSubtask.id,
-          'status_changed',
-          JSON.stringify({
-            from: 'backlog',
-            to: 'ready',
-            reason: 'previous_subtask_completed',
-          })
-        );
-        broadcast(io, 'task:updated', { taskId: nextSubtask.id, status: 'ready' });
-        // Wake up the worker loop immediately
-        emitter.emit('task:ready');
-        return; // Not all siblings are done yet — don't update parent
-      }
-    }
-    // If subtask failed/cancelled, still try to promote independent siblings.
-    // Only cancel siblings that would depend on the failed task (i.e., are after it
-    // in the serial ordering). For now, since subtasks are serial, we cancel all
-    // remaining backlog siblings — but mark the failed one as 'blocked' instead
-    // of cancelling the entire chain, so the parent gets a partial completion report.
-    if (!successStatuses.includes(freshTask.status)) {
-      const siblings = getSubtasksByParentId(db, task.parentTaskId);
-      for (const sibling of siblings) {
-        if (sibling.status === 'backlog') {
-          updateTask(db, sibling.id, { status: 'cancelled' });
-          createAndBroadcastEvent(
-            sibling.id,
-            'status_changed',
-            JSON.stringify({
-              from: 'backlog',
-              to: 'cancelled',
-              reason: 'sibling_failed',
-            })
-          );
-          broadcast(io, 'task:updated', { taskId: sibling.id, status: 'cancelled' });
-        }
-      }
-    }
-
-    const siblings = getSubtasksByParentId(db, task.parentTaskId);
-    const allTerminal = siblings.every(s => terminalStatuses.includes(s.status));
-    if (!allTerminal) return;
-
-    const anyFailed = siblings.some(s => s.status === 'failed');
-
-    // If all subtasks succeeded, run final review + PR creation for the parent
-    if (!anyFailed) {
-      const parentGitRefs = listGitRefsByTask(db, task.parentTaskId);
-      if (parentGitRefs.length > 0 && parentGitRefs[0].worktreePath) {
-        const worktreePath = parentGitRefs[0].worktreePath;
-
-        const project = getProjectById(db, parent.projectId);
-        if (project) {
-          const projectConfigDir = path.join(project.path, '.agentboard');
-          let projectConfig: AgentboardConfig;
-          try {
-            const raw = fs.readFileSync(path.join(projectConfigDir, 'config.json'), 'utf-8');
-            projectConfig = normalizeConfig(JSON.parse(raw));
-          } catch {
-            projectConfig = config;
-          }
-
-          const parentTaskLog = getTaskLogByTaskId(db, parent.id);
-          const parentLogger = parentTaskLog ? openTaskLogger(parentTaskLog.logPath) : undefined;
-          const memory = loadMemory(projectConfigDir);
-
-          // Claim the parent so runFinalReviewAndPR can update its status
-          claimTask(db, parent.id, WORKER_ID);
-
-          try {
-            await runFinalReviewAndPR(parent, worktreePath, projectConfig, projectConfigDir, memory, parentLogger);
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            parentLogger?.error(`Final review / PR creation failed: ${errorMessage}`);
-            createAndBroadcastEvent(parent.id, 'task_error', JSON.stringify({ error: errorMessage }));
-            // Fall through to set parent status below
-          }
-
-          if (parentTaskLog) {
-            updateTaskLogSize(db, parentTaskLog.id, parentLogger?.sizeBytes() ?? 0);
-          }
-
-          // runFinalReviewAndPR already set the parent status — return early
-          return;
-        }
-      }
-    }
-
-    const newParentStatus: TaskStatus = anyFailed ? 'failed' : 'needs_human_review';
-
-    updateTask(db, task.parentTaskId, {
-      status: newParentStatus,
-      blockedReason: null,
-    });
-    createAndBroadcastEvent(
-      task.parentTaskId,
-      'status_changed',
-      JSON.stringify({
-        from: parent.status,
-        to: newParentStatus,
-        reason: 'all_subtasks_terminal',
-      })
-    );
-    broadcast(io, 'task:updated', {
-      taskId: task.parentTaskId,
-      status: newParentStatus,
-    });
-  }
+  // Subtask orchestration removed — tasks are now flat (no parent/child relationships)
 
   /**
    * Helper to build a HookContext for a given task/stage/worktree.
@@ -367,248 +238,7 @@ export function createWorkerLoop(
   }
 
   /**
-   * Process a subtask through the new per-subtask pipeline:
-   * implement (single shot) → checks → inline fix (if fail) → code_quality
-   *
-   * Subtasks go directly to done/failed — no final review, no PR creation,
-   * no auto-merge evaluation.
-   */
-  async function processSubtaskV2(
-    task: Task,
-    worktreePath: string,
-    taskConfig: AgentboardConfig,
-    configDir: string,
-    logger?: TaskLogger
-  ): Promise<void> {
-    const onOutput = createLogStreamer(task.id, `subtask-${task.id}`, logger);
-
-    // Create StageRunner scoped to the subtask
-    const project = getProjectById(db, task.projectId);
-    const subtaskStageRunner = createStageRunner({
-      taskId: task.parentTaskId ?? task.id,
-      projectId: task.projectId,
-      subtaskId: task.id,
-      io,
-      db,
-      logsDir: path.join(configDir, 'logs'),
-      projectRoot: project?.path ?? configDir,
-    });
-
-    // ── Step 1: Single-shot implementation ─────────────────────────
-    await runHook(hooks, 'beforeStage', makeHookContext(task, 'implementing', worktreePath, taskConfig));
-    updateTask(db, task.id, { status: 'implementing' });
-    createAndBroadcastEvent(
-      task.id,
-      'status_changed',
-      JSON.stringify({ from: 'ready', to: 'implementing' })
-    );
-    broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
-
-    logger?.stageStart('implementing', `impl-${task.id}`, 1, taskConfig.modelDefaults.implementation);
-    const implResult = await subtaskStageRunner.execute('implementing', (stageOnOutput) =>
-      runImplementation(db, task, worktreePath, taskConfig, 1, stageOnOutput),
-      { summarize: (r) => ({ summary: r.status === 'DONE' ? 'Implementation complete' : `Status: ${r.status}` }) }
-    );
-    const implSuccess = implResult.status === 'DONE' || implResult.status === 'DONE_WITH_CONCERNS';
-    logger?.stageEnd(implSuccess ? 'success' : implResult.status.toLowerCase());
-    await runHook(hooks, 'afterStage', makeHookContext(task, 'implementing', worktreePath, taskConfig));
-
-    // ── Status check ───────────────────────────────────────────────
-    if (implResult.status === 'NEEDS_CONTEXT') {
-      const reason = implResult.contextNeeded?.join('; ') ?? 'Implementation needs additional context';
-      updateTask(db, task.id, { status: 'blocked', blockedReason: reason, blockedAtStage: 'implementing' });
-      unclaimTask(db, task.id);
-      createAndBroadcastEvent(
-        task.id,
-        'status_changed',
-        JSON.stringify({ from: 'implementing', to: 'blocked', reason })
-      );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
-      await checkAndUpdateParentStatus(task);
-      return;
-    }
-
-    if (implResult.status === 'BLOCKED') {
-      const reason = implResult.blockerReason ?? 'Implementation is blocked';
-      updateTask(db, task.id, { status: 'blocked', blockedReason: reason, blockedAtStage: 'implementing' });
-      unclaimTask(db, task.id);
-      createAndBroadcastEvent(
-        task.id,
-        'status_changed',
-        JSON.stringify({ from: 'implementing', to: 'blocked', reason })
-      );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
-      await checkAndUpdateParentStatus(task);
-      return;
-    }
-
-    // ── Step 2: Checks ─────────────────────────────────────────────
-    updateTask(db, task.id, { status: 'checks' });
-    createAndBroadcastEvent(
-      task.id,
-      'status_changed',
-      JSON.stringify({ from: 'implementing', to: 'checks' })
-    );
-    broadcast(io, 'task:updated', { taskId: task.id, status: 'checks' });
-
-    logger?.stageStart('checks', `checks-${task.id}`, 1, 'n/a');
-    const checksResult = await subtaskStageRunner.execute('checks', (stageOnOutput) =>
-      runChecks(db, task, worktreePath, taskConfig, stageOnOutput),
-      { summarize: (r) => ({ summary: r.passed ? 'All checks passed' : `${r.results.filter(c => !c.passed).length} check(s) failed` }) }
-    );
-    logger?.stageEnd(checksResult.passed ? 'passed' : 'failed');
-
-    let checksPassed = checksResult.passed;
-
-    // ── Step 2b: Inline fix if checks failed ───────────────────────
-    if (!checksPassed) {
-      createAndBroadcastEvent(
-        task.id,
-        'checks_failed',
-        JSON.stringify({ failedChecks: checksResult.results.filter(r => !r.passed).map(r => r.name) })
-      );
-      logger?.event('checks_failed', 'Attempting inline fix');
-
-      const failedChecks = checksResult.results.filter(r => !r.passed);
-      const fixResult = await subtaskStageRunner.execute('inline_fix', (stageOnOutput) =>
-        runInlineFix({
-          db,
-          task,
-          worktreePath,
-          config: taskConfig,
-          failedChecks,
-          onOutput: stageOnOutput,
-        }),
-        { summarize: (r) => ({ summary: r.fixed ? 'Fix applied successfully' : 'Fix attempt failed' }) }
-      );
-
-      if (fixResult.fixed) {
-        checksPassed = true;
-        createAndBroadcastEvent(task.id, 'inline_fix_passed', JSON.stringify({ output: fixResult.output.slice(0, 500) }));
-        logger?.event('inline_fix_passed', 'Checks pass after inline fix');
-      } else {
-        // Inline fix failed → block the task
-        updateTask(db, task.id, { status: 'blocked', blockedReason: 'Checks failed after inline fix attempt', blockedAtStage: 'checks' });
-        unclaimTask(db, task.id);
-        createAndBroadcastEvent(
-          task.id,
-          'status_changed',
-          JSON.stringify({ from: 'checks', to: 'blocked', reason: 'inline_fix_failed' })
-        );
-        broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
-
-        const failedMetrics = collectTaskMetrics(db, task, 'failed');
-        recordLearning(configDir, failedMetrics);
-        await checkAndUpdateParentStatus(task);
-        return;
-      }
-    }
-
-    // ── Step 3: Code quality review ────────────────────────────────
-    await commitChanges(worktreePath, smartCommitMessage(task.title));
-
-    const MAX_QUALITY_CYCLES = 2;
-    let qualityCycle = 0;
-    let qualityPassed = false;
-
-    while (qualityCycle < MAX_QUALITY_CYCLES) {
-      qualityCycle++;
-
-      updateTask(db, task.id, { status: 'code_quality' });
-      createAndBroadcastEvent(
-        task.id,
-        'status_changed',
-        JSON.stringify({ from: qualityCycle === 1 ? 'checks' : 'implementing', to: 'code_quality', cycle: qualityCycle })
-      );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'code_quality' });
-
-      logger?.stageStart('code_quality', `quality-${task.id}`, qualityCycle, taskConfig.modelDefaults.review);
-      const qualityResult = await subtaskStageRunner.execute('code_quality', (stageOnOutput) =>
-        runCodeQuality(db, task, worktreePath, taskConfig, stageOnOutput),
-        { attempt: qualityCycle, summarize: (r) => ({ summary: r.passed ? 'Quality passed' : `${r.issues.length} issue(s): ${r.summary}` }) }
-      );
-      logger?.stageEnd(qualityResult.passed ? 'passed' : 'failed');
-
-      if (qualityResult.passed) {
-        qualityPassed = true;
-        createAndBroadcastEvent(task.id, 'code_quality_passed', JSON.stringify({ cycle: qualityCycle, summary: qualityResult.summary }));
-        break;
-      }
-
-      // Check if only minor issues (those are acceptable)
-      const hasCriticalOrImportant = qualityResult.issues.some(
-        i => i.severity === 'critical' || i.severity === 'important'
-      );
-      if (!hasCriticalOrImportant) {
-        qualityPassed = true;
-        createAndBroadcastEvent(task.id, 'code_quality_passed', JSON.stringify({ cycle: qualityCycle, summary: qualityResult.summary, minorOnly: true }));
-        break;
-      }
-
-      if (qualityCycle >= MAX_QUALITY_CYCLES) break;
-
-      // Re-dispatch implementer to fix quality issues
-      createAndBroadcastEvent(
-        task.id,
-        'code_quality_issues',
-        JSON.stringify({ cycle: qualityCycle, issues: qualityResult.issues })
-      );
-
-      updateTask(db, task.id, { status: 'implementing' });
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
-
-      logger?.stageStart('implementing', `quality-fix-${task.id}`, qualityCycle + 1, taskConfig.modelDefaults.implementation);
-      const fixResult = await subtaskStageRunner.execute('implementing', (stageOnOutput) =>
-        runImplementation(db, task, worktreePath, taskConfig, qualityCycle + 1, stageOnOutput),
-        { attempt: qualityCycle + 1, summarize: (r) => ({ summary: r.status === 'DONE' ? 'Quality fix applied' : `Status: ${r.status}` }) }
-      );
-      const fixSuccess = fixResult.status === 'DONE' || fixResult.status === 'DONE_WITH_CONCERNS';
-      logger?.stageEnd(fixSuccess ? 'success' : 'failed');
-
-      if (!fixSuccess) break;
-
-      await commitChanges(worktreePath, `fix: address code quality issues (cycle ${qualityCycle})`);
-    }
-
-    if (!qualityPassed) {
-      updateTask(db, task.id, { status: 'blocked', blockedReason: 'Code quality review failed after maximum cycles', blockedAtStage: 'code_quality' });
-      unclaimTask(db, task.id);
-      createAndBroadcastEvent(
-        task.id,
-        'status_changed',
-        JSON.stringify({ from: 'code_quality', to: 'blocked', reason: 'quality_cycles_exhausted' })
-      );
-      broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
-
-      const failedMetrics = collectTaskMetrics(db, task, 'failed');
-      recordLearning(configDir, failedMetrics);
-      await checkAndUpdateParentStatus(task);
-      return;
-    }
-
-    // ── Subtask done ───────────────────────────────────────────────
-    updateTask(db, task.id, { status: 'done' });
-    unclaimTask(db, task.id);
-    createAndBroadcastEvent(
-      task.id,
-      'status_changed',
-      JSON.stringify({ from: 'code_quality', to: 'done', reason: 'subtask_completed' })
-    );
-    broadcast(io, 'task:updated', { taskId: task.id, status: 'done' });
-
-    const metrics = collectTaskMetrics(db, task, 'success');
-    recordLearning(configDir, metrics);
-
-    // Fire-and-forget: non-blocking learning extraction
-    extractLearnings(metrics, worktreePath, taskConfig.modelDefaults.learning, createLogStreamer(task.id, `learning-${task.id}`, logger))
-      .then(result => { if (result.saved) console.log(`[learner] Extracted skill "${result.pattern}" for task ${task.id}`); })
-      .catch(() => { /* already logged inside extractLearnings */ });
-
-    await checkAndUpdateParentStatus(task);
-  }
-
-  /**
-   * Run the per-subtask pipeline for a top-level task (no subtasks):
+   * Run the implementation pipeline for a task:
    * implement → checks → inline fix (if fail) → code_quality → commit
    */
   async function runSubtaskPipeline(
@@ -904,13 +534,12 @@ export function createWorkerLoop(
         { summarize: (r) => ({ summary: r.saved ? `Extracted: ${r.pattern}` : 'No patterns found' }) }
       ).catch(() => { /* already logged */ });
 
-      await checkAndUpdateParentStatus(task);
       await runHook(hooks, 'onError', makeHookContext(task, 'final_review', worktreePath, taskConfig));
       return;
     }
 
     // ── PR creation ────────────────────────────────────────────────
-    if (!task.parentTaskId) {
+    {
       try {
         await runHook(hooks, 'beforeStage', makeHookContext(task, 'pr_creation', worktreePath, taskConfig));
         logger?.stageStart('pr_creation', `pr-${task.id}`, 1, 'n/a');
@@ -960,7 +589,6 @@ export function createWorkerLoop(
         { summarize: (r) => ({ summary: r.saved ? `Extracted: ${r.pattern}` : 'No patterns found' }) }
       ).catch(() => { /* already logged */ });
 
-      await checkAndUpdateParentStatus(task);
       await runHook(hooks, 'onTaskComplete', makeHookContext(task, 'pr_creation', worktreePath, taskConfig));
       return;
     }
@@ -968,7 +596,6 @@ export function createWorkerLoop(
     // Move to needs_human_review
     updateTask(db, task.id, { status: 'needs_human_review' });
     unclaimTask(db, task.id);
-    await checkAndUpdateParentStatus(task);
     createAndBroadcastEvent(
       task.id,
       'status_changed',
@@ -1031,35 +658,6 @@ export function createWorkerLoop(
         projectRoot: project.path,
       });
 
-      // Check if this is a subtask that should reuse parent's worktree
-      if (task.parentTaskId) {
-        isSubtask = true;
-
-        // Subtasks append to parent's log file
-        const parentLog = getTaskLogByTaskId(db, task.parentTaskId);
-        if (parentLog) {
-          logger = openTaskLogger(parentLog.logPath);
-          // Find subtask index among siblings
-          const siblings = getSubtasksByParentId(db, task.parentTaskId);
-          const index = siblings.findIndex(s => s.id === task.id) + 1;
-          logger.subtaskStart(index, siblings.length, task.title, task.id);
-        }
-
-        const parentGitRefs = listGitRefsByTask(db, task.parentTaskId);
-        if (parentGitRefs.length > 0 && parentGitRefs[0].worktreePath) {
-          worktreePath = parentGitRefs[0].worktreePath;
-
-          // Subtasks are fully autonomous — run per-subtask pipeline
-          await processSubtaskV2(task, worktreePath, projectConfig, projectConfigDir, logger);
-
-          // Update parent log size
-          if (parentLog) {
-            updateTaskLogSize(db, parentLog.id, logger?.sizeBytes() ?? 0);
-          }
-          return;
-        }
-      }
-
       // Create a slug from the task title
       const slug = task.title
         .toLowerCase()
@@ -1111,73 +709,7 @@ export function createWorkerLoop(
         // Plan was approved by engineer — skip planning, proceed to implementation
         console.log(`[worker] Task ${task.id} has approved plan — skipping planning`);
 
-        // Check for edited subtasks from the approval event
-        const approvalEvent = [...events].reverse().find((e) => e.type === 'plan_review_approved');
-        let subtasksToCreate: Array<{ title: string; description: string }> = [];
-
-        if (approvalEvent) {
-          try {
-            const payload = JSON.parse(approvalEvent.payload) as {
-              edits?: { subtasks?: Array<{ title: string; description: string }> };
-            };
-            if (payload.edits?.subtasks) {
-              subtasksToCreate = payload.edits.subtasks;
-            }
-          } catch { /* use plan result subtasks */ }
-        }
-
-        // Fall back to original plan subtasks if no edits
-        if (subtasksToCreate.length === 0 && existingPlanRun.output) {
-          try {
-            const planOutput = JSON.parse(existingPlanRun.output) as {
-              subtasks?: Array<{ title: string; description: string }>;
-            };
-            if (planOutput.subtasks) {
-              subtasksToCreate = planOutput.subtasks;
-            }
-          } catch { /* proceed without subtasks */ }
-        }
-
-        // Create subtasks if the plan has them
-        if (subtasksToCreate.length > 0) {
-          const MAX_SUBTASKS = 10;
-          const cappedSubtasks = subtasksToCreate.slice(0, MAX_SUBTASKS);
-          if (subtasksToCreate.length > MAX_SUBTASKS) {
-            console.warn(`[worker] Plan has ${subtasksToCreate.length} subtasks for task ${task.id}, capping at ${MAX_SUBTASKS}`);
-          }
-
-          for (let i = 0; i < cappedSubtasks.length; i++) {
-            const subtask = cappedSubtasks[i];
-            const childTask = createTask(db, {
-              projectId: task.projectId,
-              parentTaskId: task.id,
-              title: subtask.title,
-              description: subtask.description,
-              status: i === 0 ? 'ready' : 'backlog',
-              priority: task.priority,
-              riskLevel: task.riskLevel,
-            });
-            createAndBroadcastEvent(
-              childTask.id,
-              'task_created',
-              JSON.stringify({ parentTaskId: task.id, index: i })
-            );
-            broadcast(io, 'task:created', { task: childTask });
-          }
-
-          updateTask(db, task.id, { status: 'implementing', blockedReason: null });
-          logger.event('subtasks_created', `${cappedSubtasks.length} subtask(s) created — executing serially`);
-          createAndBroadcastEvent(
-            task.id,
-            'subtasks_created',
-            JSON.stringify({ count: cappedSubtasks.length })
-          );
-          broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
-          unclaimTask(db, task.id);
-          return;
-        }
-
-        // No subtasks — proceed directly to implementation
+        // Proceed directly to implementation (subtask creation removed)
       } else {
         // No approved plan yet — run spec review, then planning, then pause for review
 
@@ -1274,42 +806,7 @@ export function createWorkerLoop(
           );
           logger.event('plan_auto_approved', `Plan auto-approved (confidence=${planResult.confidence})`);
 
-          // Create subtasks from auto-approved plan (same as human-approved flow)
-          if (planResult.subtasks.length > 0) {
-            const MAX_SUBTASKS = 10;
-            const cappedSubtasks = planResult.subtasks.slice(0, MAX_SUBTASKS);
-
-            for (let i = 0; i < cappedSubtasks.length; i++) {
-              const subtask = cappedSubtasks[i];
-              const childTask = createTask(db, {
-                projectId: task.projectId,
-                parentTaskId: task.id,
-                title: subtask.title,
-                description: subtask.description,
-                status: i === 0 ? 'ready' : 'backlog',
-                priority: task.priority,
-                riskLevel: task.riskLevel,
-              });
-              createAndBroadcastEvent(
-                childTask.id,
-                'task_created',
-                JSON.stringify({ parentTaskId: task.id, index: i })
-              );
-              broadcast(io, 'task:created', { task: childTask });
-            }
-
-            updateTask(db, task.id, { status: 'implementing', blockedReason: null });
-            logger.event('subtasks_created', `${cappedSubtasks.length} subtask(s) created — executing serially (auto-approved)`);
-            createAndBroadcastEvent(
-              task.id,
-              'subtasks_created',
-              JSON.stringify({ count: cappedSubtasks.length, autoApproved: true })
-            );
-            broadcast(io, 'task:updated', { taskId: task.id, status: 'implementing' });
-            unclaimTask(db, task.id);
-            return;
-          }
-          // No subtasks — fall through to direct implementation below
+          // Subtask creation removed — fall through to direct implementation below
         } else {
           // Pause for engineer plan review — do NOT proceed to implementation
           updateTask(db, task.id, { status: 'needs_plan_review' });
@@ -1357,7 +854,6 @@ export function createWorkerLoop(
         console.error(`[worker] Failed to unclaim task ${task.id}:`, e);
       }
       // Check if parent should be updated now that this subtask failed
-      await checkAndUpdateParentStatus(task);
 
       // Broadcast error to live logs
       try {

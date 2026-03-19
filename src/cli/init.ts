@@ -47,7 +47,6 @@ export default async function init(): Promise<void> {
     maxConcurrentTasks: 2,
     maxAttemptsPerTask: 10,
     maxReviewCycles: 3,
-    maxSubcardDepth: 2,
     prDraft: true,
     autoMerge: false,
     autoMergeMode: 'off',
@@ -76,7 +75,6 @@ export default async function init(): Promise<void> {
     ruflo: {
       enabled: true,
     },
-    maxRalphIterations: 5,
   };
 
   // 6. Write config

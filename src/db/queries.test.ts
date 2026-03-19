@@ -145,34 +145,27 @@ describe('tasks', () => {
     expect(task.status).toBe('backlog');
     expect(task.riskLevel).toBe('low');
     expect(task.priority).toBe(0);
-    expect(task.columnPosition).toBe(0);
     expect(task.spec).toBeNull();
     expect(task.blockedReason).toBeNull();
     expect(task.claimedAt).toBeNull();
     expect(task.claimedBy).toBeNull();
-    expect(task.parentTaskId).toBeNull();
   });
 
   it('creates a task with all fields', () => {
     const project = makeProject(db);
-    const parent = makeTask(db, project.id, { title: 'Parent' });
     const task = makeTask(db, project.id, {
       title: 'Full Task',
       description: 'A description',
-      parentTaskId: parent.id,
       status: 'ready',
       riskLevel: 'high',
       priority: 10,
-      columnPosition: 3,
       spec: JSON.stringify({ foo: 'bar' }),
     });
     expect(task.title).toBe('Full Task');
     expect(task.description).toBe('A description');
-    expect(task.parentTaskId).toBe(parent.id);
     expect(task.status).toBe('ready');
     expect(task.riskLevel).toBe('high');
     expect(task.priority).toBe(10);
-    expect(task.columnPosition).toBe(3);
     expect(task.spec).toBe(JSON.stringify({ foo: 'bar' }));
   });
 
@@ -244,56 +237,11 @@ describe('tasks', () => {
     expect(reClaimed).toBe(true);
   });
 
-  it('moveToColumn updates status and columnPosition', () => {
+  it('moveToColumn updates status', () => {
     const project = makeProject(db);
-    const task = makeTask(db, project.id, { status: 'backlog', columnPosition: 0 });
-    const moved = queries.moveToColumn(db, task.id, 'ready', 2);
+    const task = makeTask(db, project.id, { status: 'backlog' });
+    const moved = queries.moveToColumn(db, task.id, 'ready');
     expect(moved!.status).toBe('ready');
-    expect(moved!.columnPosition).toBe(2);
-  });
-
-  it('getSubtasksByParentId returns only direct children', () => {
-    const project = makeProject(db);
-    const parent = makeTask(db, project.id, { title: 'Parent' });
-    const child1 = makeTask(db, project.id, { title: 'Child 1', parentTaskId: parent.id });
-    const child2 = makeTask(db, project.id, { title: 'Child 2', parentTaskId: parent.id });
-    const unrelated = makeTask(db, project.id, { title: 'Unrelated' });
-
-    const subtasks = queries.getSubtasksByParentId(db, parent.id);
-    expect(subtasks).toHaveLength(2);
-    const ids = subtasks.map((t) => t.id);
-    expect(ids).toContain(child1.id);
-    expect(ids).toContain(child2.id);
-    expect(ids).not.toContain(unrelated.id);
-  });
-
-  it('getNextBacklogSubtask returns the first backlog subtask by created_at', async () => {
-    const project = makeProject(db);
-    const parent = makeTask(db, project.id, { title: 'Parent' });
-    const first = makeTask(db, project.id, { title: 'First', parentTaskId: parent.id, status: 'backlog' });
-    await new Promise((r) => setTimeout(r, 5));
-    makeTask(db, project.id, { title: 'Second', parentTaskId: parent.id, status: 'backlog' });
-
-    const next = queries.getNextBacklogSubtask(db, parent.id);
-    expect(next).toBeDefined();
-    expect(next!.id).toBe(first.id);
-  });
-
-  it('getNextBacklogSubtask skips non-backlog subtasks', () => {
-    const project = makeProject(db);
-    const parent = makeTask(db, project.id, { title: 'Parent' });
-    makeTask(db, project.id, { title: 'Done Child', parentTaskId: parent.id, status: 'done' });
-    const backlogChild = makeTask(db, project.id, { title: 'Backlog Child', parentTaskId: parent.id, status: 'backlog' });
-
-    const next = queries.getNextBacklogSubtask(db, parent.id);
-    expect(next!.id).toBe(backlogChild.id);
-  });
-
-  it('getNextBacklogSubtask returns undefined when no backlog subtasks', () => {
-    const project = makeProject(db);
-    const parent = makeTask(db, project.id, { title: 'Parent' });
-    const next = queries.getNextBacklogSubtask(db, parent.id);
-    expect(next).toBeUndefined();
   });
 
   it('createTask throws on nonexistent project (FK violation)', () => {
@@ -309,7 +257,6 @@ describe('tasks', () => {
       status: 'ready',
       riskLevel: 'medium',
       priority: 5,
-      columnPosition: 1,
       spec: '{"key":"val"}',
       blockedReason: 'Blocked by X',
     });
@@ -318,7 +265,6 @@ describe('tasks', () => {
     expect(updated!.status).toBe('ready');
     expect(updated!.riskLevel).toBe('medium');
     expect(updated!.priority).toBe(5);
-    expect(updated!.columnPosition).toBe(1);
     expect(updated!.spec).toBe('{"key":"val"}');
     expect(updated!.blockedReason).toBe('Blocked by X');
   });

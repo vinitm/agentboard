@@ -43,13 +43,11 @@ function makeTask(overrides?: Partial<Task>): Task {
   return {
     id: 1,
     projectId: 'proj-1',
-    parentTaskId: null,
     title: 'Test task',
     description: 'A test task',
     status: 'code_quality',
     riskLevel: 'low',
     priority: 1,
-    columnPosition: 0,
     spec: null,
     blockedReason: null,
     blockedAtStage: null,
@@ -78,9 +76,9 @@ describe('code-quality', () => {
     ).run('proj-1', 'test', '/tmp/test', '/tmp/test/.agentboard/config.json', new Date().toISOString(), new Date().toISOString());
 
     db.prepare(
-      `INSERT INTO tasks (project_id, title, description, status, risk_level, priority, column_position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run('proj-1', 'Test task', 'A test task', 'code_quality', 'low', 1, 0, new Date().toISOString(), new Date().toISOString());
+      `INSERT INTO tasks (project_id, title, description, status, risk_level, priority, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run('proj-1', 'Test task', 'A test task', 'code_quality', 'low', 1, new Date().toISOString(), new Date().toISOString());
   });
 
   it('exports runCodeQuality function', () => {

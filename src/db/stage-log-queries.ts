@@ -11,7 +11,6 @@ function rowToStageLog(row: Record<string, unknown>): StageLog {
     projectId: row.project_id as string,
     runId: (row.run_id as string) ?? null,
     stage: row.stage as StageLogStage,
-    subtaskId: (row.subtask_id as number) ?? null,
     attempt: row.attempt as number,
     filePath: row.file_path as string,
     status: row.status as StageLogStatus,
@@ -31,7 +30,6 @@ export interface CreateStageLogData {
   projectId: string;
   runId?: string;
   stage: StageLogStage;
-  subtaskId?: number;
   attempt?: number;
   filePath: string;
   startedAt: string;
@@ -44,15 +42,14 @@ export function createStageLog(
   const id = uuidv4();
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO stage_logs (id, task_id, project_id, run_id, stage, subtask_id, attempt, file_path, status, started_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)`
+    `INSERT INTO stage_logs (id, task_id, project_id, run_id, stage, attempt, file_path, status, started_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)`
   ).run(
     id,
     data.taskId,
     data.projectId,
     data.runId ?? null,
     data.stage,
-    data.subtaskId ?? null,
     data.attempt ?? 1,
     data.filePath,
     data.startedAt,
@@ -80,16 +77,6 @@ export function listStageLogsByTask(
   const rows = db
     .prepare('SELECT * FROM stage_logs WHERE task_id = ? ORDER BY started_at ASC')
     .all(taskId) as Record<string, unknown>[];
-  return rows.map(rowToStageLog);
-}
-
-export function listStageLogsBySubtask(
-  db: Database.Database,
-  subtaskId: number
-): StageLog[] {
-  const rows = db
-    .prepare('SELECT * FROM stage_logs WHERE subtask_id = ? ORDER BY started_at ASC')
-    .all(subtaskId) as Record<string, unknown>[];
   return rows.map(rowToStageLog);
 }
 

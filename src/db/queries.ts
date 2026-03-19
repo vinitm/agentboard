@@ -33,13 +33,11 @@ function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: row.id as number,
     projectId: row.project_id as string,
-    parentTaskId: (row.parent_task_id as number) ?? null,
     title: row.title as string,
     description: row.description as string,
     status: row.status as TaskStatus,
     riskLevel: row.risk_level as RiskLevel,
     priority: row.priority as number,
-    columnPosition: row.column_position as number,
     spec: (row.spec as string) ?? null,
     blockedReason: (row.blocked_reason as string) ?? null,
     blockedAtStage: (row.blocked_at_stage as string) ?? null,
@@ -173,11 +171,9 @@ export interface CreateTaskData {
   projectId: string;
   title: string;
   description?: string;
-  parentTaskId?: number | null;
   status?: TaskStatus;
   riskLevel?: RiskLevel;
   priority?: number;
-  columnPosition?: number;
   spec?: string | null;
 }
 
@@ -187,18 +183,16 @@ export function createTask(
 ): Task {
   const now = new Date().toISOString();
   const result = db.prepare(
-    `INSERT INTO tasks (project_id, parent_task_id, title, description, status,
-       risk_level, priority, column_position, spec, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO tasks (project_id, title, description, status,
+       risk_level, priority, spec, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     data.projectId,
-    data.parentTaskId ?? null,
     data.title,
     data.description ?? '',
     data.status ?? 'backlog',
     data.riskLevel ?? 'low',
     data.priority ?? 0,
-    data.columnPosition ?? 0,
     data.spec ?? null,
     now,
     now
@@ -232,7 +226,7 @@ export function listTasksByStatus(
   status: TaskStatus
 ): Task[] {
   const rows = db
-    .prepare('SELECT * FROM tasks WHERE project_id = ? AND status = ? ORDER BY column_position ASC')
+    .prepare('SELECT * FROM tasks WHERE project_id = ? AND status = ? ORDER BY priority DESC, created_at ASC')
     .all(projectId, status) as Record<string, unknown>[];
   return rows.map(rowToTask);
 }
@@ -243,11 +237,9 @@ export interface UpdateTaskData {
   status?: TaskStatus;
   riskLevel?: RiskLevel;
   priority?: number;
-  columnPosition?: number;
   spec?: string | null;
   blockedReason?: string | null;
   blockedAtStage?: string | null;
-  parentTaskId?: number | null;
   chatSessionId?: string | null;
 }
 
@@ -264,11 +256,9 @@ export function updateTask(
   if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
   if (data.riskLevel !== undefined) { fields.push('risk_level = ?'); values.push(data.riskLevel); }
   if (data.priority !== undefined) { fields.push('priority = ?'); values.push(data.priority); }
-  if (data.columnPosition !== undefined) { fields.push('column_position = ?'); values.push(data.columnPosition); }
   if (data.spec !== undefined) { fields.push('spec = ?'); values.push(data.spec); }
   if (data.blockedReason !== undefined) { fields.push('blocked_reason = ?'); values.push(data.blockedReason); }
   if (data.blockedAtStage !== undefined) { fields.push('blocked_at_stage = ?'); values.push(data.blockedAtStage); }
-  if (data.parentTaskId !== undefined) { fields.push('parent_task_id = ?'); values.push(data.parentTaskId); }
   if (data.chatSessionId !== undefined) { fields.push('chat_session_id = ?'); values.push(data.chatSessionId); }
 
   if (fields.length === 0) return getTaskById(db, id);
@@ -285,13 +275,12 @@ export function updateTask(
 export function moveToColumn(
   db: Database.Database,
   id: number,
-  status: TaskStatus,
-  columnPosition: number
+  status: TaskStatus
 ): Task | undefined {
   const now = new Date().toISOString();
   db.prepare(
-    `UPDATE tasks SET status = ?, column_position = ?, updated_at = ? WHERE id = ?`
-  ).run(status, columnPosition, now, id);
+    `UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?`
+  ).run(status, now, id);
   return getTaskById(db, id);
 }
 
@@ -316,28 +305,6 @@ export function unclaimTask(
     `UPDATE tasks SET claimed_at = NULL, claimed_by = NULL, updated_at = ? WHERE id = ?`
   ).run(now, id);
   return getTaskById(db, id);
-}
-
-export function getSubtasksByParentId(
-  db: Database.Database,
-  parentTaskId: number
-): Task[] {
-  const rows = db
-    .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC')
-    .all(parentTaskId) as Record<string, unknown>[];
-  return rows.map(rowToTask);
-}
-
-export function getNextBacklogSubtask(
-  db: Database.Database,
-  parentTaskId: number
-): Task | undefined {
-  const row = db
-    .prepare(
-      'SELECT * FROM tasks WHERE parent_task_id = ? AND status = ? ORDER BY created_at ASC, rowid ASC LIMIT 1'
-    )
-    .get(parentTaskId, 'backlog') as Record<string, unknown> | undefined;
-  return row ? rowToTask(row) : undefined;
 }
 
 export function deleteTask(db: Database.Database, id: number): void {

@@ -19,11 +19,11 @@ describe('cost aggregation queries', () => {
     db.prepare('INSERT INTO projects (id, name, path, config_path) VALUES (?, ?, ?, ?)').run(
       projectId, 'Test', '/tmp/test', '/tmp/test/.agentboard/config.json'
     );
-    db.prepare('INSERT INTO tasks (id, project_id, title, description, status, risk_level, priority, column_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-      1, projectId, 'Task 1', 'desc', 'done', 'low', 0, 0
+    db.prepare('INSERT INTO tasks (id, project_id, title, description, status, risk_level, priority) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      1, projectId, 'Task 1', 'desc', 'done', 'low', 0
     );
-    db.prepare('INSERT INTO tasks (id, project_id, title, description, status, risk_level, priority, column_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-      2, projectId, 'Task 2', 'desc', 'done', 'low', 0, 0
+    db.prepare('INSERT INTO tasks (id, project_id, title, description, status, risk_level, priority) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      2, projectId, 'Task 2', 'desc', 'done', 'low', 0
     );
   });
 

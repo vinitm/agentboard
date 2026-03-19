@@ -7,13 +7,11 @@ function makeContext(): HookContext {
   const task: Task = {
     id: 1,
     projectId: 'proj-1',
-    parentTaskId: null,
     title: 'Test Task',
     description: 'A test task',
     status: 'implementing',
     riskLevel: 'low',
     priority: 0,
-    columnPosition: 0,
     spec: null,
     blockedReason: null,
     blockedAtStage: null,

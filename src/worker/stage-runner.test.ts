@@ -69,22 +69,6 @@ describe('StageRunner', () => {
     expect(logs[0].status).toBe('failed');
   });
 
-  it('handles subtaskId for nested stages', async () => {
-    const subtaskId = 2;
-    const runner = createStageRunner({ taskId, projectId, subtaskId, io, db, logsDir, projectRoot: logsDir });
-
-    await runner.execute('implementing', (onOutput) => {
-      onOutput('impl output');
-      return Promise.resolve({ done: true });
-    });
-
-    const logs = listStageLogsByTask(db, taskId);
-    expect(logs[0].subtaskId).toBe(subtaskId);
-
-    const filePath = path.join(logsDir, String(taskId), `subtask-${subtaskId}`, 'implementing.log');
-    expect(fs.existsSync(filePath)).toBe(true);
-  });
-
   it('handles retry attempts with suffixed filenames', async () => {
     const runner = createStageRunner({ taskId, projectId, io, db, logsDir, projectRoot: logsDir });
 

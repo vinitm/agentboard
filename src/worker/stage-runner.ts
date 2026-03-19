@@ -9,7 +9,6 @@ import { broadcastLog, broadcastStageTransition } from '../server/ws.js';
 export interface StageRunnerOptions {
   taskId: number;
   projectId: string;
-  subtaskId?: number;
   io: Server;
   db: Database.Database;
   logsDir: string;
@@ -32,12 +31,10 @@ export interface StageRunner {
 }
 
 export function createStageRunner(opts: StageRunnerOptions): StageRunner {
-  const { taskId, projectId, subtaskId, io, db, logsDir, projectRoot } = opts;
+  const { taskId, projectId, io, db, logsDir, projectRoot } = opts;
 
   function getFilePath(stage: StageLogStage, attempt: number): string {
-    const dir = subtaskId
-      ? path.join(logsDir, String(taskId), `subtask-${subtaskId}`)
-      : path.join(logsDir, String(taskId));
+    const dir = path.join(logsDir, String(taskId));
     const fileName = attempt > 1 ? `${stage}-${attempt}.log` : `${stage}.log`;
     return path.join(dir, fileName);
   }
@@ -63,13 +60,12 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
         projectId,
         runId: options?.runId,
         stage,
-        subtaskId,
         attempt,
         filePath: relativeFilePath,
         startedAt,
       });
 
-      broadcastStageTransition(io, { taskId, stage, subtaskId, status: 'running' });
+      broadcastStageTransition(io, { taskId, stage, status: 'running' });
 
       const onOutput = (chunk: string): void => {
         fs.appendFileSync(filePath, chunk, 'utf-8');
@@ -77,8 +73,7 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
           taskId,
           runId: options?.runId ?? `stage-${stageLog.id}`,
           stage,
-          subtaskId,
-          chunk,
+            chunk,
           timestamp: new Date().toISOString(),
         });
       };
@@ -98,7 +93,7 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
         });
 
         broadcastStageTransition(io, {
-          taskId, stage, subtaskId, status: 'completed',
+          taskId, stage, status: 'completed',
           summary: extracted.summary, durationMs, tokensUsed: extracted.tokensUsed,
         });
 
@@ -113,7 +108,7 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
           completedAt: new Date().toISOString(),
         });
 
-        broadcastStageTransition(io, { taskId, stage, subtaskId, status: 'failed', durationMs });
+        broadcastStageTransition(io, { taskId, stage, status: 'failed', durationMs });
 
         throw error;
       }

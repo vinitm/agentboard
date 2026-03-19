@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { runMigration002 } from './migrations/002-remove-subtasks.js';
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -13,13 +14,11 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  parent_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'backlog',
   risk_level TEXT NOT NULL DEFAULT 'low',
   priority INTEGER NOT NULL DEFAULT 0,
-  column_position INTEGER NOT NULL DEFAULT 0,
   spec TEXT,
   blocked_reason TEXT,
   claimed_at TEXT,
@@ -83,7 +82,6 @@ CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_logs_project_id ON task_logs(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_runs_task_id ON runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_runs_task_stage ON runs(task_id, stage);
@@ -99,7 +97,6 @@ CREATE TABLE IF NOT EXISTS stage_logs (
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
   stage TEXT NOT NULL,
-  subtask_id INTEGER,
   attempt INTEGER NOT NULL DEFAULT 1,
   file_path TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'running',
@@ -146,6 +143,7 @@ export function initSchema(db: Database.Database): void {
   migrateTaskIdsToInteger(db);
   migrateBlockedAtStage(db);
   migrateParentCascade(db);
+  runMigration002(db);
 }
 
 export function migrateReviewStages(db: Database.Database): void {

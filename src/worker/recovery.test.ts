@@ -46,39 +46,6 @@ describe('recoverStaleTasks', () => {
     expect(updated.claimedAt).not.toBeNull();
   });
 
-  it('recovers stalled subtask chains: promotes first backlog child when no active child exists', () => {
-    const db = createTestDb();
-    const project = queries.createProject(db, { name: 'p', path: '/p', configPath: '/p/.agentboard/config.json' });
-
-    // Parent is 'implementing' — simulates a subtask chain
-    const parent = queries.createTask(db, {
-      projectId: project.id,
-      title: 'parent',
-      status: 'implementing',
-    });
-
-    // All children are 'backlog' (stalled chain — no active child)
-    const child1 = queries.createTask(db, {
-      projectId: project.id,
-      title: 'child1',
-      status: 'backlog',
-      parentTaskId: parent.id,
-    });
-    queries.createTask(db, {
-      projectId: project.id,
-      title: 'child2',
-      status: 'backlog',
-      parentTaskId: parent.id,
-    });
-
-    const count = recoverStaleTasks(db);
-    expect(count).toBeGreaterThanOrEqual(1);
-
-    // First backlog child should be promoted to ready
-    const updatedChild1 = queries.getTaskById(db, child1.id)!;
-    expect(updatedChild1.status).toBe('ready');
-  });
-
   it('marks stale stage_logs as failed', () => {
     const db = createTestDb();
     const project = queries.createProject(db, { name: 'p', path: '/p', configPath: '/p/.agentboard/config.json' });
@@ -104,34 +71,4 @@ describe('recoverStaleTasks', () => {
     expect(logs[0].completedAt).not.toBeNull();
   });
 
-  it('does NOT promote when an active child exists', () => {
-    const db = createTestDb();
-    const project = queries.createProject(db, { name: 'p', path: '/p', configPath: '/p/.agentboard/config.json' });
-
-    const parent = queries.createTask(db, {
-      projectId: project.id,
-      title: 'parent',
-      status: 'implementing',
-    });
-
-    // One child is 'ready' (active), another is 'backlog'
-    queries.createTask(db, {
-      projectId: project.id,
-      title: 'child-active',
-      status: 'ready',
-      parentTaskId: parent.id,
-    });
-    const backlogChild = queries.createTask(db, {
-      projectId: project.id,
-      title: 'child-backlog',
-      status: 'backlog',
-      parentTaskId: parent.id,
-    });
-
-    recoverStaleTasks(db);
-
-    // Backlog child should remain backlog
-    const updated = queries.getTaskById(db, backlogChild.id)!;
-    expect(updated.status).toBe('backlog');
-  });
 });

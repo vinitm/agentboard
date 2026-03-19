@@ -38,7 +38,6 @@ describe('schema initialization', () => {
     const expectedIndexes = [
       'idx_tasks_project_id',
       'idx_tasks_status',
-      'idx_tasks_parent_task_id',
       'idx_tasks_project_status',
       'idx_runs_task_id',
       'idx_runs_task_stage',
@@ -268,11 +267,10 @@ describe('schema initialization', () => {
         `INSERT INTO tasks (project_id, title) VALUES ('p1', 'Test task')`
       ).run();
       const taskId = Number(result.lastInsertRowid);
-      const row = db.prepare(`SELECT status, risk_level, priority, column_position FROM tasks WHERE id=?`).get(taskId) as Record<string, unknown>;
+      const row = db.prepare(`SELECT status, risk_level, priority FROM tasks WHERE id=?`).get(taskId) as Record<string, unknown>;
       expect(row.status).toBe('backlog');
       expect(row.risk_level).toBe('low');
       expect(row.priority).toBe(0);
-      expect(row.column_position).toBe(0);
     });
 
     it('runs default status is running', () => {

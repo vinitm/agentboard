@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { StageLog } from '../../types/index.js';
-import { getStageLogById, listStageLogsByTask, listStageLogsBySubtask } from '../../db/stage-log-queries.js';
+import { getStageLogById, listStageLogsByTask } from '../../db/stage-log-queries.js';
 import { getTaskById, getProjectById } from '../../db/queries.js';
 
 /** Strip server-internal fields before sending to client. */
@@ -33,10 +33,7 @@ export function createStageLogRoutes(db: Database.Database): Router {
     const task = getTaskById(db, id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
 
-    // For subtasks, query by subtask_id since stage logs are stored under the parent's task_id
-    const stages = task.parentTaskId
-      ? listStageLogsBySubtask(db, id).map(toClientStageLog)
-      : listStageLogsByTask(db, id).map(toClientStageLog);
+    const stages = listStageLogsByTask(db, id).map(toClientStageLog);
     res.json({ stages });
   });
 
@@ -50,7 +47,7 @@ export function createStageLogRoutes(db: Database.Database): Router {
     const stageLogId = params.stageLogId;
     const stageLog = getStageLogById(db, stageLogId);
 
-    const ownsStageLog = stageLog && (stageLog.taskId === id || stageLog.subtaskId === id);
+    const ownsStageLog = stageLog && stageLog.taskId === id;
     if (!stageLog || !ownsStageLog) {
       return res.status(404).json({ error: 'Stage log not found' });
     }

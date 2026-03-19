@@ -12,7 +12,6 @@ import {
   listArtifactsByRun,
   listRunsByTask,
   getTaskById,
-  getSubtasksByParentId,
 } from '../../db/queries.js';
 
 export interface PRResult {
@@ -45,11 +44,7 @@ export async function createPR(
   });
 
   try {
-    // Get the git ref for this task (subtasks reuse parent's worktree/branch)
     let gitRefs = listGitRefsByTask(db, task.id);
-    if (gitRefs.length === 0 && task.parentTaskId) {
-      gitRefs = listGitRefsByTask(db, task.parentTaskId);
-    }
     if (gitRefs.length === 0) {
       throw new Error(`No git ref found for task ${task.id}`);
     }
@@ -208,23 +203,6 @@ function collectAssumptions(db: Database.Database, task: Task): string[] {
         assumptions.push(...parsed);
       } catch {
         // Malformed JSON — skip
-      }
-    }
-  }
-
-  const subtasks = getSubtasksByParentId(db, task.id);
-  for (const subtask of subtasks) {
-    const subtaskRun = getLatestRunByTaskAndStage(db, subtask.id, 'planning');
-    if (subtaskRun) {
-      const artifacts = listArtifactsByRun(db, subtaskRun.id);
-      const assumptionArtifact = artifacts.find((a) => a.type === 'assumptions');
-      if (assumptionArtifact) {
-        try {
-          const parsed = JSON.parse(assumptionArtifact.content) as string[];
-          assumptions.push(...parsed);
-        } catch {
-          // Malformed JSON — skip
-        }
       }
     }
   }

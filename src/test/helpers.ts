@@ -66,7 +66,6 @@ export function createTestConfig(overrides?: Record<string, unknown>): Agentboar
     maxConcurrentTasks: 1,
     maxAttemptsPerTask: 3,
     maxReviewCycles: 2,
-    maxSubcardDepth: 2,
     prDraft: true,
     autoMerge: false,
     autoMergeMode: 'off',

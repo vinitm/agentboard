@@ -53,7 +53,6 @@ describe('stage-log-queries', () => {
       expect(log.startedAt).toBe(startedAt);
       expect(log.status).toBe('running');
       expect(log.runId).toBeNull();
-      expect(log.subtaskId).toBeNull();
       expect(log.attempt).toBe(1);
       expect(log.summary).toBeNull();
       expect(log.tokensUsed).toBeNull();
@@ -67,23 +66,16 @@ describe('stage-log-queries', () => {
 
     it('creates a stage log with optional fields', () => {
       const startedAt = new Date().toISOString();
-      const subtask = createTask(db, {
-        projectId,
-        title: 'Subtask for testing',
-        parentTaskId: taskId,
-      });
       const log = createStageLog(db, {
         taskId,
         projectId,
         stage: 'checks',
-        subtaskId: subtask.id,
         attempt: 3,
         filePath: '/logs/task-abc.log',
         startedAt,
       });
 
       expect(log.runId).toBeNull();
-      expect(log.subtaskId).toBe(subtask.id);
       expect(log.attempt).toBe(3);
     });
   });
