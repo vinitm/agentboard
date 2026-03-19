@@ -1,26 +1,94 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #0a0a0b;
-  --color-bg-secondary: #111113;
-  --color-bg-tertiary: #1a1a1e;
-  --color-bg-elevated: #1e1e22;
+  /* ── Aetherium Primitive Tokens ── */
 
-  --color-border-default: #1e1e22;
-  --color-border-hover: #2e2e33;
+  /* Primary — mint/teal */
+  --color-aeth-primary: #d3ffed;
+  --color-aeth-primary-container: #64f0c8;
+  --color-aeth-primary-fixed: #6ffad1;
+  --color-aeth-primary-fixed-dim: #4eddb6;
+  --color-aeth-on-primary: #00382b;
+  --color-aeth-inverse-primary: #006b55;
 
-  --color-text-primary: #e5e7eb;
-  --color-text-secondary: #9ca3af;
-  --color-text-tertiary: #7c8493;
+  /* Secondary — cyan */
+  --color-aeth-secondary: #6ad3ff;
+  --color-aeth-secondary-container: #02b0e2;
+  --color-aeth-secondary-fixed: #bee9ff;
+  --color-aeth-secondary-fixed-dim: #6ad3ff;
+  --color-aeth-on-secondary: #003546;
 
-  --color-accent-blue: #3b82f6;
-  --color-accent-green: #22c55e;
-  --color-accent-amber: #f59e0b;
-  --color-accent-red: #ef4444;
-  --color-accent-purple: #8b5cf6;
-  --color-accent-pink: #ec4899;
+  /* Tertiary — coral */
+  --color-aeth-tertiary: #fff3f2;
+  --color-aeth-tertiary-container: #ffcdcb;
+  --color-aeth-tertiary-fixed: #ffdad8;
+  --color-aeth-tertiary-fixed-dim: #ffb3b1;
+  --color-aeth-on-tertiary: #680011;
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* Error */
+  --color-aeth-error: #ffb4ab;
+  --color-aeth-error-container: #93000a;
+  --color-aeth-on-error: #690005;
+
+  /* Warning (custom — distinct from error) */
+  --color-aeth-warning: #f5a623;
+  --color-aeth-warning-container: #5c3d00;
+
+  /* Surfaces */
+  --color-aeth-surface-lowest: #0b0e14;
+  --color-aeth-surface: #101419;
+  --color-aeth-surface-container-low: #181c22;
+  --color-aeth-surface-container: #1c2026;
+  --color-aeth-surface-container-high: #262a31;
+  --color-aeth-surface-container-highest: #31353c;
+  --color-aeth-surface-bright: #363940;
+  --color-aeth-surface-tint: #4eddb6;
+  --color-aeth-inverse-surface: #e0e2eb;
+
+  /* Text */
+  --color-aeth-on-surface: #e0e2eb;
+  --color-aeth-on-surface-variant: #bbcac3;
+
+  /* Outline */
+  --color-aeth-outline: #85948d;
+  --color-aeth-outline-variant: #3c4a44;
+
+  /* ── Radius ── */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-full: 9999px;
+
+  /* ── Semantic Tokens (stable component API) ── */
+
+  --color-bg-primary: #101419;
+  --color-bg-secondary: #181c22;
+  --color-bg-tertiary: #262a31;
+  --color-bg-elevated: #31353c;
+
+  --color-border-default: #3c4a44;
+  --color-border-hover: #85948d;
+
+  --color-text-primary: #e0e2eb;
+  --color-text-secondary: #bbcac3;
+  --color-text-tertiary: #85948d;
+
+  --color-accent-blue: #4eddb6;
+  --color-accent-blue-hover: #64f0c8;
+  --color-accent-green: #64f0c8;
+  --color-accent-amber: #f5a623;
+  --color-accent-red: #ffb4ab;
+  --color-accent-purple: #6ad3ff;
+  --color-accent-pink: #ffcdcb;
+
+  /* ── Effect Tokens ── */
+  --color-glass-bg: rgba(49, 53, 60, 0.4);
+  --color-glass-border: rgba(100, 240, 200, 0.1);
+  --color-glass-blur: 20px;
+
+  /* ── Typography ── */
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-heading: 'Space Grotesk', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'Fira Code', monospace;
 }
 
@@ -83,8 +151,8 @@
 }
 
 @keyframes gradient-border {
-  0%, 100% { border-color: var(--color-accent-purple); }
-  50% { border-color: var(--color-accent-blue); }
+  0%, 100% { border-color: var(--color-accent-blue); }
+  50% { border-color: var(--color-accent-purple); }
 }
 
 @utility animate-pulse-dot {
@@ -144,5 +212,23 @@
 /* Running task card glow */
 .card-running {
   box-shadow: 0 0 0 1px var(--color-accent-purple),
-              0 0 12px -4px rgba(139, 92, 246, 0.3);
+              0 0 12px -4px rgba(106, 211, 255, 0.3);
+}
+
+/* Glass surface effect */
+.glass-surface {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(var(--color-glass-blur));
+  -webkit-backdrop-filter: blur(var(--color-glass-blur));
+}
+
+/* Glow effects */
+.glow-primary {
+  box-shadow: 0 0 15px rgba(100, 240, 200, 0.3);
+}
+.glow-error {
+  box-shadow: 0 0 20px rgba(147, 0, 10, 0.4);
+}
+.glow-secondary {
+  box-shadow: 0 0 20px rgba(106, 211, 255, 0.15);
 }
