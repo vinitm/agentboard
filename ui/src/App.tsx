@@ -12,6 +12,7 @@ import type { FilterState } from './components/TopBar';
 import { ToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ShortcutsModal } from './components/ShortcutsModal';
+import { TaskGrid } from './components/TaskGrid';
 import { useTasks } from './hooks/useTasks';
 import { useConnectionStatus } from './hooks/useSocket';
 import { api, setApiErrorHandler } from './api/client';
@@ -36,8 +37,7 @@ const AppContent: React.FC = () => {
     });
   }, [toast]);
 
-  const { tasks, loading, createTask, updateTask, deleteTask, answerTask, retryTask, reviewPlan } =
-    useTasks(projectId);
+  const { tasks, loading, createTask, updateTask, deleteTask, answerTask, retryTask, reviewPlan } = useTasks(projectId);
 
   const runningCount = tasks.filter((t) => t.claimedBy).length;
 
@@ -95,7 +95,7 @@ const AppContent: React.FC = () => {
     if (location.pathname === '/learnings') return 'Learnings';
     if (location.pathname === '/costs') return 'Costs';
     if (location.pathname.startsWith('/tasks/')) return 'Task Details';
-    return 'Board';
+    return 'Tasks';
   };
 
   const isBoard = location.pathname === '/';
@@ -157,7 +157,15 @@ const AppContent: React.FC = () => {
             <div id="main-content" className="flex-1 overflow-auto">
               <ErrorBoundary>
               <Routes>
-                <Route path="/" element={<div className="p-6 text-text-primary">TaskGrid coming soon</div>} />
+                <Route
+                  path="/"
+                  element={
+                    <TaskGrid
+                      tasks={tasks}
+                      loading={loading}
+                    />
+                  }
+                />
                 <Route path="/tasks/:id" element={<TaskPage />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/activity" element={<ActivityFeed projectId={projectId} tasks={tasks} />} />
@@ -173,7 +181,7 @@ const AppContent: React.FC = () => {
                     <h3 className="text-base font-semibold text-text-primary mb-1">Page not found</h3>
                     <p className="text-sm text-text-secondary mb-4">The page you're looking for doesn't exist.</p>
                     <a href="/" className="px-4 py-2 text-sm font-semibold bg-accent-blue text-white rounded-lg hover:bg-blue-600 transition-colors">
-                      Back to Board
+                      Back to Tasks
                     </a>
                   </div>
                 } />

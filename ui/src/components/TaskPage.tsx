@@ -8,6 +8,7 @@ import { PRPanel } from './PRPanel';
 import { PlanReviewPanel } from './PlanReviewPanel';
 import { RunHistory } from './RunHistory';
 import { EventsTimeline } from './EventsTimeline';
+import { PipelineBar } from './PipelineBar';
 import { StageAccordion } from './StageAccordion';
 import { TaskForm } from './TaskForm';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -146,7 +147,7 @@ export const TaskPage: React.FC = () => {
         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
       </svg>
       <div className="text-accent-red mb-2">{error || 'Task not found'}</div>
-      <Link to="/" className="text-accent-blue hover:underline text-sm">← Back to Board</Link>
+      <Link to="/" className="text-accent-blue hover:underline text-sm">← Back to Tasks</Link>
     </div>
   );
 
@@ -167,7 +168,7 @@ export const TaskPage: React.FC = () => {
             <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
             </svg>
-            Board
+            Tasks
           </Link>
         </div>
         <h1 className="text-base font-semibold text-white flex-1 truncate">{task.title}</h1>
@@ -236,28 +237,9 @@ export const TaskPage: React.FC = () => {
       </div>
 
       {/* Pipeline progress */}
-      {ACTIVE_STATUSES.includes(task.status) && (
-        <div className="px-5 py-2 border-b border-border-default flex-shrink-0">
-          <div className="flex items-center gap-1">
-            {(['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'] as TaskStatus[]).map((stage, i) => {
-              const stageIndex = ACTIVE_STATUSES.indexOf(task.status);
-              const thisIndex = i;
-              const isPast = thisIndex < stageIndex;
-              const isCurrent = stage === task.status;
-              return (
-                <React.Fragment key={stage}>
-                  {i > 0 && <div className={`flex-1 h-0.5 ${isPast ? 'bg-accent-green' : isCurrent ? 'bg-accent-blue' : 'bg-bg-tertiary'}`} />}
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isPast ? 'bg-accent-green' : isCurrent ? 'bg-accent-blue animate-pulse-dot' : 'bg-bg-tertiary'}`}
-                    title={stage.replace(/_/g, ' ')} />
-                </React.Fragment>
-              );
-            })}
-          </div>
-          <div className="text-[10px] text-text-tertiary mt-1 text-center">
-            Stage {ACTIVE_STATUSES.indexOf(task.status) + 1}/{ACTIVE_STATUSES.length}: {task.status.replace(/_/g, ' ')}
-          </div>
-        </div>
-      )}
+      <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
+        <PipelineBar status={task.status} showLabels />
+      </div>
 
       {/* Action panels */}
       {task.status === 'needs_plan_review' && (
