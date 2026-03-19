@@ -42,6 +42,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     columnPosition: row.column_position as number,
     spec: (row.spec as string) ?? null,
     blockedReason: (row.blocked_reason as string) ?? null,
+    blockedAtStage: (row.blocked_at_stage as string) ?? null,
     claimedAt: (row.claimed_at as string) ?? null,
     claimedBy: (row.claimed_by as string) ?? null,
     chatSessionId: (row.chat_session_id as string) ?? null,
@@ -245,6 +246,7 @@ export interface UpdateTaskData {
   columnPosition?: number;
   spec?: string | null;
   blockedReason?: string | null;
+  blockedAtStage?: string | null;
   parentTaskId?: number | null;
   chatSessionId?: string | null;
 }
@@ -265,6 +267,7 @@ export function updateTask(
   if (data.columnPosition !== undefined) { fields.push('column_position = ?'); values.push(data.columnPosition); }
   if (data.spec !== undefined) { fields.push('spec = ?'); values.push(data.spec); }
   if (data.blockedReason !== undefined) { fields.push('blocked_reason = ?'); values.push(data.blockedReason); }
+  if (data.blockedAtStage !== undefined) { fields.push('blocked_at_stage = ?'); values.push(data.blockedAtStage); }
   if (data.parentTaskId !== undefined) { fields.push('parent_task_id = ?'); values.push(data.parentTaskId); }
   if (data.chatSessionId !== undefined) { fields.push('chat_session_id = ?'); values.push(data.chatSessionId); }
 
@@ -339,6 +342,13 @@ export function getNextBacklogSubtask(
 
 export function deleteTask(db: Database.Database, id: number): void {
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+}
+
+export function getStaleClaimed(db: Database.Database, staleMinutes: number = 15): Task[] {
+  const rows = db.prepare(
+    `SELECT * FROM tasks WHERE claimed_by IS NOT NULL AND claimed_at < datetime('now', '-' || ? || ' minutes')`
+  ).all(staleMinutes) as Record<string, unknown>[];
+  return rows.map(rowToTask);
 }
 
 // ── Runs ─────────────────────────────────────────────────────────────

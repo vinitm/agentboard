@@ -22,6 +22,7 @@ import {
   createArtifact,
   getLatestRunByTaskAndStage,
   listEventsByTask,
+  getStaleClaimed,
 } from '../db/queries.js';
 import { createWorktree, cleanupWorktree, commitChanges } from './git.js';
 import { runPlanning } from './stages/planner.js';
@@ -317,6 +318,18 @@ export function createWorkerLoop(
       if (!running) return;
       if (activeTasks >= config.maxConcurrentTasks) return;
 
+      // Recover stale claimed tasks (claimed > 15 minutes ago)
+      try {
+        const staleTasks = getStaleClaimed(db, 15);
+        for (const stale of staleTasks) {
+          console.log(`[worker] Recovering stale claim on task ${stale.id} (claimed by ${stale.claimedBy} at ${stale.claimedAt})`);
+          unclaimTask(db, stale.id);
+          broadcast(io, 'task:updated', { taskId: stale.id, status: stale.status });
+        }
+      } catch (e) {
+        console.error('[worker] Stale claim recovery error:', e);
+      }
+
       // Get all projects to find ready tasks across them
       const projects = listProjects(db);
       const allReadyTasks: Task[] = [];
@@ -403,7 +416,7 @@ export function createWorkerLoop(
     // ── Status check ───────────────────────────────────────────────
     if (implResult.status === 'NEEDS_CONTEXT') {
       const reason = implResult.contextNeeded?.join('; ') ?? 'Implementation needs additional context';
-      updateTask(db, task.id, { status: 'blocked', blockedReason: reason });
+      updateTask(db, task.id, { status: 'blocked', blockedReason: reason, blockedAtStage: 'implementing' });
       unclaimTask(db, task.id);
       createAndBroadcastEvent(
         task.id,
@@ -417,7 +430,7 @@ export function createWorkerLoop(
 
     if (implResult.status === 'BLOCKED') {
       const reason = implResult.blockerReason ?? 'Implementation is blocked';
-      updateTask(db, task.id, { status: 'blocked', blockedReason: reason });
+      updateTask(db, task.id, { status: 'blocked', blockedReason: reason, blockedAtStage: 'implementing' });
       unclaimTask(db, task.id);
       createAndBroadcastEvent(
         task.id,
@@ -475,7 +488,7 @@ export function createWorkerLoop(
         logger?.event('inline_fix_passed', 'Checks pass after inline fix');
       } else {
         // Inline fix failed → block the task
-        updateTask(db, task.id, { status: 'blocked', blockedReason: 'Checks failed after inline fix attempt' });
+        updateTask(db, task.id, { status: 'blocked', blockedReason: 'Checks failed after inline fix attempt', blockedAtStage: 'checks' });
         unclaimTask(db, task.id);
         createAndBroadcastEvent(
           task.id,
@@ -558,7 +571,7 @@ export function createWorkerLoop(
     }
 
     if (!qualityPassed) {
-      updateTask(db, task.id, { status: 'blocked', blockedReason: 'Code quality review failed after maximum cycles' });
+      updateTask(db, task.id, { status: 'blocked', blockedReason: 'Code quality review failed after maximum cycles', blockedAtStage: 'code_quality' });
       unclaimTask(db, task.id);
       createAndBroadcastEvent(
         task.id,
@@ -639,7 +652,7 @@ export function createWorkerLoop(
 
     if (implResult.status === 'NEEDS_CONTEXT') {
       const reason = implResult.contextNeeded?.join('; ') ?? 'Implementation needs additional context';
-      updateTask(db, task.id, { status: 'blocked', blockedReason: reason });
+      updateTask(db, task.id, { status: 'blocked', blockedReason: reason, blockedAtStage: 'implementing' });
       unclaimTask(db, task.id);
       createAndBroadcastEvent(task.id, 'status_changed', JSON.stringify({ from: 'implementing', to: 'blocked', reason }));
       broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
@@ -649,7 +662,7 @@ export function createWorkerLoop(
 
     if (implResult.status === 'BLOCKED') {
       const reason = implResult.blockerReason ?? 'Implementation is blocked';
-      updateTask(db, task.id, { status: 'blocked', blockedReason: reason });
+      updateTask(db, task.id, { status: 'blocked', blockedReason: reason, blockedAtStage: 'implementing' });
       unclaimTask(db, task.id);
       createAndBroadcastEvent(task.id, 'status_changed', JSON.stringify({ from: 'implementing', to: 'blocked', reason }));
       broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
@@ -697,7 +710,7 @@ export function createWorkerLoop(
         createAndBroadcastEvent(task.id, 'inline_fix_passed', JSON.stringify({ output: fixResult.output.slice(0, 500) }));
         logger?.event('inline_fix_passed', 'Checks pass after inline fix');
       } else {
-        updateTask(db, task.id, { status: 'blocked', blockedReason: 'Checks failed after inline fix attempt' });
+        updateTask(db, task.id, { status: 'blocked', blockedReason: 'Checks failed after inline fix attempt', blockedAtStage: 'checks' });
         unclaimTask(db, task.id);
         createAndBroadcastEvent(task.id, 'status_changed', JSON.stringify({ from: 'checks', to: 'blocked', reason: 'inline_fix_failed' }));
         broadcast(io, 'task:updated', { taskId: task.id, status: 'blocked' });
@@ -1081,6 +1094,14 @@ export function createWorkerLoop(
         logPath: logger.logPath,
       });
 
+      // Check if task is resuming from a blocked stage
+      const resumeFromStage = task.blockedAtStage;
+      if (resumeFromStage) {
+        // Clear the blocked_at_stage marker
+        updateTask(db, task.id, { blockedAtStage: null });
+        console.log(`[worker] Task ${task.id} resuming from blocked stage: ${resumeFromStage}`);
+      }
+
       // Check if plan was already approved (task returning from needs_plan_review)
       const existingPlanRun = getLatestRunByTaskAndStage(db, task.id, 'planning');
       const events = listEventsByTask(db, task.id);
@@ -1180,7 +1201,7 @@ export function createWorkerLoop(
 
         if (!specResult.passed) {
           const issuesSummary = specResult.issues.map(i => `[${i.severity}] ${i.field}: ${i.message}`).join('; ');
-          updateTask(db, task.id, { status: 'blocked', blockedReason: issuesSummary });
+          updateTask(db, task.id, { status: 'blocked', blockedReason: issuesSummary, blockedAtStage: 'spec_review' });
           unclaimTask(db, task.id);
           createAndBroadcastEvent(
             task.id,

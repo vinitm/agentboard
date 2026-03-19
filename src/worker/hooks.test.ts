@@ -16,6 +16,7 @@ function makeContext(): HookContext {
     columnPosition: 0,
     spec: null,
     blockedReason: null,
+    blockedAtStage: null,
     claimedAt: null,
     claimedBy: null,
     chatSessionId: null,

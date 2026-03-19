@@ -144,6 +144,8 @@ export function initSchema(db: Database.Database): void {
   migrateToSuperpowersWorkflow(db);
   migrateChatSessionId(db);
   migrateTaskIdsToInteger(db);
+  migrateBlockedAtStage(db);
+  migrateParentCascade(db);
 }
 
 export function migrateReviewStages(db: Database.Database): void {
@@ -437,6 +439,83 @@ export function migrateTaskIdsToInteger(db: Database.Database): void {
     `);
 
     console.log(`[db] Migrated ${idMap.size} tasks from UUID to integer IDs`);
+  });
+
+  migrate();
+  db.exec('PRAGMA foreign_keys = ON;');
+}
+
+export function migrateBlockedAtStage(db: Database.Database): void {
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN blocked_at_stage TEXT');
+    console.log('[db] Added blocked_at_stage column to tasks');
+  } catch {
+    // Column already exists — ignore
+  }
+}
+
+export function migrateParentCascade(db: Database.Database): void {
+  // Check current FK definition for parent_task_id
+  const fkList = db.prepare('PRAGMA foreign_key_list(tasks)').all() as Array<{
+    table: string;
+    from: string;
+    on_delete: string;
+  }>;
+  const parentFk = fkList.find((fk) => fk.from === 'parent_task_id');
+  if (!parentFk || parentFk.on_delete === 'CASCADE') return;
+
+  console.log('[db] Migrating parent_task_id FK from SET NULL to CASCADE...');
+
+  db.exec('PRAGMA foreign_keys = OFF;');
+
+  const migrate = db.transaction(() => {
+    // Get current column info to build the CREATE TABLE dynamically
+    const colInfo = db.prepare('PRAGMA table_info(tasks)').all() as Array<{
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+    }>;
+    const columnNames = colInfo.map((c) => c.name);
+
+    db.exec(`CREATE TABLE tasks_temp (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      parent_task_id INTEGER REFERENCES tasks_temp(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'backlog',
+      risk_level TEXT NOT NULL DEFAULT 'low',
+      priority INTEGER NOT NULL DEFAULT 0,
+      column_position INTEGER NOT NULL DEFAULT 0,
+      spec TEXT,
+      blocked_reason TEXT,
+      blocked_at_stage TEXT,
+      claimed_at TEXT,
+      claimed_by TEXT,
+      chat_session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+
+    // Copy data — only columns that exist in both tables
+    const tempColInfo = db.prepare('PRAGMA table_info(tasks_temp)').all() as Array<{ name: string }>;
+    const tempColNames = new Set(tempColInfo.map((c) => c.name));
+    const sharedCols = columnNames.filter((c) => tempColNames.has(c));
+    const colList = sharedCols.join(', ');
+
+    db.exec(`INSERT INTO tasks_temp (${colList}) SELECT ${colList} FROM tasks`);
+    db.exec('DROP TABLE tasks');
+    db.exec('ALTER TABLE tasks_temp RENAME TO tasks');
+
+    db.exec(`
+      CREATE INDEX idx_tasks_project_id ON tasks(project_id);
+      CREATE INDEX idx_tasks_status ON tasks(status);
+      CREATE INDEX idx_tasks_parent_task_id ON tasks(parent_task_id);
+      CREATE INDEX idx_tasks_project_status ON tasks(project_id, status);
+    `);
+
+    console.log('[db] Migrated parent_task_id FK to ON DELETE CASCADE');
   });
 
   migrate();

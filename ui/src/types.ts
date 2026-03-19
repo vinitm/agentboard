@@ -79,6 +79,7 @@ export interface Task {
   columnPosition: number;
   spec: string | null;
   blockedReason: string | null;
+  blockedAtStage: string | null;
   claimedAt: string | null;
   claimedBy: string | null;
   chatSessionId: string | null;

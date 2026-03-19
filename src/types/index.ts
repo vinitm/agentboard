@@ -91,6 +91,7 @@ export interface Task {
   columnPosition: number;
   spec: string | null;        // JSON text for template fields
   blockedReason: string | null;
+  blockedAtStage: string | null;
   claimedAt: string | null;
   claimedBy: string | null;
   chatSessionId: string | null;

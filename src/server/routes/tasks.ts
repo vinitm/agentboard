@@ -253,6 +253,10 @@ Task description: ${description.trim()}`;
     await cleanupTaskWorktree(db, id).catch(() => {});
     queries.deleteTask(db, id);
     broadcast(io, 'task:deleted', { id });
+    // If deleted task was a subtask, recalculate parent status
+    if (existing.parentTaskId) {
+      handleSubtaskTerminal({ parentTaskId: existing.parentTaskId, status: 'cancelled' });
+    }
     res.json({ ok: true });
   });
 
@@ -296,6 +300,16 @@ Task description: ${description.trim()}`;
       cleanupTaskWorktree(db, id).catch(() => {});
       // Promote next sibling or update parent
       handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'cancelled' });
+      // Cancel all non-terminal subtasks if this is a parent task
+      const subtasks = queries.getSubtasksByParentId(db, id);
+      for (const sub of subtasks) {
+        const terminalStatuses: TaskStatus[] = ['done', 'failed', 'cancelled'];
+        if (!terminalStatuses.includes(sub.status)) {
+          queries.unclaimTask(db, sub.id);
+          queries.updateTask(db, sub.id, { status: 'cancelled', blockedReason: null });
+          broadcast(io, 'task:updated', { taskId: sub.id, status: 'cancelled' });
+        }
+      }
       res.json(updated);
       return;
     }
@@ -318,10 +332,10 @@ Task description: ${description.trim()}`;
       return;
     }
 
-    // Can move to backlog from ready only
+    // Can move to backlog from ready or failed
     if (column === 'backlog') {
-      if (task.status !== 'ready') {
-        res.status(400).json({ error: 'Can only move to backlog from ready' });
+      if (task.status !== 'ready' && task.status !== 'failed') {
+        res.status(400).json({ error: 'Can only move to backlog from ready or failed' });
         return;
       }
       const updated = queries.moveToColumn(db, id, column, 0);
@@ -342,6 +356,23 @@ Task description: ${description.trim()}`;
       cleanupTaskWorktree(db, id).catch(() => {});
       // Promote next sibling or update parent
       handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'done' });
+      res.json(updated);
+      return;
+    }
+
+    // Can move to blocked from needs_human_review (PR rejection with changes requested)
+    if (column === 'blocked' && task.status === 'needs_human_review') {
+      const reason = req.body.reason || 'Changes requested during human review';
+      const updated = queries.updateTask(db, id, { status: 'blocked', blockedReason: reason });
+      broadcast(io, 'task:moved', updated);
+      res.json(updated);
+      return;
+    }
+
+    // Can move to failed from needs_human_review (PR rejected outright)
+    if (column === 'failed' && task.status === 'needs_human_review') {
+      const updated = queries.moveToColumn(db, id, 'failed', 0);
+      broadcast(io, 'task:moved', updated);
       res.json(updated);
       return;
     }
@@ -757,6 +788,57 @@ Return ONLY valid JSON with no markdown fences:
     handleSubtaskTerminal({ parentTaskId: task.parentTaskId, status: 'cancelled' });
 
     res.json(updated);
+  });
+
+  // POST /api/tasks/:id/unclaim — force-unclaim a stale task
+  router.post('/:id/unclaim', (req, res) => {
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    if (!task.claimedBy) {
+      res.status(400).json({ error: 'Task is not claimed' });
+      return;
+    }
+    queries.unclaimTask(db, id);
+    const updated = queries.getTaskById(db, id)!;
+    broadcast(io, 'task:updated', updated);
+    res.json(updated);
+  });
+
+  // GET /api/tasks/:id/delete-impact — preview what happens if a task is deleted
+  router.get('/:id/delete-impact', (req, res) => {
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const task = queries.getTaskById(db, id);
+    if (!task) { res.status(404).json({ error: 'Task not found' }); return; }
+
+    const subtasks = queries.getSubtasksByParentId(db, id);
+    const impact: Record<string, unknown> = {
+      taskId: id,
+      isSubtask: !!task.parentTaskId,
+      subtaskCount: subtasks.length,
+      willDeleteSubtasks: subtasks.length > 0,
+      activeSubtasks: subtasks.filter(s => !['done', 'failed', 'cancelled'].includes(s.status)).length,
+    };
+
+    if (task.parentTaskId) {
+      const siblings = queries.getSubtasksByParentId(db, task.parentTaskId);
+      const remaining = siblings.filter(s => s.id !== id);
+      const terminalSiblings = remaining.filter(s => ['done', 'failed', 'cancelled'].includes(s.status));
+      impact.siblingCount = remaining.length;
+      impact.parentWillComplete = remaining.length > 0 && terminalSiblings.length === remaining.length;
+      impact.nextSiblingWillPromote = remaining.some(s => s.status === 'backlog');
+    }
+
+    res.json(impact);
   });
 
   /**

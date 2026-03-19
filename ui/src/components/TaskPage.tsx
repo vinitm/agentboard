@@ -86,7 +86,18 @@ export const TaskPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [confirmAction, setConfirmAction] = useState<'delete' | 'skip' | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<{ subtaskCount: number; activeSubtasks: number; isSubtask: boolean; parentWillComplete?: boolean; nextSiblingWillPromote?: boolean } | null>(null);
   const { toast } = useToast();
+
+  const handleDeleteClick = async () => {
+    try {
+      const impact = await api.get<typeof deleteImpact>(`/api/tasks/${task?.id}/delete-impact`);
+      setDeleteImpact(impact);
+    } catch {
+      setDeleteImpact(null);
+    }
+    setConfirmAction('delete');
+  };
 
   useEffect(() => {
     if (taskId === undefined || isNaN(taskId)) return;
@@ -188,10 +199,48 @@ export const TaskPage: React.FC = () => {
             <button onClick={() => setConfirmAction('skip')}
               className="px-3 py-1 rounded-lg text-xs font-semibold border border-text-tertiary text-text-secondary hover:bg-bg-tertiary transition-colors">Skip</button>
           )}
-          <button onClick={() => setConfirmAction('delete')}
+          {task.claimedBy && task.claimedAt && (Date.now() - new Date(task.claimedAt).getTime() > 10 * 60 * 1000) && (
+            <button onClick={async () => {
+              try {
+                const updated = await api.post<Task>(`/api/tasks/${task.id}/unclaim`);
+                setTask(updated);
+                toast('Task unclaimed successfully', 'success');
+              } catch (err) {
+                toast(`Failed to unclaim: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+              }
+            }}
+              className="px-3 py-1 rounded-lg text-xs font-semibold border border-accent-amber text-accent-amber hover:bg-accent-amber hover:text-white transition-colors">
+              Force Unclaim
+            </button>
+          )}
+          <button onClick={handleDeleteClick}
             className="px-3 py-1 rounded-lg text-xs font-semibold border border-accent-red text-accent-red hover:bg-accent-red hover:text-white transition-colors">Delete</button>
         </div>
       </div>
+
+      {/* Pipeline progress */}
+      {ACTIVE_STATUSES.includes(task.status) && !isSubtask && (
+        <div className="px-5 py-2 border-b border-border-default flex-shrink-0">
+          <div className="flex items-center gap-1">
+            {(['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'] as TaskStatus[]).map((stage, i) => {
+              const stageIndex = ACTIVE_STATUSES.indexOf(task.status);
+              const thisIndex = i;
+              const isPast = thisIndex < stageIndex;
+              const isCurrent = stage === task.status;
+              return (
+                <React.Fragment key={stage}>
+                  {i > 0 && <div className={`flex-1 h-0.5 ${isPast ? 'bg-accent-green' : isCurrent ? 'bg-accent-blue' : 'bg-bg-tertiary'}`} />}
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isPast ? 'bg-accent-green' : isCurrent ? 'bg-accent-blue animate-pulse-dot' : 'bg-bg-tertiary'}`}
+                    title={stage.replace(/_/g, ' ')} />
+                </React.Fragment>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-text-tertiary mt-1 text-center">
+            Stage {ACTIVE_STATUSES.indexOf(task.status) + 1}/{ACTIVE_STATUSES.length}: {task.status.replace(/_/g, ' ')}
+          </div>
+        </div>
+      )}
 
       {/* Subtasks */}
       {subtasks.length > 0 && (
@@ -283,15 +332,25 @@ export const TaskPage: React.FC = () => {
       <ConfirmDialog
         open={confirmAction === 'delete'}
         title="Delete this task?"
-        description="This will permanently delete the task and all its data. This action cannot be undone."
+        description={
+          deleteImpact
+            ? [
+                deleteImpact.subtaskCount > 0 && `This will also delete ${deleteImpact.subtaskCount} subtask(s)${deleteImpact.activeSubtasks > 0 ? ` (${deleteImpact.activeSubtasks} still active)` : ''}.`,
+                deleteImpact.isSubtask && deleteImpact.nextSiblingWillPromote && 'The next queued subtask will be promoted.',
+                deleteImpact.isSubtask && deleteImpact.parentWillComplete && 'The parent task will complete after this deletion.',
+                'This action cannot be undone.',
+              ].filter(Boolean).join(' ')
+            : 'This will permanently delete the task and all its data. This action cannot be undone.'
+        }
         confirmLabel="Delete"
         variant="danger"
         onConfirm={async () => {
           setConfirmAction(null);
+          setDeleteImpact(null);
           await api.del(`/api/tasks/${task.id}`);
           navigate('/');
         }}
-        onCancel={() => setConfirmAction(null)}
+        onCancel={() => { setConfirmAction(null); setDeleteImpact(null); }}
       />
       <ConfirmDialog
         open={confirmAction === 'skip'}
