@@ -83,7 +83,7 @@ const BarSegment: React.FC<{ stage: StageCost; maxTokens: number }> = ({ stage, 
 
   return (
     <div className="flex items-center gap-3 py-2">
-      <div className="w-28 text-xs text-text-secondary truncate font-mono">{stage.stage}</div>
+      <div className="w-28 text-xs text-text-secondary truncate font-mono">{stage.stage.replace(/_/g, ' ')}</div>
       <div className="flex-1 flex items-center gap-2">
         <div className="flex-1 bg-bg-tertiary rounded-full h-5 overflow-hidden">
           <div
@@ -212,8 +212,16 @@ export const CostDashboard: React.FC<Props> = ({ projectId }) => {
         <StatCard label="Avg Cost / Task" value={formatCost(avgCostPerTask)} sub={`last ${days} days`} />
         <StatCard
           label="Most Expensive Stage"
-          value={breakdown?.stages[0]?.stage ?? '-'}
-          sub={breakdown?.stages[0] ? `${breakdown.stages[0].percentage}% of total` : undefined}
+          value={(() => {
+            if (!breakdown?.stages.length) return '-';
+            const most = breakdown.stages.reduce((a, b) => a.estimatedCost > b.estimatedCost ? a : b);
+            return most.stage.replace(/_/g, ' ');
+          })()}
+          sub={(() => {
+            if (!breakdown?.stages.length) return undefined;
+            const most = breakdown.stages.reduce((a, b) => a.estimatedCost > b.estimatedCost ? a : b);
+            return `${most.percentage}% of total`;
+          })()}
         />
       </div>
 

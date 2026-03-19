@@ -22,7 +22,7 @@ export const RunHistory: React.FC<Props> = ({ runs }) => {
           : null;
         return (
           <div key={run.id} className="bg-bg-secondary rounded-md overflow-hidden border border-border-default">
-            <div className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-bg-tertiary transition-colors" onClick={() => setExpandedId(isExpanded ? null : run.id)}>
+            <div className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-bg-tertiary transition-colors" role="button" tabIndex={0} onClick={() => setExpandedId(isExpanded ? null : run.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(isExpanded ? null : run.id); } }}>
               <div className="flex items-center gap-2 flex-wrap text-[13px]">
                 <span className="font-semibold text-text-primary">{run.stage}</span>
                 <span className={`font-semibold ${statusColor[run.status] || 'text-text-tertiary'}`}>{run.status}</span>
@@ -31,8 +31,11 @@ export const RunHistory: React.FC<Props> = ({ runs }) => {
                 {run.tokensUsed != null && <span className="text-text-tertiary text-xs">{run.tokensUsed.toLocaleString()} tokens</span>}
                 {duration != null && <span className="text-text-tertiary text-xs">{duration}s</span>}
               </div>
-              <div className="text-[11px] text-text-tertiary">
-                {new Date(run.startedAt).toLocaleString()} {isExpanded ? '[-]' : '[+]'}
+              <div className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
+                {new Date(run.startedAt).toLocaleString()}
+                <svg className={`w-4 h-4 text-text-tertiary transition-transform duration-150 ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
               </div>
             </div>
             {isExpanded && run.output && (

@@ -129,15 +129,16 @@
   }
 }
 
-/* Board horizontal scroll fade edges */
+/* Board horizontal scroll shadow indicators */
 .board-scroll-container {
-  mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    black 16px,
-    black calc(100% - 16px),
-    transparent 100%
-  );
+  --scroll-shadow-size: 16px;
+  --scroll-shadow-color: rgba(0, 0, 0, 0.3);
+  background:
+    linear-gradient(to right, var(--color-bg-primary), var(--color-bg-primary)) center / 100% 100%,
+    linear-gradient(to right, var(--scroll-shadow-color), transparent) left / var(--scroll-shadow-size) 100%,
+    linear-gradient(to left, var(--scroll-shadow-color), transparent) right / var(--scroll-shadow-size) 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, scroll, scroll;
 }
 
 /* Running task card glow */

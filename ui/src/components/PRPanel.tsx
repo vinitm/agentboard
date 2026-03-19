@@ -59,7 +59,15 @@ export const PRPanel: React.FC<Props> = ({ task, onMove }) => {
         <div className="mt-3 flex gap-2">
           <input type="text" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reason for changes..."
             className="flex-1 rounded-md px-3 py-2 text-sm bg-bg-secondary border border-border-default text-text-primary placeholder-text-tertiary" />
-          <button onClick={async () => { setMarking(true); try { await onMove(task.id, 'blocked' as TaskStatus); } catch (err) { console.error('Request changes failed:', err); } finally { setMarking(false); setShowReject(false); } }} disabled={!rejectReason.trim() || marking}
+          <button onClick={async () => {
+              setMarking(true);
+              try {
+                // Set blocked reason first, then move to blocked
+                await api.put(`/api/tasks/${task.id}`, { blockedReason: `Changes requested: ${rejectReason.trim()}` });
+                await onMove(task.id, 'blocked' as TaskStatus);
+              } catch (err) { console.error('Request changes failed:', err); }
+              finally { setMarking(false); setShowReject(false); setRejectReason(''); }
+            }} disabled={!rejectReason.trim() || marking}
             className="px-3 py-2 rounded-md text-sm font-semibold bg-accent-amber text-white hover:bg-amber-600 transition-colors disabled:opacity-50">
             Submit
           </button>

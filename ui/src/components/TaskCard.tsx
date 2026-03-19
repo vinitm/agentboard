@@ -58,11 +58,15 @@ const PipelineIndicator: React.FC<{ status: string }> = ({ status }) => {
             ? 'bg-accent-amber animate-pulse-dot' // human checkpoint
             : 'bg-accent-purple animate-pulse-dot'; // current
         }
+        const isCompleted = isDone || (currentIdx >= 0 && i < currentIdx);
+        const isCurrent = i === currentIdx && !isDone && !isFailed;
+        const isFailedStage = isFailed && currentIdx >= 0 && i === currentIdx;
         return (
           <div key={stage} className="flex items-center gap-0.5">
             <div
-              className={`w-1.5 h-1.5 rounded-full ${dotClass} transition-colors`}
+              className={`w-1.5 h-1.5 transition-colors ${isFailedStage ? 'bg-accent-red rotate-45' : isCompleted ? 'rounded-full bg-accent-green' : isCurrent ? 'rounded-full ring-1 ring-current ' + dotClass : 'rounded-full ' + dotClass}`}
               title={stage.replace('_', ' ')}
+              aria-label={isCompleted ? 'completed' : isCurrent ? 'current' : isFailedStage ? 'failed' : 'pending'}
             />
             {i < PIPELINE_STAGES.length - 1 && (
               <div className={`w-2 h-px ${
@@ -124,8 +128,8 @@ export const TaskCard: React.FC<Props> = ({ task, onClick, selected, subtasks = 
 
       {/* Meta row */}
       <div className="flex items-center gap-2 flex-wrap text-[11px]">
-        <span className={`w-2 h-2 rounded-full ${riskDotColor[task.riskLevel] || 'bg-text-tertiary'}`} />
-        <span className="text-text-tertiary">{task.riskLevel}</span>
+        <span className={`w-2 h-2 rounded-full ${riskDotColor[task.riskLevel] || 'bg-text-tertiary'}`} aria-hidden="true" />
+        <span className="text-text-tertiary">{task.riskLevel} risk</span>
         {task.priority > 0 && (
           <span className="text-text-tertiary bg-bg-tertiary px-1 py-px rounded text-[10px] font-semibold">
             P{task.priority}

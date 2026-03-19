@@ -37,7 +37,7 @@ export const LogViewer: React.FC<Props> = ({ taskId }) => {
           className={`px-2 py-0.5 rounded text-[11px] border transition-colors ${autoScroll ? 'bg-accent-blue/20 border-accent-blue text-accent-blue' : 'bg-bg-elevated border-border-default text-text-tertiary'}`}>
           {autoScroll ? 'Auto ↓' : 'Manual'}
         </button>
-        <button onClick={() => setLogs([])} className="px-2 py-0.5 rounded text-[11px] bg-bg-elevated border border-border-default text-text-tertiary hover:text-text-primary">
+        <button onClick={() => { if (logs.length < 10 || window.confirm('Clear all log entries?')) setLogs([]); }} className="px-2 py-0.5 rounded text-[11px] bg-bg-elevated border border-border-default text-text-tertiary hover:text-text-primary">
           Clear
         </button>
         <CopyButton text={allText} />

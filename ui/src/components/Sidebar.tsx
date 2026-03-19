@@ -87,9 +87,14 @@ export const Sidebar: React.FC<Props> = ({
   const connectionStatus = useConnectionStatus();
 
   return (
+    <>
+    {/* Mobile overlay */}
+    {!collapsed && (
+      <div className="hidden max-md:block fixed inset-0 bg-black/50 z-40" onClick={onToggleCollapse} />
+    )}
     <aside
-      className={`flex flex-col bg-bg-secondary border-r border-border-default h-screen flex-shrink-0 transition-[width] duration-200 ${
-        collapsed ? 'w-14' : 'w-60'
+      className={`flex flex-col bg-bg-secondary border-r border-border-default h-screen flex-shrink-0 transition-[width] duration-200 max-md:fixed max-md:z-50 max-md:transition-transform max-md:duration-200 ${
+        collapsed ? 'w-14 max-md:w-60 max-md:-translate-x-full' : 'w-60 max-md:translate-x-0'
       }`}
     >
       {/* Logo */}
@@ -100,7 +105,7 @@ export const Sidebar: React.FC<Props> = ({
           </svg>
         </div>
         {!collapsed && (
-          <span className="text-sm font-bold text-text-primary tracking-tight">
+          <span className="text-sm font-bold text-text-primary tracking-tight animate-fade-in">
             Agentboard
           </span>
         )}
@@ -112,18 +117,23 @@ export const Sidebar: React.FC<Props> = ({
           <NavLink
             key={to}
             to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors duration-150 ${
-                isActive
-                  ? 'bg-bg-elevated text-white font-medium shadow-sm'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
-              } ${collapsed ? 'justify-center' : ''}`
-            }
+            end
+            className={({ isActive }) => {
+              // Also highlight Board when on task detail pages
+              const isTaskRoute = to === '/' && window.location.pathname.startsWith('/tasks/');
+              const active = isActive || isTaskRoute;
+              return (
+                `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors duration-150 ${
+                  active
+                    ? 'bg-bg-elevated text-white font-medium shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
+                } ${collapsed ? 'justify-center' : ''}`
+              );
+            }}
           >
             <Icon className="w-[18px] h-[18px] flex-shrink-0 opacity-70" />
             {!collapsed && (
-              <>
+              <span className="flex items-center gap-2.5 flex-1 animate-fade-in">
                 <span>{label}</span>
                 {label === 'Board' && runningCount > 0 && (
                   <span className="ml-auto flex items-center gap-1.5 text-[11px] text-accent-green">
@@ -131,7 +141,7 @@ export const Sidebar: React.FC<Props> = ({
                     {runningCount}
                   </span>
                 )}
-              </>
+              </span>
             )}
             {collapsed && label === 'Board' && runningCount > 0 && (
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-accent-green animate-pulse-dot" />
@@ -142,7 +152,7 @@ export const Sidebar: React.FC<Props> = ({
 
       {/* Projects */}
       {!collapsed && (
-        <div className="mt-6 px-2">
+        <div className="mt-6 px-2 animate-fade-in">
           <div className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">
             Projects
           </div>
@@ -177,7 +187,7 @@ export const Sidebar: React.FC<Props> = ({
         >
           <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${CONNECTION_COLORS[connectionStatus]}`} />
           {!collapsed && (
-            <span className={`text-text-tertiary ${connectionStatus !== 'connected' ? 'text-accent-amber' : ''}`}>
+            <span className={`text-text-tertiary animate-fade-in ${connectionStatus !== 'connected' ? 'text-accent-amber' : ''}`}>
               {CONNECTION_LABELS[connectionStatus]}
             </span>
           )}
@@ -194,13 +204,14 @@ export const Sidebar: React.FC<Props> = ({
           {collapsed ? (
             <ChevronRightIcon className="w-4 h-4" />
           ) : (
-            <>
+            <span className="flex items-center gap-1.5 animate-fade-in">
               <ChevronLeftIcon className="w-4 h-4" />
               <span>Collapse</span>
-            </>
+            </span>
           )}
         </button>
       </div>
     </aside>
+    </>
   );
 };

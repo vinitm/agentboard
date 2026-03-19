@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, KeyboardSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { Column } from './Column';
 import { TaskCard } from './TaskCard';
 import { TaskForm } from './TaskForm';
@@ -30,6 +30,7 @@ interface Props {
   retryTask: (id: number) => Promise<Task>;
   reviewPlan: (id: number, action: PlanReviewAction) => Promise<Task>;
   showNewTask?: boolean;
+  onOpenNewTask?: () => void;
   onCloseNewTask?: () => void;
   filters?: FilterState;
 }
@@ -38,8 +39,18 @@ function applyFilters(tasks: Task[], filters: FilterState | undefined): Task[] {
   if (!filters) return tasks;
   let result = tasks;
   if (filters.search) {
-    const q = filters.search.toLowerCase();
-    result = result.filter((t) => t.title.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q));
+    const q = filters.search.trim();
+    // Search by ID when query starts with #
+    if (q.startsWith('#')) {
+      const idStr = q.slice(1);
+      const id = parseInt(idStr, 10);
+      if (!isNaN(id)) {
+        result = result.filter((t) => t.id === id);
+      }
+    } else {
+      const lq = q.toLowerCase();
+      result = result.filter((t) => t.title.toLowerCase().includes(lq) || t.description?.toLowerCase().includes(lq));
+    }
   }
   if (filters.status) {
     result = result.filter((t) => t.status === filters.status);
@@ -106,17 +117,25 @@ const EmptyBoard: React.FC<{ onNewTask?: () => void }> = ({ onNewTask }) => (
 
 export const Board: React.FC<Props> = ({
   tasks, loading, projectId, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask, reviewPlan,
-  showNewTask, onCloseNewTask, filters,
+  showNewTask, onOpenNewTask, onCloseNewTask, filters,
 }) => {
   const navigate = useNavigate();
   const [editingTask, setEditingTask] = useState<Task | null | undefined>(undefined);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [collapsedColumns, setCollapsedColumns] = useState<Set<TaskStatus>>(new Set());
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<TaskStatus>>(() => {
+    try {
+      const saved = localStorage.getItem('agentboard:collapsed-columns');
+      return saved ? new Set(JSON.parse(saved) as TaskStatus[]) : new Set();
+    } catch { return new Set(); }
+  });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { toast } = useToast();
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
+  );
 
   // Subtask filtering
   const { topLevelTasks, subtasksByParent } = useMemo(() => {
@@ -143,9 +162,19 @@ export const Board: React.FC<Props> = ({
     setCollapsedColumns((prev) => {
       const next = new Set(prev);
       next.has(status) ? next.delete(status) : next.add(status);
+      try { localStorage.setItem('agentboard:collapsed-columns', JSON.stringify([...next])); } catch {}
       return next;
     });
   };
+
+  // Auto-collapse empty pipeline columns (one-time on mount if no saved state)
+  useEffect(() => {
+    if (localStorage.getItem('agentboard:collapsed-columns')) return; // respect saved prefs
+    const emptyPipeline = PIPELINE_COLUMNS.filter((status) => !filteredTasks.some((t) => t.status === status));
+    if (emptyPipeline.length > 0) {
+      setCollapsedColumns(new Set(emptyPipeline));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveTask((event.active.data.current?.task as Task) ?? null);
@@ -223,7 +252,7 @@ export const Board: React.FC<Props> = ({
   if (isEmpty) {
     return (
       <>
-        <EmptyBoard onNewTask={onCloseNewTask ? () => onCloseNewTask() : undefined} />
+        <EmptyBoard onNewTask={onOpenNewTask} />
         {(editingTask !== undefined || showNewTask) && (
           <TaskForm
             initial={editingTask}
@@ -259,7 +288,7 @@ export const Board: React.FC<Props> = ({
 
         {/* KPI Summary Bar */}
         {!hasActiveFilters && (
-          <div className="flex items-center gap-4 mb-3 px-1 text-[11px] text-text-tertiary">
+          <div className="flex items-center gap-4 mb-3 px-1 text-[11px] text-text-tertiary" role="status" aria-live="polite">
             {(() => {
               const running = filteredTasks.filter(t => t.claimedBy).length;
               const blocked = filteredTasks.filter(t => t.status === 'blocked').length;

@@ -56,6 +56,16 @@ export function useTasks(projectId: string) {
     };
   }, [socket, projectId]);
 
+  // Refetch tasks on WebSocket reconnect to catch missed events
+  useEffect(() => {
+    if (!socket || !projectId) return;
+    const onReconnect = () => {
+      api.get<Task[]>(`/api/tasks?projectId=${projectId}`).then(setTasks).catch(console.error);
+    };
+    socket.io.on('reconnect', onReconnect);
+    return () => { socket.io.off('reconnect', onReconnect); };
+  }, [socket, projectId]);
+
   const createTask = useCallback(
     async (data: {
       title: string;

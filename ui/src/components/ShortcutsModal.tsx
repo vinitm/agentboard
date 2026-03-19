@@ -12,6 +12,7 @@ const shortcuts = [
   { keys: ['⌘', 'K'], description: 'Focus search' },
   { keys: ['⌘', 'B'], description: 'Toggle sidebar' },
   { keys: ['Esc'], description: 'Blur search / close modal' },
+  { keys: ['#', 'id'], description: 'Search by task ID (e.g. #2)' },
 ];
 
 const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (

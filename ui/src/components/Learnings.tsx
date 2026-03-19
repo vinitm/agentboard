@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { timeAgo, formatDuration } from '../lib/time';
+import { EmptyState } from './EmptyState';
 
 interface LearningAnalysis {
   averageTokensPerTask: number;
@@ -132,17 +133,11 @@ export const Learnings: React.FC<Props> = ({ projectId }) => {
       {tab === 'skills' && (
         <div>
           {skills.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="w-14 h-14 rounded-2xl bg-bg-tertiary border border-border-default flex items-center justify-center mx-auto mb-4">
-                <svg className="w-7 h-7 text-text-tertiary" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z" />
-                </svg>
-              </div>
-              <div className="text-sm font-medium text-text-primary mb-1">No skills extracted yet</div>
-              <div className="text-xs text-text-secondary">
-                Skills will appear here as the pipeline learns from completed tasks
-              </div>
-            </div>
+            <EmptyState
+              icon={<svg className="w-7 h-7 text-text-tertiary" viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z" /></svg>}
+              title="No skills extracted yet"
+              description="Skills will appear here as the pipeline learns from completed tasks"
+            />
           ) : (
             <div className="space-y-3">
               {skills.map((skill) => (
@@ -194,9 +189,7 @@ export const Learnings: React.FC<Props> = ({ projectId }) => {
       {tab === 'analytics' && analysis && (
         <div>
           {analysis.totalTasks === 0 ? (
-            <div className="text-center py-16 text-sm text-text-secondary">
-              No completed tasks yet. Analytics will appear after the pipeline processes tasks.
-            </div>
+            <EmptyState title="No completed tasks yet" description="Analytics will appear after the pipeline processes tasks" />
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -244,9 +237,7 @@ export const Learnings: React.FC<Props> = ({ projectId }) => {
       {tab === 'history' && (
         <div>
           {history.length === 0 ? (
-            <div className="text-center py-16 text-sm text-text-secondary">
-              No task history yet.
-            </div>
+            <EmptyState title="No task history yet" description="Task metrics will appear as tasks complete the pipeline" />
           ) : (
             <div className="space-y-1">
               {[...history].reverse().map((entry) => (

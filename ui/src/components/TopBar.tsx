@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { TaskStatus, RiskLevel } from '../types';
 
 interface FilterState {
@@ -12,6 +13,7 @@ interface Props {
   title: string;
   taskCount?: number;
   onNewTask?: () => void;
+  onToggleSidebar?: () => void;
   filters?: FilterState;
   onFiltersChange?: (filters: FilterState) => void;
   children?: React.ReactNode;
@@ -32,6 +34,7 @@ const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'done', label: 'Done' },
   { value: 'blocked', label: 'Blocked' },
   { value: 'failed', label: 'Failed' },
+  { value: 'cancelled', label: 'Cancelled' },
 ];
 
 const RISK_OPTIONS: { value: RiskLevel; label: string }[] = [
@@ -56,6 +59,7 @@ export const TopBar: React.FC<Props> = ({
   title,
   taskCount,
   onNewTask,
+  onToggleSidebar,
   filters,
   onFiltersChange,
   children,
@@ -66,6 +70,36 @@ export const TopBar: React.FC<Props> = ({
   const searchRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const filterCount = filters ? countActiveFilters(filters) : 0;
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Initialize filters from URL on mount
+  useEffect(() => {
+    if (!filters || !onFiltersChange) return;
+    const urlStatus = searchParams.get('status') || '';
+    const urlRisk = searchParams.get('risk') || '';
+    const urlRunning = searchParams.get('running') || '';
+    const urlSearch = searchParams.get('q') || '';
+    if (urlStatus || urlRisk || urlRunning || urlSearch) {
+      onFiltersChange({
+        search: urlSearch,
+        status: urlStatus as TaskStatus | '',
+        risk: urlRisk as RiskLevel | '',
+        running: urlRunning as '' | 'running' | 'idle',
+      });
+      if (urlSearch) setLocalSearch(urlSearch);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync filter changes to URL
+  useEffect(() => {
+    if (!filters) return;
+    const params = new URLSearchParams();
+    if (filters.status) params.set('status', filters.status);
+    if (filters.risk) params.set('risk', filters.risk);
+    if (filters.running) params.set('running', filters.running);
+    if (filters.search) params.set('q', filters.search);
+    setSearchParams(params, { replace: true });
+  }, [filters?.status, filters?.risk, filters?.running, filters?.search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const debouncedSearch = useCallback((value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -101,6 +135,13 @@ export const TopBar: React.FC<Props> = ({
     <div className="flex-shrink-0">
       <div className="flex items-center justify-between px-5 py-3 border-b border-border-default bg-bg-primary">
         <div className="flex items-center gap-3">
+          {onToggleSidebar && (
+            <button onClick={onToggleSidebar} className="hidden max-md:flex items-center justify-center w-8 h-8 -ml-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors" aria-label="Toggle menu">
+              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
           <h2 className="text-sm font-semibold text-white">{title}</h2>
           {taskCount !== undefined && (
             <span className="text-[11px] text-text-tertiary bg-bg-tertiary px-2 py-0.5 rounded-full font-medium">
@@ -134,7 +175,7 @@ export const TopBar: React.FC<Props> = ({
               {localSearch && (
                 <button
                   onClick={() => { setLocalSearch(''); onFiltersChange({ ...filters, search: '' }); }}
-                  className="absolute right-2 text-text-tertiary hover:text-text-primary text-xs"
+                  className="absolute right-2 text-text-tertiary hover:text-text-primary text-xs p-1 -m-0.5 rounded hover:bg-bg-tertiary"
                   aria-label="Clear search"
                 >
                   ✕

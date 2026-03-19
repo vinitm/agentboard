@@ -110,10 +110,10 @@ export const Column: React.FC<Props> = ({ status, tasks, onTaskClick, subtasksBy
           {onToggleCollapse && (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
-              className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-text-primary transition-opacity p-0.5 rounded"
+              className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-text-primary transition-opacity p-1.5 -m-1 rounded"
               title="Collapse column"
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+              <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
               </svg>
             </button>
