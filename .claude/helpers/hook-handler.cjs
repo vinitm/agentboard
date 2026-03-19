@@ -109,6 +109,19 @@ const handlers = {
         process.exit(1);
       }
     }
+    // Block commits to master/main — enforce feature branch workflow
+    if (/\bgit\s+commit\b/.test(cmd)) {
+      try {
+        const branch = require('child_process').execSync(
+          'git rev-parse --abbrev-ref HEAD',
+          { encoding: 'utf8', cwd: process.env.CLAUDE_PROJECT_DIR || process.cwd() }
+        ).trim();
+        if (branch === 'master' || branch === 'main') {
+          console.error('[BLOCKED] Cannot commit to ' + branch + '. Create a feature branch: git checkout -b agentboard/<task-slug>');
+          process.exit(2);
+        }
+      } catch (e) { /* not in git repo — allow */ }
+    }
   },
 
   'post-edit': () => {
