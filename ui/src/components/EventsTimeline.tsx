@@ -219,7 +219,7 @@ export const EventsTimeline: React.FC<Props> = ({ taskId, events: initialEvents 
         const colorClass = getEventColor(event.type, payload);
         const isExpanded = expanded.has(event.id);
         return (
-          <div key={event.id} className="relative mb-4 cursor-pointer" onClick={() => toggleExpand(event.id)}>
+          <div key={event.id} className="relative mb-4 cursor-pointer" role="button" tabIndex={0} onClick={() => toggleExpand(event.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(event.id); } }}>
             <div className={`absolute -left-6 top-0.5 text-sm leading-none ${colorClass}`}>{'\u25CF'}</div>
             <div className="flex gap-3 items-baseline">
               <span className="text-[11px] text-text-tertiary whitespace-nowrap min-w-[70px]">{new Date(event.createdAt).toLocaleTimeString()}</span>

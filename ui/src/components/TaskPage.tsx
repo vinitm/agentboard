@@ -10,9 +10,11 @@ import { RunHistory } from './RunHistory';
 import { EventsTimeline } from './EventsTimeline';
 import { SubtaskMiniCard } from './SubtaskMiniCard';
 import { StageAccordion } from './StageAccordion';
+import { TaskForm } from './TaskForm';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
-import type { Task, Run, TaskStatus, PlanReviewAction } from '../types';
+import { useSocket } from '../hooks/useSocket';
+import type { Task, Run, TaskStatus, RiskLevel, PlanReviewAction } from '../types';
 
 type Tab = 'stages' | 'events' | 'runs';
 const ACTIVE_STATUSES: TaskStatus[] = ['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'];
@@ -36,9 +38,9 @@ function getInitialTab(): Tab {
 }
 
 const statusBadgeColor: Record<string, string> = {
-  backlog: 'bg-text-tertiary', ready: 'bg-accent-blue', spec_review: 'bg-[#3b82f6]', planning: 'bg-accent-purple',
-  implementing: 'bg-accent-purple', checks: 'bg-accent-purple', code_quality: 'bg-[#8b5cf6]',
-  final_review: 'bg-[#14b8a6]', pr_creation: 'bg-[#22c55e]',
+  backlog: 'bg-text-tertiary', ready: 'bg-accent-blue', spec_review: 'bg-accent-blue', planning: 'bg-accent-purple',
+  implementing: 'bg-accent-purple', checks: 'bg-accent-purple', code_quality: 'bg-accent-purple',
+  final_review: 'bg-accent-green', pr_creation: 'bg-accent-green',
   needs_human_review: 'bg-accent-pink', done: 'bg-accent-green',
   blocked: 'bg-accent-amber', failed: 'bg-accent-red', cancelled: 'bg-text-tertiary',
 };
@@ -87,7 +89,9 @@ export const TaskPage: React.FC = () => {
   const [error, setError] = useState('');
   const [confirmAction, setConfirmAction] = useState<'delete' | 'skip' | null>(null);
   const [deleteImpact, setDeleteImpact] = useState<{ subtaskCount: number; activeSubtasks: number; isSubtask: boolean; parentWillComplete?: boolean; nextSiblingWillPromote?: boolean } | null>(null);
+  const [editing, setEditing] = useState(false);
   const { toast } = useToast();
+  const socket = useSocket();
 
   const handleDeleteClick = async () => {
     try {
@@ -117,6 +121,43 @@ export const TaskPage: React.FC = () => {
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load task'))
       .finally(() => setLoading(false));
   }, [taskId]);
+
+  // Live task updates via WebSocket
+  useEffect(() => {
+    if (!socket || !taskId) return;
+    const onUpdated = (updated: Task) => {
+      if (updated.id === taskId) setTask(updated);
+    };
+    const onMoved = (moved: Task) => {
+      if (moved.id === taskId) setTask(moved);
+    };
+    const onEvent = (event: EventRecord) => {
+      if (event.taskId === taskId) {
+        setEvents((prev) => prev.some((e) => e.id === event.id) ? prev : [...prev, event]);
+      }
+    };
+    socket.on('task:updated', onUpdated);
+    socket.on('task:moved', onMoved);
+    socket.on('task:event', onEvent);
+    return () => {
+      socket.off('task:updated', onUpdated);
+      socket.off('task:moved', onMoved);
+      socket.off('task:event', onEvent);
+    };
+  }, [socket, taskId]);
+
+  // Update page title
+  useEffect(() => {
+    if (task) document.title = `Task #${task.id} — Agentboard`;
+    return () => { document.title = 'Agentboard'; };
+  }, [task]);
+
+  const handleEditSubmit = async (data: { title: string; description: string; spec: string; riskLevel: RiskLevel; priority: number }) => {
+    if (!task) return;
+    const updated = await api.put<Task>(`/api/tasks/${task.id}`, data);
+    setTask(updated);
+    setEditing(false);
+  };
 
   const changeTab = (t: Tab) => { setTab(t); window.location.hash = t; };
 
@@ -173,6 +214,12 @@ export const TaskPage: React.FC = () => {
           )}
         </div>
         <div className="flex gap-2 flex-shrink-0">
+          {!isSubtask && !isActive && (
+            <button onClick={() => setEditing(true)}
+              className="px-3 py-1 rounded-lg text-xs font-semibold border border-border-hover text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
+              Edit
+            </button>
+          )}
           {!isSubtask && (
             <select
               value=""
@@ -365,6 +412,14 @@ export const TaskPage: React.FC = () => {
         }}
         onCancel={() => setConfirmAction(null)}
       />
+      {editing && task && (
+        <TaskForm
+          initial={task}
+          projectId={task.projectId}
+          onSubmit={handleEditSubmit}
+          onCancel={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 };

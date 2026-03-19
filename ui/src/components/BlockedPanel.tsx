@@ -110,7 +110,9 @@ export const BlockedPanel: React.FC<Props> = ({ taskId, blockedReason, onAnswer 
 
       {/* Answer form */}
       <div className="px-4 pb-4 border-t border-border-default pt-3">
+        <label htmlFor="blocked-answer" className="sr-only">Your answer</label>
         <textarea
+          id="blocked-answer"
           value={answerText} onChange={(e) => setAnswerText(e.target.value)}
           placeholder={parsed.category === 'needs_context' ? 'Provide the missing context...' : 'Describe how to resolve this...'}
           rows={3}

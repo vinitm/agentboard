@@ -87,9 +87,14 @@ export const Sidebar: React.FC<Props> = ({
   const connectionStatus = useConnectionStatus();
 
   return (
+    <>
+    {/* Mobile overlay */}
+    {!collapsed && (
+      <div className="hidden max-md:block fixed inset-0 bg-black/50 z-40" onClick={onToggleCollapse} />
+    )}
     <aside
-      className={`flex flex-col bg-bg-secondary border-r border-border-default h-screen flex-shrink-0 transition-[width] duration-200 ${
-        collapsed ? 'w-14' : 'w-60'
+      className={`flex flex-col bg-bg-secondary border-r border-border-default h-screen flex-shrink-0 transition-[width] duration-200 max-md:fixed max-md:z-50 max-md:transition-transform max-md:duration-200 ${
+        collapsed ? 'w-14 max-md:w-60 max-md:-translate-x-full' : 'w-60 max-md:translate-x-0'
       }`}
     >
       {/* Logo */}
@@ -202,5 +207,6 @@ export const Sidebar: React.FC<Props> = ({
         </button>
       </div>
     </aside>
+    </>
   );
 };

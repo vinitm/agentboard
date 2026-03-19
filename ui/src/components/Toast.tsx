@@ -55,7 +55,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             </RadixToast.Title>
           </RadixToast.Root>
         ))}
-        <RadixToast.Viewport className="fixed bottom-4 right-4 flex flex-col gap-2 w-80 z-[2000]" />
+        <RadixToast.Viewport aria-live="assertive" role="alert" className="fixed bottom-4 right-4 flex flex-col gap-2 w-80 z-[3000]" />
       </RadixToast.Provider>
     </ToastContext.Provider>
   );

@@ -48,6 +48,33 @@ export const Settings: React.FC = () => {
   const modelDefaults = config.modelDefaults ?? { planning: '', implementation: '', review: '', security: '' };
   const safeConfig = { ...config, commands, notifications, modelDefaults };
 
+  const BUDGET_LABELS: Record<string, string> = {
+    maxConcurrentTasks: 'Max Concurrent Tasks',
+    maxAttemptsPerTask: 'Max Attempts / Task',
+    maxReviewCycles: 'Max Review Cycles',
+    maxSubcardDepth: 'Max Subtask Depth',
+  };
+  const COMMAND_LABELS: Record<string, string> = {
+    test: 'Test',
+    lint: 'Lint',
+    format: 'Format',
+    formatFix: 'Format Fix',
+    typecheck: 'Type Check',
+    security: 'Security',
+  };
+  const BRANCH_LABELS: Record<string, string> = {
+    branchPrefix: 'Branch Prefix',
+    baseBranch: 'Base Branch',
+    githubRemote: 'GitHub Remote',
+    prMethod: 'PR Method',
+  };
+  const MODEL_LABELS: Record<string, string> = {
+    planning: 'Planning',
+    implementation: 'Implementation',
+    review: 'Review',
+    security: 'Security',
+  };
+
   const setCmd = (key: keyof Commands, value: string) => setConfig({ ...safeConfig, commands: { ...commands, [key]: value || null } });
 
   return (
@@ -67,7 +94,7 @@ export const Settings: React.FC = () => {
         {activeSection === 'commands' && (
           <FormSection title="Check Commands">
             {(['test', 'lint', 'format', 'formatFix', 'typecheck', 'security'] as const).map((key) => (
-              <Field key={key} label={key}><input type="text" value={commands[key] ?? ''} onChange={(e) => setCmd(key, e.target.value)} placeholder={`${key} command (leave empty to disable)`} className={inputClasses} /></Field>
+              <Field key={key} label={COMMAND_LABELS[key] || key}><input type="text" value={commands[key] ?? ''} onChange={(e) => setCmd(key, e.target.value)} placeholder={`${key} command (leave empty to disable)`} className={inputClasses} /></Field>
             ))}
           </FormSection>
         )}
@@ -83,14 +110,14 @@ export const Settings: React.FC = () => {
         {activeSection === 'budgets' && (
           <FormSection title="Budgets">
             {([['maxConcurrentTasks', 1, 10], ['maxAttemptsPerTask', 1, 50], ['maxReviewCycles', 1, 20], ['maxSubcardDepth', 0, 10]] as const).map(([key, min, max]) => (
-              <Field key={key} label={key}><input type="number" min={min} max={max} value={config[key]} onChange={(e) => setConfig({ ...config, [key]: parseInt(e.target.value, 10) || min })} className={inputClasses} /></Field>
+              <Field key={key} label={BUDGET_LABELS[key] || key}><input type="number" min={min} max={max} value={config[key]} onChange={(e) => setConfig({ ...config, [key]: parseInt(e.target.value, 10) || min })} className={inputClasses} /></Field>
             ))}
           </FormSection>
         )}
         {activeSection === 'branch' && (
           <FormSection title="Branch & PR">
             {(['branchPrefix', 'baseBranch', 'githubRemote', 'prMethod'] as const).map((key) => (
-              <Field key={key} label={key}><input type="text" value={config[key]} onChange={(e) => setConfig({ ...config, [key]: e.target.value })} className={inputClasses} /></Field>
+              <Field key={key} label={BRANCH_LABELS[key] || key}><input type="text" value={config[key]} onChange={(e) => setConfig({ ...config, [key]: e.target.value })} className={inputClasses} /></Field>
             ))}
             <Field label="PR Draft"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={config.prDraft} onChange={(e) => setConfig({ ...config, prDraft: e.target.checked })} className="accent-accent-blue" /> Create PRs as drafts</label></Field>
             <Field label="Auto Merge"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={config.autoMerge} onChange={(e) => setConfig({ ...config, autoMerge: e.target.checked })} className="accent-accent-blue" /> Auto-merge PRs when checks pass</label></Field>
@@ -105,7 +132,7 @@ export const Settings: React.FC = () => {
         {activeSection === 'models' && (
           <FormSection title="Model Defaults">
             {(['planning', 'implementation', 'review', 'security'] as const).map((key) => (
-              <Field key={key} label={key}><input type="text" value={modelDefaults[key]} onChange={(e) => setConfig({ ...safeConfig, modelDefaults: { ...modelDefaults, [key]: e.target.value } })} placeholder={`Model for ${key}`} className={inputClasses} /></Field>
+              <Field key={key} label={MODEL_LABELS[key] || key}><input type="text" value={modelDefaults[key]} onChange={(e) => setConfig({ ...safeConfig, modelDefaults: { ...modelDefaults, [key]: e.target.value } })} placeholder={`Model for ${key}`} className={inputClasses} /></Field>
             ))}
           </FormSection>
         )}
@@ -136,9 +163,14 @@ const FormSection: React.FC<{ title: string; children: React.ReactNode }> = ({ t
   </div>
 );
 
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="flex items-center gap-3">
-    <label className="w-40 flex-shrink-0 text-[13px] font-semibold text-text-secondary">{label}</label>
-    <div className="flex-1">{children}</div>
-  </div>
-);
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => {
+  const id = `settings-${label.toLowerCase().replace(/\s+/g, '-')}`;
+  return (
+    <div className="flex items-center gap-3">
+      <label htmlFor={id} className="w-40 flex-shrink-0 text-[13px] font-semibold text-text-secondary">{label}</label>
+      <div className="flex-1">{React.Children.map(children, child =>
+        React.isValidElement(child) ? React.cloneElement(child as React.ReactElement<{id?: string}>, { id }) : child
+      )}</div>
+    </div>
+  );
+};
