@@ -39,6 +39,7 @@ export const ConfirmDialog: React.FC<Props> = ({
           <div className="flex justify-end gap-2">
             <button
               onClick={onCancel}
+              autoFocus
               className="px-4 py-2 text-sm font-semibold text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue"
             >
               Cancel

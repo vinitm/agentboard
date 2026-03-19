@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { TaskStatus, RiskLevel } from '../types';
 
 interface FilterState {
@@ -69,6 +70,36 @@ export const TopBar: React.FC<Props> = ({
   const searchRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const filterCount = filters ? countActiveFilters(filters) : 0;
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Initialize filters from URL on mount
+  useEffect(() => {
+    if (!filters || !onFiltersChange) return;
+    const urlStatus = searchParams.get('status') || '';
+    const urlRisk = searchParams.get('risk') || '';
+    const urlRunning = searchParams.get('running') || '';
+    const urlSearch = searchParams.get('q') || '';
+    if (urlStatus || urlRisk || urlRunning || urlSearch) {
+      onFiltersChange({
+        search: urlSearch,
+        status: urlStatus as TaskStatus | '',
+        risk: urlRisk as RiskLevel | '',
+        running: urlRunning as '' | 'running' | 'idle',
+      });
+      if (urlSearch) setLocalSearch(urlSearch);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync filter changes to URL
+  useEffect(() => {
+    if (!filters) return;
+    const params = new URLSearchParams();
+    if (filters.status) params.set('status', filters.status);
+    if (filters.risk) params.set('risk', filters.risk);
+    if (filters.running) params.set('running', filters.running);
+    if (filters.search) params.set('q', filters.search);
+    setSearchParams(params, { replace: true });
+  }, [filters?.status, filters?.risk, filters?.running, filters?.search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const debouncedSearch = useCallback((value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);

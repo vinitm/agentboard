@@ -39,8 +39,18 @@ function applyFilters(tasks: Task[], filters: FilterState | undefined): Task[] {
   if (!filters) return tasks;
   let result = tasks;
   if (filters.search) {
-    const q = filters.search.toLowerCase();
-    result = result.filter((t) => t.title.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q));
+    const q = filters.search.trim();
+    // Search by ID when query starts with #
+    if (q.startsWith('#')) {
+      const idStr = q.slice(1);
+      const id = parseInt(idStr, 10);
+      if (!isNaN(id)) {
+        result = result.filter((t) => t.id === id);
+      }
+    } else {
+      const lq = q.toLowerCase();
+      result = result.filter((t) => t.title.toLowerCase().includes(lq) || t.description?.toLowerCase().includes(lq));
+    }
   }
   if (filters.status) {
     result = result.filter((t) => t.status === filters.status);

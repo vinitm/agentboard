@@ -224,10 +224,16 @@ export const TaskPage: React.FC = () => {
             <select
               value=""
               onChange={async (e) => {
-                if (!e.target.value) return;
+                const column = e.target.value;
+                if (!column) return;
+                if (column === 'cancelled' && !window.confirm('Cancel this task? This will stop all active work.')) {
+                  e.target.value = '';
+                  return;
+                }
                 try {
-                  const moved = await api.post<Task>(`/api/tasks/${task.id}/move`, { column: e.target.value });
+                  const moved = await api.post<Task>(`/api/tasks/${task.id}/move`, { column });
                   setTask(moved);
+                  toast(`Task moved to ${column}`, 'success');
                 } catch (err) {
                   toast(`Cannot move task: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
                 }
@@ -293,7 +299,7 @@ export const TaskPage: React.FC = () => {
       {subtasks.length > 0 && (
         <div className="px-5 py-3 border-b border-border-default flex-shrink-0">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">Subtasks</span>
+            <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">Subtasks</h3>
             <span className="text-[11px] text-text-tertiary bg-bg-tertiary px-2 py-0.5 rounded-full font-medium">
               {subtasks.filter((s) => s.status === 'done').length}/{subtasks.length} done
             </span>

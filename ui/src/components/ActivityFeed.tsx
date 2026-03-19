@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { EmptyState } from './EmptyState';
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../api/client';
 import { timeAgo } from '../lib/time';
@@ -105,21 +106,22 @@ export const ActivityFeed: React.FC<Props> = ({ projectId, tasks }) => {
   );
 
   if (events.length === 0) return (
-    <div className="flex flex-col items-center justify-center py-16 text-center animate-fade-in">
-      <div className="w-14 h-14 rounded-2xl bg-bg-tertiary border border-border-default flex items-center justify-center mb-4">
+    <EmptyState
+      icon={
         <svg className="w-7 h-7 text-text-tertiary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
         </svg>
-      </div>
-      <h3 className="text-sm font-semibold text-text-primary mb-1">No activity yet</h3>
-      <p className="text-xs text-text-secondary">Events will appear here as the pipeline processes tasks</p>
-    </div>
+      }
+      title="No activity yet"
+      description="Events will appear here as the pipeline processes tasks"
+    />
   );
 
   const lastEvent = events[events.length - 1];
 
   return (
     <div className="p-5 max-w-3xl mx-auto">
+      <h2 className="sr-only">Activity events</h2>
       <div className="space-y-1">
         {events.map((event) => {
           const payload = (() => { try { return JSON.parse(event.payload); } catch { return {}; } })();

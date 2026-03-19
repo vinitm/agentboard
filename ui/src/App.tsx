@@ -15,7 +15,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { useTasks } from './hooks/useTasks';
 import { useConnectionStatus } from './hooks/useSocket';
-import { api } from './api/client';
+import { api, setApiErrorHandler } from './api/client';
 import type { Project } from './types';
 
 const AppContent: React.FC = () => {
@@ -29,6 +29,13 @@ const AppContent: React.FC = () => {
   const { toast } = useToast();
   const location = useLocation();
   const connectionStatus = useConnectionStatus();
+
+  // Show toast on server errors
+  useEffect(() => {
+    setApiErrorHandler((message, status) => {
+      toast(`Server error (${status}): ${message}`, 'error');
+    });
+  }, [toast]);
 
   const { tasks, loading, createTask, updateTask, moveTask, deleteTask, answerTask, retryTask, reviewPlan } =
     useTasks(projectId);

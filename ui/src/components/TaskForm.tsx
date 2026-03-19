@@ -130,6 +130,21 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
     };
   }, []);
 
+  const handleCancel = useCallback(async () => {
+    // Warn if there's chat history beyond the welcome message
+    const hasWork = messages.length > 1 || inputValue.trim();
+    if (hasWork && !window.confirm('You have unsaved work. Discard and close?')) {
+      return;
+    }
+    // Abort any in-flight streaming
+    abortControllerRef.current?.abort();
+    // Delete orphaned task if we created one during chat (not editing an existing task)
+    if (!isEditing && taskId) {
+      try { await api.del(`/api/tasks/${taskId}`); } catch { /* best effort */ }
+    }
+    onCancel();
+  }, [isEditing, taskId, onCancel, messages.length, inputValue]);
+
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
     const msg: ChatMessage = { id: makeId(), role, content, timestamp: Date.now() };
     setMessages((prev) => [...prev, msg]);
@@ -310,7 +325,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   const filled = filledCount(spec);
 
   return (
-    <Dialog.Root open onOpenChange={(open) => { if (!open) onCancel(); }}>
+    <Dialog.Root open onOpenChange={(open) => { if (!open) handleCancel(); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[1000]" />
         <Dialog.Content className="fixed inset-0 bg-bg-elevated z-[1001] shadow-2xl animate-fade-in flex flex-col overflow-hidden">
@@ -427,9 +442,20 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
                       </svg>
                     </button>
                   </div>
-                  <p className="text-[10px] text-text-tertiary mt-1">
-                    Enter to send, Shift+Enter for new line
-                  </p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-[10px] text-text-tertiary">
+                      Enter to send, Shift+Enter for new line
+                    </p>
+                    {messages.length <= 1 && !loading && (
+                      <button
+                        type="button"
+                        onClick={() => setPhase('confirming')}
+                        className="text-[10px] text-text-tertiary hover:text-accent-blue transition-colors"
+                      >
+                        Skip to quick create →
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -526,7 +552,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
           {/* Footer */}
           <div className="flex items-center justify-between px-5 py-3 border-t border-border-default flex-shrink-0 bg-bg-elevated">
             <button
-              onClick={onCancel}
+              onClick={handleCancel}
               className="px-4 py-2 rounded-md text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors cursor-pointer"
             >
               Cancel

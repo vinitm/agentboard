@@ -189,6 +189,16 @@ function EventDetail({ type, payload }: { type: string; payload: Record<string, 
   }
 }
 
+function formatEventTime(dateStr: string, prevDateStr?: string): { time: string; showDate: boolean; date: string } {
+  const d = new Date(dateStr);
+  const time = d.toLocaleTimeString();
+  const dateLabel = d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+  if (!prevDateStr) return { time, showDate: true, date: dateLabel };
+  const prev = new Date(prevDateStr);
+  const showDate = d.toDateString() !== prev.toDateString();
+  return { time, showDate, date: dateLabel };
+}
+
 export const EventsTimeline: React.FC<Props> = ({ taskId, events: initialEvents }) => {
   const [events, setEvents] = useState<EventRecord[]>(initialEvents);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -214,7 +224,7 @@ export const EventsTimeline: React.FC<Props> = ({ taskId, events: initialEvents 
   return (
     <div className="relative pl-7">
       <div className="absolute left-2 top-1 bottom-1 w-0.5 bg-border-default" />
-      {events.map((event) => {
+      {events.map((event, idx) => {
         const payload = (() => { try { return JSON.parse(event.payload); } catch { return {}; } })();
         const colorClass = getEventColor(event.type, payload);
         const isExpanded = expanded.has(event.id);
@@ -222,7 +232,15 @@ export const EventsTimeline: React.FC<Props> = ({ taskId, events: initialEvents 
           <div key={event.id} className="relative mb-4 cursor-pointer" role="button" tabIndex={0} onClick={() => toggleExpand(event.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(event.id); } }}>
             <div className={`absolute -left-6 top-0.5 text-sm leading-none ${colorClass}`}>{'\u25CF'}</div>
             <div className="flex gap-3 items-baseline">
-              <span className="text-[11px] text-text-tertiary whitespace-nowrap min-w-[70px]">{new Date(event.createdAt).toLocaleTimeString()}</span>
+              {(() => {
+                const { time, showDate, date } = formatEventTime(event.createdAt, idx > 0 ? events[idx - 1].createdAt : undefined);
+                return (
+                  <span className="text-[11px] text-text-tertiary whitespace-nowrap min-w-[70px]">
+                    {showDate && <span className="block text-[10px] text-text-quaternary font-medium">{date}</span>}
+                    {time}
+                  </span>
+                );
+              })()}
               <span className="text-[13px] text-text-primary">{summarizeEvent(event.type, payload)}</span>
             </div>
             {isExpanded && (
