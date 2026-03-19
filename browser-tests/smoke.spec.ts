@@ -38,7 +38,8 @@ test.describe('Smoke tests', () => {
     const sidebar = page.locator('nav, [data-testid="sidebar"]').first();
     await expect(sidebar).toBeAttached();
 
-    const board = page.locator('.board-scroll-container').first();
-    await expect(board).toBeAttached();
+    // Task grid or empty state should be present (replaces old board-scroll-container)
+    const mainContent = page.locator('#main-content').first();
+    await expect(mainContent).toBeAttached();
   });
 });

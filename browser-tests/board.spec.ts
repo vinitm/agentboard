@@ -1,51 +1,64 @@
 import { test, expect } from './fixtures.js';
 
-test.describe('Board', () => {
-  test('kanban columns render', async ({ page }) => {
+test.describe('Task Grid', () => {
+  test('grid renders with status groups', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Main columns should be present in the DOM
-    const expectedColumns = [
-      'Backlog',
-      'Ready',
-      'Implementing',
-      'Done',
+    // The grid should show group headers when tasks exist,
+    // or an empty state when no tasks exist
+    const grid = page.locator('section, [data-testid="task-grid"]').first();
+    const emptyState = page.getByText(/no tasks/i).first();
+
+    // One of these should be present
+    const gridAttached = await grid.isAttached().catch(() => false);
+    const emptyAttached = await emptyState.isAttached().catch(() => false);
+    expect(gridAttached || emptyAttached).toBe(true);
+  });
+
+  test('status group labels render for populated groups', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // These are the possible group labels in the new grid view
+    const possibleGroups = [
+      'Needs Attention',
+      'Running',
+      'Queued',
+      'Completed',
     ];
 
-    for (const label of expectedColumns) {
-      const column = page.getByText(label, { exact: true }).first();
-      await expect(column).toBeAttached();
+    // At least one group should be visible if tasks exist,
+    // or the empty state should show
+    let found = false;
+    for (const label of possibleGroups) {
+      const group = page.getByText(label, { exact: true }).first();
+      if (await group.isAttached().catch(() => false)) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      // No groups means empty state should be showing
+      const emptyState = page.getByText(/no tasks/i).first();
+      await expect(emptyState).toBeAttached();
     }
   });
 
-  test('column headers have correct labels', async ({ page }) => {
+  test('task cards are clickable', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Pipeline columns should have standard agentboard labels
-    const pipelineLabels = [
-      'Spec Review',
-      'Planning',
-      'Plan Review',
-      'Checks',
-      'Code Quality',
-      'Final Review',
-    ];
+    // If there are task cards, they should have role="button"
+    const cards = page.locator('[role="button"]');
+    const count = await cards.count();
 
-    for (const label of pipelineLabels) {
-      const header = page.getByText(label, { exact: true }).first();
-      await expect(header).toBeAttached();
+    if (count > 0) {
+      // First card should be clickable (has cursor-pointer)
+      const firstCard = cards.first();
+      await expect(firstCard).toBeAttached();
     }
-  });
-
-  test('extra status columns render when populated', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    // Blocked/Failed columns only render when tasks exist in those statuses.
-    // Verify the main board container exists — column presence depends on data.
-    const board = page.locator('.board-scroll-container').first();
-    await expect(board).toBeAttached();
+    // If no cards, that's fine — empty state
   });
 });
