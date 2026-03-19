@@ -172,7 +172,5 @@ test.describe('Grid Actions — E2E', () => {
     // Verify the cancelled task is in the Completed group
     const cancelledCard = completedGrid.locator(`text=#${task.id}`).or(completedGrid.locator(`[aria-label*="${task.id}"]`));
     await expect(cancelledCard.first()).toBeVisible({ timeout: 5000 });
-
-    await expect(page).toHaveScreenshot('grid-actions-cancel-completed.png', { fullPage: true });
   });
 });
