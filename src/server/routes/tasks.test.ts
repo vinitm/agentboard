@@ -177,85 +177,22 @@ describe('DELETE /api/tasks/:id', () => {
   });
 });
 
-describe('POST /api/tasks/:id/move', () => {
-  it('rejects moves to agent-controlled columns', async () => {
-    const task = queries.createTask(db, { projectId, title: 'Agent Move', status: 'ready' });
-
-    for (const col of ['spec_review', 'planning', 'needs_plan_review', 'implementing', 'checks', 'code_quality', 'final_review']) {
-      const res = await request(app)
-        .post(`/api/tasks/${task.id}/move`)
-        .send({ column: col });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/agent-controlled/i);
-    }
-  });
-
-  it('moves backlog task to ready when spec is provided', async () => {
-    const task = queries.createTask(db, {
-      projectId,
-      title: 'Move to Ready',
-      status: 'backlog',
-      spec: 'My spec',
-    });
+describe('POST /api/tasks/:id/cancel', () => {
+  it('cancels a task and returns the updated task', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Cancel Me', status: 'ready' });
 
     const res = await request(app)
-      .post(`/api/tasks/${task.id}/move`)
-      .send({ column: 'ready' });
+      .post(`/api/tasks/${task.id}/cancel`)
+      .send();
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('ready');
-  });
-
-  it('rejects backlog to ready without spec', async () => {
-    const task = queries.createTask(db, {
-      projectId,
-      title: 'Move Without Spec',
-      status: 'backlog',
-    });
-
-    const res = await request(app)
-      .post(`/api/tasks/${task.id}/move`)
-      .send({ column: 'ready' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/spec/i);
-  });
-
-  it('rejects move to column: blocked', async () => {
-    const task = queries.createTask(db, { projectId, title: 'Block Me', status: 'backlog' });
-
-    const res = await request(app)
-      .post(`/api/tasks/${task.id}/move`)
-      .send({ column: 'blocked' });
-
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects move to column: failed', async () => {
-    const task = queries.createTask(db, { projectId, title: 'Fail Me', status: 'backlog' });
-
-    const res = await request(app)
-      .post(`/api/tasks/${task.id}/move`)
-      .send({ column: 'failed' });
-
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 400 when column is missing', async () => {
-    const task = queries.createTask(db, { projectId, title: 'No Column', status: 'backlog' });
-
-    const res = await request(app)
-      .post(`/api/tasks/${task.id}/move`)
-      .send({});
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/column/i);
+    expect(res.body.status).toBe('cancelled');
   });
 
   it('returns 404 for unknown task id', async () => {
     const res = await request(app)
-      .post('/api/tasks/99999/move')
-      .send({ column: 'ready' });
+      .post('/api/tasks/99999/cancel')
+      .send();
 
     expect(res.status).toBe(404);
   });
@@ -818,30 +755,29 @@ describe('Frontend: TaskForm validates spec completeness before submit', () => {
   });
 });
 
-describe('API integration: PUT + move simulates chat-created task flow', () => {
-  it('creates a backlog task, updates spec via PUT, then moves to ready', async () => {
-    // Step 1: Create a minimal task in backlog (simulates what happens on first chat message)
-    const createRes = await request(app)
-      .post('/api/tasks')
-      .send({ projectId, title: 'Chat draft' });
-
-    expect(createRes.status).toBe(201);
-    expect(createRes.body.status).toBe('backlog');
-    const taskId = createRes.body.id;
-
-    // Step 2: PUT to update its spec, title, etc. (simulates the frontend updateTask call)
+describe('API integration: PUT simulates chat-created task flow', () => {
+  it('creates a task with spec (auto-ready), updates fields via PUT', async () => {
     const spec = JSON.stringify({
       goal: 'Build a notification system',
       userScenarios: 'P1 — Given a user event, When triggered, Then notify all subscribers',
       successCriteria: 'All subscribers receive notification within 5 seconds',
     });
 
+    // Step 1: Create a task with spec (goes directly to ready)
+    const createRes = await request(app)
+      .post('/api/tasks')
+      .send({ projectId, title: 'Chat draft', spec });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.status).toBe('ready');
+    const taskId = createRes.body.id;
+
+    // Step 2: PUT to update its title, description, etc.
     const updateRes = await request(app)
       .put(`/api/tasks/${taskId}`)
       .send({
         title: 'Notification system',
         description: 'Real-time notification pipeline',
-        spec,
         riskLevel: 'medium',
         priority: 2,
       });
@@ -849,18 +785,8 @@ describe('API integration: PUT + move simulates chat-created task flow', () => {
     expect(updateRes.status).toBe(200);
     expect(updateRes.body.title).toBe('Notification system');
     expect(updateRes.body.spec).toBe(spec);
-    // Status should still be backlog (PUT does not change status)
-    expect(updateRes.body.status).toBe('backlog');
 
-    // Step 3: POST /move to move it to ready (simulates the frontend moveTask call)
-    const moveRes = await request(app)
-      .post(`/api/tasks/${taskId}/move`)
-      .send({ column: 'ready' });
-
-    expect(moveRes.status).toBe(200);
-    expect(moveRes.body.status).toBe('ready');
-
-    // Step 4: Verify the final state has all updated fields AND status ready
+    // Step 3: Verify the final state
     const getRes = await request(app).get(`/api/tasks/${taskId}`);
     expect(getRes.status).toBe(200);
     expect(getRes.body.title).toBe('Notification system');

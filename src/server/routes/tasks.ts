@@ -7,17 +7,6 @@ import * as queries from '../../db/queries.js';
 import { broadcast } from '../ws.js';
 import { cleanupWorktree } from '../../worker/git.js';
 
-
-const AGENT_CONTROLLED_COLUMNS: TaskStatus[] = [
-  'spec_review',
-  'planning',
-  'needs_plan_review',
-  'implementing',
-  'checks',
-  'code_quality',
-  'final_review',
-];
-
 function parseTaskId(raw: string): number {
   const id = Number(raw);
   if (!Number.isInteger(id) || id <= 0) {
@@ -185,7 +174,6 @@ Task description: ${description.trim()}`;
       res.status(404).json({ error: 'Task not found' });
       return;
     }
-    // Strip `status` — all status changes must go through POST /:id/move
     const { title, description, riskLevel, priority, spec, blockedReason } =
       req.body as Omit<queries.UpdateTaskData, 'status'>;
     const task = queries.updateTask(db, id, {
@@ -220,105 +208,16 @@ Task description: ${description.trim()}`;
     res.json({ ok: true });
   });
 
-  // POST /api/tasks/:id/move — move task to column
-  router.post('/:id/move', (req, res) => {
+  // POST /api/tasks/:id/cancel — cancel a task
+  router.post('/:id/cancel', (req, res) => {
     let id: number;
     try { id = parseTaskId(req.params.id); }
     catch { return res.status(400).json({ error: 'Invalid task ID' }); }
 
-    const task = queries.getTaskById(db, id);
-    if (!task) {
-      res.status(404).json({ error: 'Task not found' });
-      return;
-    }
-
-    const { column } = req.body as { column?: TaskStatus };
-    if (!column) {
-      res.status(400).json({ error: 'column is required' });
-      return;
-    }
-
-    // Guardrails: can't manually move to agent-controlled columns
-    if (AGENT_CONTROLLED_COLUMNS.includes(column)) {
-      res.status(400).json({ error: `Cannot manually move task to agent-controlled column: ${column}` });
-      return;
-    }
-
-    // Can move to cancelled from any state
-    if (column === 'cancelled') {
-      // Unclaim if claimed
-      queries.unclaimTask(db, id);
-      const updated = queries.moveToColumn(db, id, column);
-      broadcast(io, 'task:moved', updated);
-      // Best-effort worktree cleanup in background
-      cleanupTaskWorktree(db, id).catch(() => {});
-      res.json(updated);
-      return;
-    }
-
-    // Can move to ready from backlog (requires spec), failed, or blocked
-    if (column === 'ready') {
-      if (task.status !== 'backlog' && task.status !== 'failed' && task.status !== 'blocked') {
-        res.status(400).json({
-          error: 'Can only move to ready from backlog, failed, or blocked',
-        });
-        return;
-      }
-      if (task.status === 'backlog' && !task.spec) {
-        res.status(400).json({ error: 'Task must have a spec before moving to ready' });
-        return;
-      }
-      const updated = queries.moveToColumn(db, id, column);
-      broadcast(io, 'task:moved', updated);
-      res.json(updated);
-      return;
-    }
-
-    // Can move to backlog from ready or failed
-    if (column === 'backlog') {
-      if (task.status !== 'ready' && task.status !== 'failed') {
-        res.status(400).json({ error: 'Can only move to backlog from ready or failed' });
-        return;
-      }
-      const updated = queries.moveToColumn(db, id, column);
-      broadcast(io, 'task:moved', updated);
-      res.json(updated);
-      return;
-    }
-
-    // Can move to done from needs_human_review (after human reviews the PR)
-    if (column === 'done') {
-      if (task.status !== 'needs_human_review') {
-        res.status(400).json({ error: 'Can only move to done from needs_human_review' });
-        return;
-      }
-      const updated = queries.moveToColumn(db, id, column);
-      broadcast(io, 'task:moved', updated);
-      // Best-effort worktree cleanup in background
-      cleanupTaskWorktree(db, id).catch(() => {});
-      res.json(updated);
-      return;
-    }
-
-    // Can move to blocked from needs_human_review (PR rejection with changes requested)
-    if (column === 'blocked' && task.status === 'needs_human_review') {
-      const reason = req.body.reason || 'Changes requested during human review';
-      const updated = queries.updateTask(db, id, { status: 'blocked', blockedReason: reason });
-      broadcast(io, 'task:moved', updated);
-      res.json(updated);
-      return;
-    }
-
-    // Can move to failed from needs_human_review (PR rejected outright)
-    if (column === 'failed' && task.status === 'needs_human_review') {
-      const updated = queries.moveToColumn(db, id, 'failed');
-      broadcast(io, 'task:moved', updated);
-      res.json(updated);
-      return;
-    }
-
-    // blocked, and failed are agent-controlled — no manual moves allowed
-    res.status(400).json({ error: `Cannot manually move task to column: ${column}` });
+    const task = queries.updateTask(db, id, { status: 'cancelled' });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    broadcast(io, 'task:updated', task);
+    res.json(task);
   });
 
   // POST /api/tasks/:id/answer — provide answers to blocked task
@@ -578,7 +477,7 @@ Return ONLY valid JSON with no markdown fences:
     const { action, reason, edits } = req.body as {
       action?: 'approve' | 'reject';
       reason?: string;
-      edits?: { planSummary?: string; subtasks?: Array<{ title: string; description: string }> };
+      edits?: { planSummary?: string; steps?: Array<{ title: string; description: string }> };
     };
 
     if (action !== 'approve' && action !== 'reject') {

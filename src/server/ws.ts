@@ -17,7 +17,6 @@ export function broadcastLog(
     taskId: number;
     runId: string;
     stage?: string;
-    subtaskId?: number;
     chunk: string;
     timestamp: string;
   }

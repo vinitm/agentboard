@@ -16,7 +16,7 @@ vi.mock('../executor.js', () => ({
 const originalReadFileSync = fs.readFileSync;
 vi.spyOn(fs, 'readFileSync').mockImplementation((filePath, options) => {
   if (typeof filePath === 'string' && filePath.includes('prompts/planner-v2.md')) {
-    return 'Plan this task with TDD subtasks:\n{taskSpec}';
+    return 'Plan this task with TDD steps:\n{taskSpec}';
   }
   if (typeof filePath === 'string' && filePath.includes('prompts/plan-review.md')) {
     return 'Review this plan:\n{plan}';
@@ -50,27 +50,15 @@ function buildPlanJson(overrides?: Partial<PlanningResult>): string {
   const plan: PlanningResult = {
     planSummary: 'Implement JWT authentication',
     confidence: 0.9,
-    subtasks: [
+    steps: [
       {
         title: 'Create auth middleware',
-        description: 'JWT verification middleware',
-        steps: [
-          'Write test for middleware in src/middleware/auth.test.ts',
-          'Verify test fails',
-          'Implement middleware in src/middleware/auth.ts',
-          'Verify test passes',
-        ],
+        description: 'JWT verification middleware. Write test for middleware in src/middleware/auth.test.ts, verify test fails, implement middleware in src/middleware/auth.ts, verify test passes.',
         files: ['src/middleware/auth.ts', 'src/middleware/auth.test.ts'],
       },
       {
         title: 'Add login endpoint',
-        description: 'POST /api/auth/login',
-        steps: [
-          'Write test for login route',
-          'Verify test fails',
-          'Implement login handler',
-          'Verify test passes',
-        ],
+        description: 'POST /api/auth/login. Write test for login route, verify test fails, implement login handler, verify test passes.',
         files: ['src/routes/auth.ts', 'src/routes/auth.test.ts'],
       },
     ],
@@ -87,12 +75,10 @@ function buildPlanJson(overrides?: Partial<PlanningResult>): string {
 }
 
 describe('PlanningResult interface', () => {
-  it('includes steps and files on subtasks', () => {
+  it('includes files on steps', () => {
     const result: PlanningResult = JSON.parse(buildPlanJson());
-    expect(result.subtasks[0].steps).toBeDefined();
-    expect(result.subtasks[0].steps!.length).toBeGreaterThan(0);
-    expect(result.subtasks[0].files).toBeDefined();
-    expect(result.subtasks[0].files!.length).toBeGreaterThan(0);
+    expect(result.steps[0].files).toBeDefined();
+    expect(result.steps[0].files!.length).toBeGreaterThan(0);
   });
 
   it('includes fileMap', () => {
@@ -101,16 +87,15 @@ describe('PlanningResult interface', () => {
     expect(result.fileMap.length).toBe(4);
   });
 
-  it('subtask steps and files are optional', () => {
+  it('step files are optional', () => {
     const result: PlanningResult = {
       planSummary: 'Simple fix',
       confidence: 0.95,
-      subtasks: [{ title: 'Fix bug', description: 'One-liner' }],
+      steps: [{ title: 'Fix bug', description: 'One-liner' }],
       assumptions: [],
       fileMap: ['src/foo.ts'],
     };
-    expect(result.subtasks[0].steps).toBeUndefined();
-    expect(result.subtasks[0].files).toBeUndefined();
+    expect(result.steps[0].files).toBeUndefined();
   });
 });
 
@@ -119,7 +104,7 @@ describe('runPlanning', () => {
     executeClaudeCodeMock.mockReset();
   });
 
-  it('returns enhanced PlanningResult with steps, files, and fileMap', async () => {
+  it('returns enhanced PlanningResult with files and fileMap', async () => {
     const planJson = buildPlanJson();
     // First call: planner, second call: plan review (passes)
     executeClaudeCodeMock
@@ -147,14 +132,8 @@ describe('runPlanning', () => {
     const result = await runPlanning(db, task, '/tmp/test', config);
 
     expect(result.planSummary).toBe('Implement JWT authentication');
-    expect(result.subtasks).toHaveLength(2);
-    expect(result.subtasks[0].steps).toEqual([
-      'Write test for middleware in src/middleware/auth.test.ts',
-      'Verify test fails',
-      'Implement middleware in src/middleware/auth.ts',
-      'Verify test passes',
-    ]);
-    expect(result.subtasks[0].files).toEqual([
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[0].files).toEqual([
       'src/middleware/auth.ts',
       'src/middleware/auth.test.ts',
     ]);
@@ -169,7 +148,7 @@ describe('runPlanning', () => {
 
   it('retries planning when auto-review rejects', async () => {
     const weakPlan = buildPlanJson({
-      subtasks: [{ title: 'Do everything', description: 'All at once' }],
+      steps: [{ title: 'Do everything', description: 'All at once' }],
     });
     const goodPlan = buildPlanJson();
 
@@ -187,7 +166,7 @@ describe('runPlanning', () => {
       .mockResolvedValueOnce({
         output: JSON.stringify({
           approved: false,
-          issues: ['Subtask "Do everything" is too broad — break it down'],
+          issues: ['Step "Do everything" is too broad — break it down'],
         }),
         exitCode: 0,
         tokensUsed: 300,
@@ -220,7 +199,7 @@ describe('runPlanning', () => {
 
     const result = await runPlanning(db, task, '/tmp/test', config);
 
-    expect(result.subtasks).toHaveLength(2);
+    expect(result.steps).toHaveLength(2);
     // Should have called executeClaudeCode 4 times (plan, review, plan, review)
     expect(executeClaudeCodeMock).toHaveBeenCalledTimes(4);
   });
@@ -330,7 +309,7 @@ describe('runPlanning', () => {
 
     const result = await runPlanning(db, task, '/tmp/test', config);
     expect(result.planSummary).toBe('Here is my plan in plain text without any JSON...');
-    expect(result.subtasks).toEqual([]);
+    expect(result.steps).toEqual([]);
     expect(result.fileMap).toEqual([]);
   });
 

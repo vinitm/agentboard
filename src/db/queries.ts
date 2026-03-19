@@ -272,18 +272,6 @@ export function updateTask(
   return getTaskById(db, id);
 }
 
-export function moveToColumn(
-  db: Database.Database,
-  id: number,
-  status: TaskStatus
-): Task | undefined {
-  const now = new Date().toISOString();
-  db.prepare(
-    `UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?`
-  ).run(status, now, id);
-  return getTaskById(db, id);
-}
-
 export function claimTask(
   db: Database.Database,
   id: number,

@@ -98,7 +98,7 @@ function shouldAutoApprovePlan(
 ): boolean {
   if (!config.autoPlanApproval) return false;
   if (task.riskLevel !== 'low') return false;
-  if (plan.subtasks.length > 3) return false;
+  if (plan.steps.length > 3) return false;
   if (plan.assumptions.length > 0) return false;
   if (plan.fileMap.length > 5) return false;
   if (plan.confidence < 0.85) return false;
@@ -149,14 +149,12 @@ export function createWorkerLoop(
     runId: string,
     logger?: TaskLogger,
     stage?: string,
-    subtaskId?: number
   ): (chunk: string) => void {
     return (chunk: string) => {
       broadcastLog(io, {
         taskId,
         runId,
         stage,
-        subtaskId,
         chunk,
         timestamp: new Date().toISOString(),
       });

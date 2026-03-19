@@ -36,8 +36,7 @@ export function createBufferedWriter(): BufferedWriter {
 }
 
 /**
- * A single-file logger for a top-level task.
- * All subtask output is appended to the same file.
+ * A single-file logger for a task.
  * Parallel stages (review panel) use buffered writers
  * that flush sequentially after completion.
  */
@@ -53,9 +52,6 @@ export interface TaskLogger {
 
   /** Mark the end of a pipeline stage. */
   stageEnd(status: string, tokens?: number, durationMs?: number): void;
-
-  /** Write a subtask section header. */
-  subtaskStart(index: number, total: number, title: string, subtaskId: number): void;
 
   /** Write a parallel section header (e.g. reviewer role). */
   parallelSectionStart(label: string, runId: string): void;
@@ -118,11 +114,6 @@ export function createTaskLogger(
       fs.appendFileSync(logPath, parts.join(' ') + '\n', 'utf-8');
     },
 
-    subtaskStart(index: number, total: number, title: string, subtaskId: number): void {
-      const line = `\n${STAGE_SEP}SUBTASK ${index}/${total}: ${title} (${subtaskId}) ${'─'.repeat(30)}\n\n`;
-      fs.appendFileSync(logPath, line, 'utf-8');
-    },
-
     parallelSectionStart(label: string, runId: string): void {
       const line = `\n  ${STAGE_SEP}${label} (run: ${runId}) ${'─'.repeat(30)}\n`;
       fs.appendFileSync(logPath, line, 'utf-8');
@@ -162,8 +153,7 @@ export function createTaskLogger(
 }
 
 /**
- * Open an existing task log file for appending (used by subtasks
- * that write to their parent's log file).
+ * Open an existing task log file for appending.
  */
 export function openTaskLogger(logPath: string): TaskLogger {
   return {
@@ -184,11 +174,6 @@ export function openTaskLogger(logPath: string): TaskLogger {
       if (tokens !== undefined) parts.push(`tokens=${tokens}`);
       if (durationMs !== undefined) parts.push(`duration=${durationMs}ms`);
       fs.appendFileSync(logPath, parts.join(' ') + '\n', 'utf-8');
-    },
-
-    subtaskStart(index: number, total: number, title: string, subtaskId: number): void {
-      const line = `\n${STAGE_SEP}SUBTASK ${index}/${total}: ${title} (${subtaskId}) ${'─'.repeat(30)}\n\n`;
-      fs.appendFileSync(logPath, line, 'utf-8');
     },
 
     parallelSectionStart(label: string, runId: string): void {

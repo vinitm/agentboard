@@ -12,14 +12,13 @@ import { createRun, updateRun, createArtifact } from '../../db/queries.js';
 export interface PlanningResult {
   planSummary: string;
   confidence: number;       // 0-1 confidence score from planner
-  subtasks: Array<{
+  steps: Array<{
     title: string;
     description: string;
-    steps?: string[];      // TDD steps with exact instructions
     files?: string[];       // exact file paths to create/modify
   }>;
   assumptions: string[];
-  fileMap: string[];        // all files created/modified across all subtasks
+  fileMap: string[];        // all files across all steps
 }
 
 interface PlanReviewResult {
@@ -264,7 +263,7 @@ function parseJsonFromOutput(output: string): PlanningResult {
   return {
     planSummary: output.slice(0, 1000),
     confidence: 0.3,
-    subtasks: [],
+    steps: [],
     assumptions: [],
     fileMap: [],
   };
@@ -280,13 +279,10 @@ function validatePlanningResult(data: unknown): PlanningResult {
     confidence: typeof obj.confidence === 'number' && obj.confidence >= 0 && obj.confidence <= 1
       ? obj.confidence
       : 0.5,  // Default to medium confidence if not provided
-    subtasks: Array.isArray(obj.subtasks)
-      ? (obj.subtasks as Array<Record<string, unknown>>).map((s) => ({
+    steps: Array.isArray(obj.steps)
+      ? (obj.steps as Array<Record<string, unknown>>).map((s) => ({
           title: typeof s.title === 'string' ? s.title : '',
           description: typeof s.description === 'string' ? s.description : '',
-          steps: Array.isArray(s.steps)
-            ? (s.steps as string[]).filter((step): step is string => typeof step === 'string')
-            : undefined,
           files: Array.isArray(s.files)
             ? (s.files as string[]).filter((f): f is string => typeof f === 'string')
             : undefined,

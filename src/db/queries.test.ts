@@ -237,13 +237,6 @@ describe('tasks', () => {
     expect(reClaimed).toBe(true);
   });
 
-  it('moveToColumn updates status', () => {
-    const project = makeProject(db);
-    const task = makeTask(db, project.id, { status: 'backlog' });
-    const moved = queries.moveToColumn(db, task.id, 'ready');
-    expect(moved!.status).toBe('ready');
-  });
-
   it('createTask throws on nonexistent project (FK violation)', () => {
     expect(() => makeTask(db, 'nonexistent-project-id')).toThrow();
   });
