@@ -42,11 +42,13 @@ export function buildTaskPacket(
     try {
       const planOutput = JSON.parse(planningRun.output) as {
         fileHints?: string[];
+        fileMap?: string[];
         planSummary?: string;
       };
-      if (planOutput.fileHints && planOutput.fileHints.length > 0) {
+      const fileList = planOutput.fileMap ?? planOutput.fileHints;
+      if (fileList && fileList.length > 0) {
         sections.push('## File Hints');
-        sections.push(planOutput.fileHints.map((f) => `- ${f}`).join('\n'));
+        sections.push(fileList.map((f) => `- ${f}`).join('\n'));
       }
       if (planOutput.planSummary) {
         sections.push('## Plan Summary');
@@ -100,6 +102,23 @@ export function buildTaskPacket(
           }
         } catch {
           sections.push(answer.payload);
+        }
+      }
+    }
+
+    // ── Plan rejection feedback ─────────────────────────────────────
+    const rejections = events.filter((e) => e.type === 'plan_review_rejected');
+    if (rejections.length > 0) {
+      sections.push('## Plan Review Feedback');
+      sections.push('The previous plan was rejected by an engineer. Address the following feedback:');
+      for (const rejection of rejections) {
+        try {
+          const payload = JSON.parse(rejection.payload) as { reason?: string };
+          if (payload.reason) {
+            sections.push(`- ${payload.reason}`);
+          }
+        } catch {
+          sections.push(rejection.payload);
         }
       }
     }

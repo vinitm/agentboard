@@ -2,29 +2,72 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
-import type { Task, AgentboardConfig } from '../../types/index.js';
+import type { Task, AgentboardConfig, ImplementationResult, ImplementerStatus } from '../../types/index.js';
 import { buildTaskPacket } from '../context-builder.js';
 import { executeClaudeCode } from '../executor.js';
+import { selectModel } from '../model-selector.js';
+import { getToolsForStage, getPermissionModeForStage } from '../stage-tools.js';
 import { createRun, updateRun } from '../../db/queries.js';
 
-export interface ImplementationResult {
-  success: boolean;
-  output: string;
-  needsUserInput?: string[];
-}
+// Re-export for consumers that import from this module
+export type { ImplementationResult, ImplementerStatus };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Load the implementer prompt template from prompts/implementer.md
+ * Load the implementer prompt template from prompts/implementer-v2.md
  */
 function loadImplementerTemplate(): string {
-  const promptPath = path.resolve(__dirname, '../../../../prompts/implementer.md');
+  const promptPath = path.resolve(__dirname, '../../../../prompts', 'implementer-v2.md');
   try {
     return fs.readFileSync(promptPath, 'utf-8');
   } catch {
     throw new Error(`Implementer prompt template not found at ${promptPath}. Ensure the prompts/ directory exists in the agentboard root.`);
+  }
+}
+
+/**
+ * Attempt to parse a structured JSON status block from Claude's output.
+ * Looks for a fenced JSON block containing { "status": ... }.
+ */
+export function parseStructuredOutput(output: string): ImplementationResult | null {
+  // Try to find a fenced JSON block: ```json ... ``` or ``` ... ```
+  const fencedPattern = /```(?:json)?\s*\n(\{[\s\S]*?"status"\s*:[\s\S]*?\})\s*\n```/;
+  const match = output.match(fencedPattern);
+
+  if (!match) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(match[1]) as Record<string, unknown>;
+    const validStatuses: ImplementerStatus[] = ['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED'];
+
+    if (typeof parsed.status !== 'string' || !validStatuses.includes(parsed.status as ImplementerStatus)) {
+      return null;
+    }
+
+    const result: ImplementationResult = {
+      status: parsed.status as ImplementerStatus,
+      output,
+    };
+
+    if (Array.isArray(parsed.concerns)) {
+      result.concerns = parsed.concerns.filter((c): c is string => typeof c === 'string');
+    }
+
+    if (Array.isArray(parsed.contextNeeded)) {
+      result.contextNeeded = parsed.contextNeeded.filter((c): c is string => typeof c === 'string');
+    }
+
+    if (typeof parsed.blockerReason === 'string') {
+      result.blockerReason = parsed.blockerReason;
+    }
+
+    return result;
+  } catch {
+    return null;
   }
 }
 
@@ -34,8 +77,8 @@ function loadImplementerTemplate(): string {
  * - Builds prompt from template + task context
  * - If attempt > 1, includes failure summary from previous attempt
  * - Executes via Claude Code CLI with Opus model (always)
- * - Detects needs_user_input in output
  * - Tracks tokens and stores run in DB
+ * - Parses structured JSON status from output; falls back to exit code inference
  */
 export async function runImplementation(
   db: Database.Database,
@@ -43,10 +86,9 @@ export async function runImplementation(
   worktreePath: string,
   config: AgentboardConfig,
   attempt: number,
-  onOutput?: (chunk: string) => void
+  onOutput?: (chunk: string) => void,
 ): Promise<ImplementationResult> {
-  // Always use Opus for implementation
-  const model = 'opus';
+  const model = selectModel('implementing', task.riskLevel, config);
 
   const taskPacket = buildTaskPacket(db, task, {
     includeFailures: attempt > 1,
@@ -58,8 +100,6 @@ export async function runImplementation(
 
   // Include failure summary for retries
   if (attempt > 1) {
-    // The buildTaskPacket already includes previous failure info,
-    // but we also put it in the template placeholder
     prompt = prompt.replace('{failureSummary}', () =>
       `This is attempt ${attempt}. The previous attempt failed. See "Previous Failure" section above for details.`
     );
@@ -81,29 +121,35 @@ export async function runImplementation(
       prompt,
       worktreePath,
       model,
+      timeout: 600_000, // 10 minutes — implementation tasks need more time than other stages
+      tools: getToolsForStage('implementing'),
+      permissionMode: getPermissionModeForStage('implementing'),
       onOutput,
     });
 
-    // Check for needs_user_input in output
-    const userInputNeeded = parseNeedsUserInput(result.output);
+    // Try to parse structured JSON from the output
+    const structured = parseStructuredOutput(result.output);
 
-    if (userInputNeeded) {
+    if (structured) {
+      console.log(`[implementer] Parsed structured status: ${structured.status}`);
+      const runStatus = structured.status === 'DONE' || structured.status === 'DONE_WITH_CONCERNS'
+        ? 'success'
+        : 'failed';
+
       updateRun(db, run.id, {
-        status: 'success',
+        status: runStatus,
         output: result.output,
         tokensUsed: result.tokensUsed,
         modelUsed: model,
         finishedAt: new Date().toISOString(),
       });
 
-      return {
-        success: true,
-        output: result.output,
-        needsUserInput: userInputNeeded,
-      };
+      return structured;
     }
 
-    // Check exit code
+    // Fallback: infer status from exit code
+    console.log(`[implementer] No structured output found, inferring from exit code: ${result.exitCode}`);
+
     if (result.exitCode !== 0) {
       updateRun(db, run.id, {
         status: 'failed',
@@ -113,13 +159,18 @@ export async function runImplementation(
         finishedAt: new Date().toISOString(),
       });
 
+      const blockerReason = result.exitCode === 124
+        ? 'Claude process timed out — the task may be too large for a single subtask, or the agent is stuck. Consider breaking it down further or retrying.'
+        : `Process exited with code ${result.exitCode}`;
+
       return {
-        success: false,
+        status: 'BLOCKED',
         output: result.output,
+        blockerReason,
       };
     }
 
-    // Success
+    // Exit 0 without structured output = assume DONE
     updateRun(db, run.id, {
       status: 'success',
       output: result.output,
@@ -129,7 +180,7 @@ export async function runImplementation(
     });
 
     return {
-      success: true,
+      status: 'DONE',
       output: result.output,
     };
   } catch (error) {
@@ -144,46 +195,9 @@ export async function runImplementation(
     });
 
     return {
-      success: false,
+      status: 'BLOCKED',
       output: errorMessage,
+      blockerReason: errorMessage,
     };
   }
-}
-
-/**
- * Parse needs_user_input from the implementation output.
- * Returns the array of questions if found, undefined otherwise.
- */
-function parseNeedsUserInput(output: string): string[] | undefined {
-  // Try JSON in code fences
-  const fenceMatch = output.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (fenceMatch?.[1]) {
-    try {
-      const parsed = JSON.parse(fenceMatch[1]) as Record<string, unknown>;
-      if (Array.isArray(parsed.needs_user_input)) {
-        return (parsed.needs_user_input as unknown[]).filter(
-          (q): q is string => typeof q === 'string'
-        );
-      }
-    } catch {
-      // Not valid JSON in fence
-    }
-  }
-
-  // Try raw JSON with needs_user_input key
-  const jsonMatch = output.match(/\{[\s\S]*"needs_user_input"[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-      if (Array.isArray(parsed.needs_user_input)) {
-        return (parsed.needs_user_input as unknown[]).filter(
-          (q): q is string => typeof q === 'string'
-        );
-      }
-    } catch {
-      // Not valid JSON
-    }
-  }
-
-  return undefined;
 }

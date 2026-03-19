@@ -1,0 +1,6 @@
+.claude-flow/
+.agents/
+.ruflo/session-export.json
+node_modules/
+dist/
+*.rvf

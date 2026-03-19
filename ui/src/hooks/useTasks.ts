@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { useSocket } from './useSocket';
-import type { Task, TaskStatus, RiskLevel } from '../types';
+import type { Task, RiskLevel, PlanReviewAction } from '../types';
 
 export function useTasks(projectId: string) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -25,7 +25,9 @@ export function useTasks(projectId: string) {
 
     const onCreated = (task: Task) => {
       if (task.projectId === projectId) {
-        setTasks((prev) => [...prev, task]);
+        setTasks((prev) =>
+          prev.some((t) => t.id === task.id) ? prev : [...prev, task],
+        );
       }
     };
 
@@ -33,25 +35,29 @@ export function useTasks(projectId: string) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
     };
 
-    const onMoved = (task: Task) => {
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
-    };
-
-    const onDeleted = ({ id }: { id: string }) => {
+    const onDeleted = ({ id }: { id: number }) => {
       setTasks((prev) => prev.filter((t) => t.id !== id));
     };
 
     socket.on('task:created', onCreated);
     socket.on('task:updated', onUpdated);
-    socket.on('task:moved', onMoved);
     socket.on('task:deleted', onDeleted);
 
     return () => {
       socket.off('task:created', onCreated);
       socket.off('task:updated', onUpdated);
-      socket.off('task:moved', onMoved);
       socket.off('task:deleted', onDeleted);
     };
+  }, [socket, projectId]);
+
+  // Refetch tasks on WebSocket reconnect to catch missed events
+  useEffect(() => {
+    if (!socket || !projectId) return;
+    const onReconnect = () => {
+      api.get<Task[]>(`/api/tasks?projectId=${projectId}`).then(setTasks).catch(console.error);
+    };
+    socket.io.on('reconnect', onReconnect);
+    return () => { socket.io.off('reconnect', onReconnect); };
   }, [socket, projectId]);
 
   const createTask = useCallback(
@@ -63,7 +69,9 @@ export function useTasks(projectId: string) {
       priority?: number;
     }) => {
       const task = await api.post<Task>('/api/tasks', { ...data, projectId });
-      setTasks((prev) => [...prev, task]);
+      setTasks((prev) =>
+        prev.some((t) => t.id === task.id) ? prev : [...prev, task],
+      );
       return task;
     },
     [projectId],
@@ -71,8 +79,8 @@ export function useTasks(projectId: string) {
 
   const updateTask = useCallback(
     async (
-      id: string,
-      data: Partial<Pick<Task, 'title' | 'description' | 'spec' | 'riskLevel' | 'priority' | 'columnPosition'>>,
+      id: number,
+      data: Partial<Pick<Task, 'title' | 'description' | 'spec' | 'riskLevel' | 'priority'>>,
     ) => {
       const updated = await api.put<Task>(`/api/tasks/${id}`, data);
       setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
@@ -81,27 +89,27 @@ export function useTasks(projectId: string) {
     [],
   );
 
-  const moveTask = useCallback(async (id: string, column: TaskStatus) => {
-    const moved = await api.post<Task>(`/api/tasks/${id}/move`, { column });
-    setTasks((prev) => prev.map((t) => (t.id === id ? moved : t)));
-    return moved;
-  }, []);
-
-  const deleteTask = useCallback(async (id: string) => {
+  const deleteTask = useCallback(async (id: number) => {
     await api.del(`/api/tasks/${id}`);
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const answerTask = useCallback(async (id: string, answers: string) => {
+  const answerTask = useCallback(async (id: number, answers: string) => {
     const answered = await api.post<Task>(`/api/tasks/${id}/answer`, { answers });
     setTasks((prev) => prev.map((t) => (t.id === id ? answered : t)));
     return answered;
   }, []);
 
-  const retryTask = useCallback(async (id: string) => {
+  const retryTask = useCallback(async (id: number) => {
     const retried = await api.post<Task>(`/api/tasks/${id}/retry`);
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...retried, status: retried.status ?? 'ready' } : t)));
     return retried;
+  }, []);
+
+  const reviewPlan = useCallback(async (id: number, action: PlanReviewAction) => {
+    const updated = await api.post<Task>(`/api/tasks/${id}/review-plan`, action);
+    setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    return updated;
   }, []);
 
   return {
@@ -109,9 +117,9 @@ export function useTasks(projectId: string) {
     loading,
     createTask,
     updateTask,
-    moveTask,
     deleteTask,
     answerTask,
     retryTask,
+    reviewPlan,
   };
 }

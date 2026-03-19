@@ -13,6 +13,11 @@ import { createRunRoutes } from './routes/runs.js';
 import { createArtifactRoutes } from './routes/artifacts.js';
 import { createConfigRoutes } from './routes/config.js';
 import { createEventRoutes } from './routes/events.js';
+import { createLearningRoutes } from './routes/learning.js';
+import { createLogRoutes } from './routes/logs.js';
+import { createChatRoutes } from './routes/chat.js';
+import { createStageLogRoutes } from './routes/stage-logs.js';
+import { createCostRoutes } from './routes/costs.js';
 
 export interface ServerResult {
   server: http.Server;
@@ -75,10 +80,15 @@ export function createServer(
   app.use('/api/artifacts', createArtifactRoutes(db));
   app.use('/api/config', createConfigRoutes(config, configPath));
   app.use('/api/events', createEventRoutes(db));
+  app.use('/api/projects', createLearningRoutes(db));
+  app.use('/api/logs', createLogRoutes(db));
+  app.use('/api/tasks', createChatRoutes(db, io));
+  app.use('/api/tasks/:id/stages', createStageLogRoutes(db));
+  app.use('/api', createCostRoutes(db));
 
   // ── Serve static UI files in production ───────────────────────────
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
-  const uiDistPath = path.resolve(currentDir, '..', '..', 'ui', 'dist');
+  const uiDistPath = path.resolve(currentDir, '..', '..', '..', 'ui', 'dist');
   if (fs.existsSync(uiDistPath)) {
     app.use(express.static(uiDistPath));
     // SPA fallback: serve index.html for non-API routes

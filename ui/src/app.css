@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #0a0a0b;
+  --color-bg-secondary: #111113;
+  --color-bg-tertiary: #1a1a1e;
+  --color-bg-elevated: #1e1e22;
+
+  --color-border-default: #1e1e22;
+  --color-border-hover: #2e2e33;
+
+  --color-text-primary: #e5e7eb;
+  --color-text-secondary: #9ca3af;
+  --color-text-tertiary: #7c8493;
+
+  --color-accent-blue: #3b82f6;
+  --color-accent-green: #22c55e;
+  --color-accent-amber: #f59e0b;
+  --color-accent-red: #ef4444;
+  --color-accent-purple: #8b5cf6;
+  --color-accent-pink: #ec4899;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Fira Code', monospace;
+}
+
+/* Global focus-visible ring for interactive elements */
+:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Remove default outline since we use focus-visible */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-hover) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-hover);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* Animations */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes gradient-border {
+  0%, 100% { border-color: var(--color-accent-purple); }
+  50% { border-color: var(--color-accent-blue); }
+}
+
+@utility animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@utility animate-spin-slow {
+  animation: spin 1.5s linear infinite;
+}
+
+@utility animate-fade-in {
+  animation: fade-in 0.2s ease-out both;
+}
+
+@utility animate-slide-in {
+  animation: slide-in-right 0.15s ease-out both;
+}
+
+@utility animate-gradient-border {
+  animation: gradient-border 2s ease-in-out infinite;
+}
+
+/* Skeleton loading shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary) 25%,
+    var(--color-bg-elevated) 50%,
+    var(--color-bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Board horizontal scroll shadow indicators */
+.board-scroll-container {
+  --scroll-shadow-size: 16px;
+  --scroll-shadow-color: rgba(0, 0, 0, 0.3);
+  background:
+    linear-gradient(to right, var(--color-bg-primary), var(--color-bg-primary)) center / 100% 100%,
+    linear-gradient(to right, var(--scroll-shadow-color), transparent) left / var(--scroll-shadow-size) 100%,
+    linear-gradient(to left, var(--scroll-shadow-color), transparent) right / var(--scroll-shadow-size) 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, scroll, scroll;
+}
+
+/* Running task card glow */
+.card-running {
+  box-shadow: 0 0 0 1px var(--color-accent-purple),
+              0 0 12px -4px rgba(139, 92, 246, 0.3);
+}

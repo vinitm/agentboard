@@ -1,0 +1,159 @@
+{
+  "agents": {
+    "agentboard-researcher": {
+      "agentId": "agentboard-researcher",
+      "agentType": "researcher",
+      "status": "terminated",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-18T19:17:48.833Z",
+      "domain": "software-engineering",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "pipeline-analyst": {
+      "agentId": "pipeline-analyst",
+      "agentType": "analyst",
+      "status": "terminated",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-03-18T19:30:18.627Z",
+      "domain": "software-engineering",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "docs-researcher": {
+      "agentId": "docs-researcher",
+      "agentType": "researcher",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-18T19:36:17.450Z",
+      "domain": "documentation",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "docs-auditor": {
+      "agentId": "docs-auditor",
+      "agentType": "analyzer",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-18T19:36:20.442Z",
+      "domain": "documentation",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-docs-researcher": {
+      "agentId": "agent-docs-researcher",
+      "agentType": "researcher",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-18T19:43:59.586Z",
+      "domain": "ai-documentation",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-context-researcher": {
+      "agentId": "agent-context-researcher",
+      "agentType": "researcher",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-18T19:44:03.425Z",
+      "domain": "ai-context-optimization",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "docs-slim-claudemd": {
+      "agentId": "docs-slim-claudemd",
+      "agentType": "worker",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-18T19:58:08.519Z",
+      "domain": "documentation",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "docs-scope-rules": {
+      "agentId": "docs-scope-rules",
+      "agentType": "worker",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-18T19:58:10.352Z",
+      "domain": "documentation",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "docs-fix-inaccuracies": {
+      "agentId": "docs-fix-inaccuracies",
+      "agentType": "worker",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-18T19:58:11.715Z",
+      "domain": "documentation",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "ruflo-docs-researcher": {
+      "agentId": "ruflo-docs-researcher",
+      "agentType": "researcher",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-19T06:33:21.691Z",
+      "domain": "research",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "plan-reviewer": {
+      "agentId": "plan-reviewer",
+      "agentType": "reviewer",
+      "status": "completed",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-03-19T06:44:21.316Z",
+      "domain": "architecture",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    }
+  },
+  "version": "3.0.0"
+}

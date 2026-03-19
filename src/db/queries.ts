@@ -12,6 +12,8 @@ import type {
   GitRef,
   GitRefStatus,
   Event,
+  TaskLog,
+  ChatMessage,
 } from '../types/index.js';
 
 // ── Helper: snake_case row → camelCase object ────────────────────────
@@ -29,19 +31,19 @@ function rowToProject(row: Record<string, unknown>): Project {
 
 function rowToTask(row: Record<string, unknown>): Task {
   return {
-    id: row.id as string,
+    id: row.id as number,
     projectId: row.project_id as string,
-    parentTaskId: (row.parent_task_id as string) ?? null,
     title: row.title as string,
     description: row.description as string,
     status: row.status as TaskStatus,
     riskLevel: row.risk_level as RiskLevel,
     priority: row.priority as number,
-    columnPosition: row.column_position as number,
     spec: (row.spec as string) ?? null,
     blockedReason: (row.blocked_reason as string) ?? null,
+    blockedAtStage: (row.blocked_at_stage as string) ?? null,
     claimedAt: (row.claimed_at as string) ?? null,
     claimedBy: (row.claimed_by as string) ?? null,
+    chatSessionId: (row.chat_session_id as string) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -50,7 +52,7 @@ function rowToTask(row: Record<string, unknown>): Task {
 function rowToRun(row: Record<string, unknown>): Run {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     stage: row.stage as Stage,
     status: row.status as RunStatus,
     attempt: row.attempt as number,
@@ -77,7 +79,7 @@ function rowToArtifact(row: Record<string, unknown>): Artifact {
 function rowToGitRef(row: Record<string, unknown>): GitRef {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     branch: row.branch as string,
     worktreePath: (row.worktree_path as string) ?? null,
     status: row.status as GitRefStatus,
@@ -88,7 +90,7 @@ function rowToGitRef(row: Record<string, unknown>): GitRef {
 function rowToEvent(row: Record<string, unknown>): Event {
   return {
     id: row.id as string,
-    taskId: row.task_id as string,
+    taskId: row.task_id as number,
     runId: (row.run_id as string) ?? null,
     type: row.type as string,
     payload: row.payload as string,
@@ -126,6 +128,16 @@ export function listProjects(db: Database.Database): Project[] {
   return rows.map(rowToProject);
 }
 
+export function getProjectByPath(
+  db: Database.Database,
+  path: string
+): Project | undefined {
+  const row = db.prepare('SELECT * FROM projects WHERE path = ?').get(path) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToProject(row) : undefined;
+}
+
 export function updateProject(
   db: Database.Database,
   id: string,
@@ -159,11 +171,9 @@ export interface CreateTaskData {
   projectId: string;
   title: string;
   description?: string;
-  parentTaskId?: string | null;
   status?: TaskStatus;
   riskLevel?: RiskLevel;
   priority?: number;
-  columnPosition?: number;
   spec?: string | null;
 }
 
@@ -171,32 +181,28 @@ export function createTask(
   db: Database.Database,
   data: CreateTaskData
 ): Task {
-  const id = uuidv4();
   const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO tasks (id, project_id, parent_task_id, title, description, status,
-       risk_level, priority, column_position, spec, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  const result = db.prepare(
+    `INSERT INTO tasks (project_id, title, description, status,
+       risk_level, priority, spec, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    id,
     data.projectId,
-    data.parentTaskId ?? null,
     data.title,
     data.description ?? '',
     data.status ?? 'backlog',
     data.riskLevel ?? 'low',
     data.priority ?? 0,
-    data.columnPosition ?? 0,
     data.spec ?? null,
     now,
     now
   );
-  return getTaskById(db, id)!;
+  return getTaskById(db, Number(result.lastInsertRowid))!;
 }
 
 export function getTaskById(
   db: Database.Database,
-  id: string
+  id: number
 ): Task | undefined {
   const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
     | Record<string, unknown>
@@ -220,7 +226,7 @@ export function listTasksByStatus(
   status: TaskStatus
 ): Task[] {
   const rows = db
-    .prepare('SELECT * FROM tasks WHERE project_id = ? AND status = ? ORDER BY column_position ASC')
+    .prepare('SELECT * FROM tasks WHERE project_id = ? AND status = ? ORDER BY priority DESC, created_at ASC')
     .all(projectId, status) as Record<string, unknown>[];
   return rows.map(rowToTask);
 }
@@ -231,15 +237,15 @@ export interface UpdateTaskData {
   status?: TaskStatus;
   riskLevel?: RiskLevel;
   priority?: number;
-  columnPosition?: number;
   spec?: string | null;
   blockedReason?: string | null;
-  parentTaskId?: string | null;
+  blockedAtStage?: string | null;
+  chatSessionId?: string | null;
 }
 
 export function updateTask(
   db: Database.Database,
-  id: string,
+  id: number,
   data: UpdateTaskData
 ): Task | undefined {
   const fields: string[] = [];
@@ -250,10 +256,10 @@ export function updateTask(
   if (data.status !== undefined) { fields.push('status = ?'); values.push(data.status); }
   if (data.riskLevel !== undefined) { fields.push('risk_level = ?'); values.push(data.riskLevel); }
   if (data.priority !== undefined) { fields.push('priority = ?'); values.push(data.priority); }
-  if (data.columnPosition !== undefined) { fields.push('column_position = ?'); values.push(data.columnPosition); }
   if (data.spec !== undefined) { fields.push('spec = ?'); values.push(data.spec); }
   if (data.blockedReason !== undefined) { fields.push('blocked_reason = ?'); values.push(data.blockedReason); }
-  if (data.parentTaskId !== undefined) { fields.push('parent_task_id = ?'); values.push(data.parentTaskId); }
+  if (data.blockedAtStage !== undefined) { fields.push('blocked_at_stage = ?'); values.push(data.blockedAtStage); }
+  if (data.chatSessionId !== undefined) { fields.push('chat_session_id = ?'); values.push(data.chatSessionId); }
 
   if (fields.length === 0) return getTaskById(db, id);
 
@@ -266,22 +272,9 @@ export function updateTask(
   return getTaskById(db, id);
 }
 
-export function moveToColumn(
-  db: Database.Database,
-  id: string,
-  status: TaskStatus,
-  columnPosition: number
-): Task | undefined {
-  const now = new Date().toISOString();
-  db.prepare(
-    `UPDATE tasks SET status = ?, column_position = ?, updated_at = ? WHERE id = ?`
-  ).run(status, columnPosition, now, id);
-  return getTaskById(db, id);
-}
-
 export function claimTask(
   db: Database.Database,
-  id: string,
+  id: number,
   claimedBy: string
 ): boolean {
   const now = new Date().toISOString();
@@ -293,7 +286,7 @@ export function claimTask(
 
 export function unclaimTask(
   db: Database.Database,
-  id: string
+  id: number
 ): Task | undefined {
   const now = new Date().toISOString();
   db.prepare(
@@ -302,14 +295,21 @@ export function unclaimTask(
   return getTaskById(db, id);
 }
 
-export function deleteTask(db: Database.Database, id: string): void {
+export function deleteTask(db: Database.Database, id: number): void {
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+}
+
+export function getStaleClaimed(db: Database.Database, staleMinutes: number = 15): Task[] {
+  const rows = db.prepare(
+    `SELECT * FROM tasks WHERE claimed_by IS NOT NULL AND claimed_at < datetime('now', '-' || ? || ' minutes')`
+  ).all(staleMinutes) as Record<string, unknown>[];
+  return rows.map(rowToTask);
 }
 
 // ── Runs ─────────────────────────────────────────────────────────────
 
 export interface CreateRunData {
-  taskId: string;
+  taskId: number;
   stage: Stage;
   attempt?: number;
   modelUsed?: string | null;
@@ -349,7 +349,7 @@ export function getRunById(
 
 export function listRunsByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): Run[] {
   const rows = db
     .prepare('SELECT * FROM runs WHERE task_id = ? ORDER BY started_at DESC')
@@ -359,7 +359,7 @@ export function listRunsByTask(
 
 export function getLatestRunByTaskAndStage(
   db: Database.Database,
-  taskId: string,
+  taskId: number,
   stage: Stage
 ): Run | undefined {
   const row = db
@@ -452,7 +452,7 @@ export function deleteArtifact(db: Database.Database, id: string): void {
 // ── Git Refs ─────────────────────────────────────────────────────────
 
 export interface CreateGitRefData {
-  taskId: string;
+  taskId: number;
   branch: string;
   worktreePath?: string | null;
   status?: GitRefStatus;
@@ -483,7 +483,7 @@ export function getGitRefById(
 
 export function listGitRefsByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): GitRef[] {
   const rows = db
     .prepare('SELECT * FROM git_refs WHERE task_id = ? ORDER BY created_at DESC')
@@ -516,7 +516,7 @@ export function deleteGitRef(db: Database.Database, id: string): void {
 // ── Events ───────────────────────────────────────────────────────────
 
 export interface CreateEventData {
-  taskId: string;
+  taskId: number;
   runId?: string | null;
   type: string;
   payload?: string;
@@ -547,7 +547,7 @@ export function getEventById(
 
 export function listEventsByTask(
   db: Database.Database,
-  taskId: string
+  taskId: number
 ): Event[] {
   const rows = db
     .prepare('SELECT * FROM events WHERE task_id = ? ORDER BY created_at ASC')
@@ -555,6 +555,153 @@ export function listEventsByTask(
   return rows.map(rowToEvent);
 }
 
+export function listEventsByProject(
+  db: Database.Database,
+  projectId: string,
+  limit: number = 50,
+  cursor?: string
+): (Event & { taskTitle: string })[] {
+  const cursorClause = cursor ? 'AND e.id < ?' : '';
+  const params: unknown[] = [projectId];
+  if (cursor) params.push(cursor);
+  params.push(limit);
+
+  const rows = db
+    .prepare(
+      `SELECT e.*, t.title as task_title FROM events e
+       JOIN tasks t ON e.task_id = t.id
+       WHERE t.project_id = ? ${cursorClause}
+       ORDER BY e.id DESC
+       LIMIT ?`
+    )
+    .all(...params) as (Record<string, unknown>)[];
+
+  return rows.map((row) => ({
+    ...rowToEvent(row),
+    taskTitle: row.task_title as string,
+  }));
+}
+
 export function deleteEvent(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM events WHERE id = ?').run(id);
+}
+
+// ── Task Logs ─────────────────────────────────────────────────────────
+
+function rowToTaskLog(row: Record<string, unknown>): TaskLog {
+  return {
+    id: row.id as string,
+    taskId: row.task_id as number,
+    projectId: row.project_id as string,
+    logPath: row.log_path as string,
+    sizeBytes: row.size_bytes as number,
+    createdAt: row.created_at as string,
+  };
+}
+
+export interface CreateTaskLogData {
+  taskId: number;
+  projectId: string;
+  logPath: string;
+  sizeBytes?: number;
+}
+
+export function createTaskLog(
+  db: Database.Database,
+  data: CreateTaskLogData
+): TaskLog {
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO task_logs (id, task_id, project_id, log_path, size_bytes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(id, data.taskId, data.projectId, data.logPath, data.sizeBytes ?? 0, now);
+  return getTaskLogById(db, id)!;
+}
+
+export function getTaskLogById(
+  db: Database.Database,
+  id: string
+): TaskLog | undefined {
+  const row = db.prepare('SELECT * FROM task_logs WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToTaskLog(row) : undefined;
+}
+
+export function getTaskLogByTaskId(
+  db: Database.Database,
+  taskId: number
+): TaskLog | undefined {
+  const row = db.prepare('SELECT * FROM task_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1').get(taskId) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToTaskLog(row) : undefined;
+}
+
+export function listTaskLogsByProject(
+  db: Database.Database,
+  projectId: string
+): TaskLog[] {
+  const rows = db
+    .prepare('SELECT * FROM task_logs WHERE project_id = ? ORDER BY created_at DESC')
+    .all(projectId) as Record<string, unknown>[];
+  return rows.map(rowToTaskLog);
+}
+
+export function updateTaskLogSize(
+  db: Database.Database,
+  id: string,
+  sizeBytes: number
+): void {
+  db.prepare('UPDATE task_logs SET size_bytes = ? WHERE id = ?').run(sizeBytes, id);
+}
+
+// ── Chat Messages ─────────────────────────────────────────────────────
+
+function rowToChatMessage(row: Record<string, unknown>): ChatMessage {
+  return {
+    id: row.id as string,
+    taskId: row.task_id as number,
+    role: row.role as 'user' | 'assistant',
+    content: row.content as string,
+    createdAt: row.created_at as string,
+  };
+}
+
+export interface CreateChatMessageData {
+  taskId: number;
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export function createChatMessage(
+  db: Database.Database,
+  data: CreateChatMessageData
+): ChatMessage {
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO chat_messages (id, task_id, role, content, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(id, data.taskId, data.role, data.content, now);
+  const row = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id) as Record<string, unknown>;
+  return rowToChatMessage(row);
+}
+
+export function listChatMessagesByTask(
+  db: Database.Database,
+  taskId: number
+): ChatMessage[] {
+  const rows = db
+    .prepare('SELECT * FROM chat_messages WHERE task_id = ? ORDER BY created_at ASC')
+    .all(taskId) as Record<string, unknown>[];
+  return rows.map(rowToChatMessage);
+}
+
+export function deleteChatMessagesByTask(
+  db: Database.Database,
+  taskId: number
+): void {
+  db.prepare('DELETE FROM chat_messages WHERE task_id = ?').run(taskId);
 }

@@ -1,399 +1,176 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 
-interface Commands {
-  test: string | null;
-  lint: string | null;
-  format: string | null;
-  formatFix: string | null;
-  typecheck: string | null;
-  security: string | null;
-}
-
-interface Notifications {
-  desktop: boolean;
-  terminal: boolean;
-}
-
-interface ModelDefaults {
-  planning: string;
-  implementation: string;
-  reviewSpec: string;
-  reviewCode: string;
-  security: string;
-}
-
+interface Commands { test: string | null; lint: string | null; format: string | null; formatFix: string | null; typecheck: string | null; security: string | null }
+interface Notifications { desktop: boolean; terminal: boolean }
+interface ModelDefaults { planning: string; implementation: string; review: string; security: string }
 interface Config {
-  port: number;
-  host: string;
-  maxConcurrentTasks: number;
-  maxAttemptsPerTask: number;
-  maxReviewCycles: number;
-  maxSubcardDepth: number;
-  prDraft: boolean;
-  autoMerge: boolean;
-  prMethod: string;
-  securityMode: string;
-  branchPrefix: string;
-  baseBranch: string;
-  githubRemote: string;
-  commitPolicy: string;
-  formatPolicy: string;
-  commands: Commands;
-  notifications: Notifications;
-  modelDefaults: ModelDefaults;
+  port: number; host: string; maxConcurrentTasks: number; maxAttemptsPerTask: number; maxReviewCycles: number; maxSubcardDepth: number;
+  prDraft: boolean; autoMerge: boolean; prMethod: string; securityMode: string; branchPrefix: string; baseBranch: string; githubRemote: string;
+  commitPolicy: string; formatPolicy: string; commands: Commands; notifications: Notifications; modelDefaults: ModelDefaults;
 }
 
-interface Props {
-  onClose: () => void;
-}
+type Section = 'commands' | 'security' | 'budgets' | 'branch' | 'policies' | 'models' | 'notifications';
+const SECTIONS: { key: Section; label: string }[] = [
+  { key: 'commands', label: 'Commands' }, { key: 'security', label: 'Security' }, { key: 'budgets', label: 'Budgets' },
+  { key: 'branch', label: 'Branch & PR' }, { key: 'policies', label: 'Policies' }, { key: 'models', label: 'Models' },
+  { key: 'notifications', label: 'Notifications' },
+];
 
-export const Settings: React.FC<Props> = ({ onClose }) => {
+const inputClasses = 'w-full rounded-md bg-bg-tertiary border border-border-default px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-blue';
+
+export const Settings: React.FC = () => {
   const [config, setConfig] = useState<Config | null>(null);
+  const [activeSection, setActiveSection] = useState<Section>('commands');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    api
-      .get<Config>('/api/config')
-      .then(setConfig)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load config'));
+    api.get<Config>('/api/config').then(setConfig).catch((err) => setError(err instanceof Error ? err.message : 'Failed to load config'));
   }, []);
 
   const save = async () => {
     if (!config) return;
-    setSaving(true);
-    setError('');
-    setSuccess('');
-    try {
-      const updated = await api.put<Config>('/api/config', config);
-      setConfig(updated);
-      setSuccess('Settings saved.');
-      setTimeout(() => setSuccess(''), 2000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
-    } finally {
-      setSaving(false);
-    }
+    setSaving(true); setError(''); setSuccess('');
+    try { const updated = await api.put<Config>('/api/config', config); setConfig(updated); setSuccess('Settings saved.'); setTimeout(() => setSuccess(''), 2000); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Failed to save'); }
+    finally { setSaving(false); }
   };
 
   if (!config) {
-    return (
-      <div style={overlayStyle} onClick={onClose}>
-        <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
-          {error ? (
-            <div style={{ color: '#ef4444' }}>{error}</div>
-          ) : (
-            <div style={{ color: '#9ca3af' }}>Loading settings...</div>
-          )}
-        </div>
-      </div>
-    );
+    return <div className="flex items-center justify-center h-64">{error ? <span className="text-accent-red">{error}</span> : <span className="text-text-secondary">Loading settings...</span>}</div>;
   }
 
-  const setCmd = (key: keyof Commands, value: string) => {
-    setConfig({
-      ...config,
-      commands: { ...config.commands, [key]: value || null },
-    });
+  // Ensure nested objects exist (API may omit them)
+  const commands = config.commands ?? { test: null, lint: null, format: null, formatFix: null, typecheck: null, security: null };
+  const notifications = config.notifications ?? { desktop: false, terminal: false };
+  const modelDefaults = config.modelDefaults ?? { planning: '', implementation: '', review: '', security: '' };
+  const safeConfig = { ...config, commands, notifications, modelDefaults };
+
+  const BUDGET_LABELS: Record<string, string> = {
+    maxConcurrentTasks: 'Max Concurrent Tasks',
+    maxAttemptsPerTask: 'Max Attempts / Task',
+    maxReviewCycles: 'Max Review Cycles',
+    maxSubcardDepth: 'Max Subtask Depth',
+  };
+  const COMMAND_LABELS: Record<string, string> = {
+    test: 'Test',
+    lint: 'Lint',
+    format: 'Format',
+    formatFix: 'Format Fix',
+    typecheck: 'Type Check',
+    security: 'Security',
+  };
+  const BRANCH_LABELS: Record<string, string> = {
+    branchPrefix: 'Branch Prefix',
+    baseBranch: 'Base Branch',
+    githubRemote: 'GitHub Remote',
+    prMethod: 'PR Method',
+  };
+  const MODEL_LABELS: Record<string, string> = {
+    planning: 'Planning',
+    implementation: 'Implementation',
+    review: 'Review',
+    security: 'Security',
   };
 
+  const setCmd = (key: keyof Commands, value: string) => setConfig({ ...safeConfig, commands: { ...commands, [key]: value || null } });
+
   return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 20 }}>Settings</h2>
-          <button onClick={onClose} style={closeBtnStyle}>&times;</button>
-        </div>
+    <div className="flex h-full">
+      {/* Section nav */}
+      <nav className="w-48 flex-shrink-0 border-r border-border-default p-4">
+        {SECTIONS.map(({ key, label }) => (
+          <button key={key} onClick={() => setActiveSection(key)}
+            className={`block w-full text-left px-3 py-1.5 rounded-md text-[13px] mb-0.5 transition-colors ${activeSection === key ? 'bg-bg-elevated text-white font-medium' : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'}`}>
+            {label}
+          </button>
+        ))}
+      </nav>
 
-        {/* Check Commands */}
-        <Section title="Check Commands">
-          {(['test', 'lint', 'format', 'formatFix', 'typecheck', 'security'] as const).map((key) => (
-            <Field key={key} label={key}>
-              <input
-                type="text"
-                value={config.commands[key] ?? ''}
-                onChange={(e) => setCmd(key, e.target.value)}
-                placeholder={`${key} command (leave empty to disable)`}
-                style={inputStyle}
-              />
+      {/* Form content */}
+      <div className="flex-1 p-6 overflow-y-auto">
+        {activeSection === 'commands' && (
+          <FormSection title="Check Commands">
+            {(['test', 'lint', 'format', 'formatFix', 'typecheck', 'security'] as const).map((key) => (
+              <Field key={key} label={COMMAND_LABELS[key] || key}><input type="text" value={commands[key] ?? ''} onChange={(e) => setCmd(key, e.target.value)} placeholder={`${key} command (leave empty to disable)`} className={inputClasses} /></Field>
+            ))}
+          </FormSection>
+        )}
+        {activeSection === 'security' && (
+          <FormSection title="Security">
+            <Field label="Security Mode">
+              <select value={config.securityMode} onChange={(e) => setConfig({ ...config, securityMode: e.target.value })} className={inputClasses}>
+                <option value="lightweight">lightweight</option><option value="strict">strict</option><option value="off">off</option>
+              </select>
             </Field>
-          ))}
-        </Section>
+          </FormSection>
+        )}
+        {activeSection === 'budgets' && (
+          <FormSection title="Budgets">
+            {([['maxConcurrentTasks', 1, 10], ['maxAttemptsPerTask', 1, 50], ['maxReviewCycles', 1, 20], ['maxSubcardDepth', 0, 10]] as const).map(([key, min, max]) => (
+              <Field key={key} label={BUDGET_LABELS[key] || key}><input type="number" min={min} max={max} value={config[key]} onChange={(e) => setConfig({ ...config, [key]: parseInt(e.target.value, 10) || min })} className={inputClasses} /></Field>
+            ))}
+          </FormSection>
+        )}
+        {activeSection === 'branch' && (
+          <FormSection title="Branch & PR">
+            {(['branchPrefix', 'baseBranch', 'githubRemote', 'prMethod'] as const).map((key) => (
+              <Field key={key} label={BRANCH_LABELS[key] || key}><input type="text" value={config[key]} onChange={(e) => setConfig({ ...config, [key]: e.target.value })} className={inputClasses} /></Field>
+            ))}
+            <Field label="PR Draft"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={config.prDraft} onChange={(e) => setConfig({ ...config, prDraft: e.target.checked })} className="accent-accent-blue" /> Create PRs as drafts</label></Field>
+            <Field label="Auto Merge"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={config.autoMerge} onChange={(e) => setConfig({ ...config, autoMerge: e.target.checked })} className="accent-accent-blue" /> Auto-merge PRs when checks pass</label></Field>
+          </FormSection>
+        )}
+        {activeSection === 'policies' && (
+          <FormSection title="Policies">
+            <Field label="Commit Policy"><select value={config.commitPolicy} onChange={(e) => setConfig({ ...config, commitPolicy: e.target.value })} className={inputClasses}><option value="after-checks-pass">after-checks-pass</option></select></Field>
+            <Field label="Format Policy"><select value={config.formatPolicy} onChange={(e) => setConfig({ ...config, formatPolicy: e.target.value })} className={inputClasses}><option value="auto-fix-separate-commit">auto-fix-separate-commit</option></select></Field>
+          </FormSection>
+        )}
+        {activeSection === 'models' && (
+          <FormSection title="Model Defaults">
+            {(['planning', 'implementation', 'review', 'security'] as const).map((key) => (
+              <Field key={key} label={MODEL_LABELS[key] || key}><input type="text" value={modelDefaults[key]} onChange={(e) => setConfig({ ...safeConfig, modelDefaults: { ...modelDefaults, [key]: e.target.value } })} placeholder={`Model for ${key}`} className={inputClasses} /></Field>
+            ))}
+          </FormSection>
+        )}
+        {activeSection === 'notifications' && (
+          <FormSection title="Notifications">
+            <Field label="Desktop"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={notifications.desktop} onChange={(e) => setConfig({ ...safeConfig, notifications: { ...notifications, desktop: e.target.checked } })} className="accent-accent-blue" /> Desktop notifications</label></Field>
+            <Field label="Terminal"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={notifications.terminal} onChange={(e) => setConfig({ ...safeConfig, notifications: { ...notifications, terminal: e.target.checked } })} className="accent-accent-blue" /> Terminal notifications</label></Field>
+          </FormSection>
+        )}
 
-        {/* Security Mode */}
-        <Section title="Security">
-          <Field label="securityMode">
-            <select
-              value={config.securityMode}
-              onChange={(e) => setConfig({ ...config, securityMode: e.target.value })}
-              style={inputStyle}
-            >
-              <option value="lightweight">lightweight</option>
-              <option value="strict">strict</option>
-              <option value="off">off</option>
-            </select>
-          </Field>
-        </Section>
-
-        {/* Budgets */}
-        <Section title="Budgets">
-          <Field label="maxConcurrentTasks">
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={config.maxConcurrentTasks}
-              onChange={(e) => setConfig({ ...config, maxConcurrentTasks: parseInt(e.target.value, 10) || 1 })}
-              style={inputStyle}
-            />
-          </Field>
-          <Field label="maxAttemptsPerTask">
-            <input
-              type="number"
-              min={1}
-              max={50}
-              value={config.maxAttemptsPerTask}
-              onChange={(e) => setConfig({ ...config, maxAttemptsPerTask: parseInt(e.target.value, 10) || 1 })}
-              style={inputStyle}
-            />
-          </Field>
-          <Field label="maxReviewCycles">
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={config.maxReviewCycles}
-              onChange={(e) => setConfig({ ...config, maxReviewCycles: parseInt(e.target.value, 10) || 1 })}
-              style={inputStyle}
-            />
-          </Field>
-          <Field label="maxSubcardDepth">
-            <input
-              type="number"
-              min={0}
-              max={10}
-              value={config.maxSubcardDepth}
-              onChange={(e) => setConfig({ ...config, maxSubcardDepth: parseInt(e.target.value, 10) || 0 })}
-              style={inputStyle}
-            />
-          </Field>
-        </Section>
-
-        {/* Branch & PR */}
-        <Section title="Branch & PR">
-          <Field label="branchPrefix">
-            <input
-              type="text"
-              value={config.branchPrefix}
-              onChange={(e) => setConfig({ ...config, branchPrefix: e.target.value })}
-              style={inputStyle}
-            />
-          </Field>
-          <Field label="baseBranch">
-            <input
-              type="text"
-              value={config.baseBranch}
-              onChange={(e) => setConfig({ ...config, baseBranch: e.target.value })}
-              style={inputStyle}
-            />
-          </Field>
-          <Field label="githubRemote">
-            <input
-              type="text"
-              value={config.githubRemote}
-              onChange={(e) => setConfig({ ...config, githubRemote: e.target.value })}
-              style={inputStyle}
-            />
-          </Field>
-          <Field label="prMethod">
-            <input
-              type="text"
-              value={config.prMethod}
-              onChange={(e) => setConfig({ ...config, prMethod: e.target.value })}
-              placeholder="e.g. gh-cli"
-              style={inputStyle}
-            />
-          </Field>
-          <Field label="prDraft">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={config.prDraft}
-                onChange={(e) => setConfig({ ...config, prDraft: e.target.checked })}
-              />
-              Create PRs as drafts
-            </label>
-          </Field>
-          <Field label="autoMerge">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={config.autoMerge}
-                onChange={(e) => setConfig({ ...config, autoMerge: e.target.checked })}
-              />
-              Auto-merge PRs when checks pass
-            </label>
-          </Field>
-        </Section>
-
-        {/* Policies */}
-        <Section title="Policies">
-          <Field label="commitPolicy">
-            <select
-              value={config.commitPolicy}
-              onChange={(e) => setConfig({ ...config, commitPolicy: e.target.value })}
-              style={inputStyle}
-            >
-              <option value="after-checks-pass">after-checks-pass</option>
-            </select>
-          </Field>
-          <Field label="formatPolicy">
-            <select
-              value={config.formatPolicy}
-              onChange={(e) => setConfig({ ...config, formatPolicy: e.target.value })}
-              style={inputStyle}
-            >
-              <option value="auto-fix-separate-commit">auto-fix-separate-commit</option>
-            </select>
-          </Field>
-        </Section>
-
-        {/* Model Defaults */}
-        <Section title="Model Defaults">
-          {(['planning', 'implementation', 'reviewSpec', 'reviewCode', 'security'] as const).map((key) => (
-            <Field key={key} label={key}>
-              <input
-                type="text"
-                value={config.modelDefaults[key]}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    modelDefaults: { ...config.modelDefaults, [key]: e.target.value },
-                  })
-                }
-                placeholder={`Model for ${key}`}
-                style={inputStyle}
-              />
-            </Field>
-          ))}
-        </Section>
-
-        {/* Notifications */}
-        <Section title="Notifications">
-          <Field label="desktop">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={config.notifications.desktop}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    notifications: { ...config.notifications, desktop: e.target.checked },
-                  })
-                }
-              />
-              Desktop notifications
-            </label>
-          </Field>
-          <Field label="terminal">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={config.notifications.terminal}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    notifications: { ...config.notifications, terminal: e.target.checked },
-                  })
-                }
-              />
-              Terminal notifications
-            </label>
-          </Field>
-        </Section>
-
-        {/* Save */}
-        <div style={{ marginTop: 20, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button onClick={save} disabled={saving} style={saveBtnStyle}>
+        {/* Save bar */}
+        <div className="sticky bottom-0 bg-bg-primary border-t border-border-default py-3 mt-6 flex items-center gap-3">
+          <button onClick={save} disabled={saving} className="px-5 py-2 rounded-md text-sm font-semibold bg-accent-blue text-white hover:bg-blue-600 transition-colors disabled:opacity-50">
             {saving ? 'Saving...' : 'Save Settings'}
           </button>
-          {error && <span style={{ color: '#ef4444', fontSize: 13 }}>{error}</span>}
-          {success && <span style={{ color: '#22c55e', fontSize: 13 }}>{success}</span>}
+          {error && <span className="text-accent-red text-sm">{error}</span>}
+          {success && <span className="text-accent-green text-sm">{success}</span>}
         </div>
       </div>
     </div>
   );
 };
 
-// -- Sub-components --
-
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div style={{ marginBottom: 20 }}>
-    <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-      {title}
-    </h3>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{children}</div>
+const FormSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div className="mb-6">
+    <h3 className="text-xs font-bold uppercase tracking-wider text-text-tertiary mb-3">{title}</h3>
+    <div className="space-y-3">{children}</div>
   </div>
 );
 
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-    <label style={{ minWidth: 160, fontSize: 13, color: '#6b7280', fontWeight: 600 }}>{label}</label>
-    <div style={{ flex: 1 }}>{children}</div>
-  </div>
-);
-
-// -- Styles --
-
-const overlayStyle: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(0,0,0,0.4)',
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'flex-start',
-  paddingTop: 40,
-  zIndex: 1000,
-};
-
-const panelStyle: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 12,
-  padding: 24,
-  maxWidth: 640,
-  width: '90%',
-  maxHeight: '85vh',
-  overflowY: 'auto',
-  boxShadow: '0 16px 48px rgba(0,0,0,0.2)',
-};
-
-const closeBtnStyle: React.CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  fontSize: 24,
-  cursor: 'pointer',
-  color: '#9ca3af',
-  lineHeight: 1,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  borderRadius: 6,
-  border: '1px solid #d1d5db',
-  padding: '6px 10px',
-  fontSize: 14,
-  boxSizing: 'border-box',
-};
-
-const saveBtnStyle: React.CSSProperties = {
-  border: 'none',
-  borderRadius: 6,
-  padding: '8px 20px',
-  background: '#3b82f6',
-  color: '#fff',
-  fontWeight: 600,
-  fontSize: 14,
-  cursor: 'pointer',
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => {
+  const id = `settings-${label.toLowerCase().replace(/\s+/g, '-')}`;
+  return (
+    <div className="flex items-center gap-3">
+      <label htmlFor={id} className="w-40 flex-shrink-0 text-[13px] font-semibold text-text-secondary">{label}</label>
+      <div className="flex-1">{React.Children.map(children, child =>
+        React.isValidElement(child) ? React.cloneElement(child as React.ReactElement<{id?: string}>, { id }) : child
+      )}</div>
+    </div>
+  );
 };

@@ -3,3 +3,18 @@ dist
 .agentboard/
 *.db
 .env
+
+# Playwright visual test results (baselines in browser-tests/*.visual.spec.ts-snapshots/ ARE tracked)
+test-results/
+playwright-report/
+
+# Ruflo runtime state (not portable)
+.agents/
+.claude-flow/
+.ruflo/session-export.json
+
+# Keep committed (portable state):
+# .ruflo/memory-export.json
+# .ruflo/q-table.json
+# .ruflo/config-export.json
+# .ruflo/models/

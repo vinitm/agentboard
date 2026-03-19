@@ -1,14 +1,16 @@
 import type Database from 'better-sqlite3';
 import type { TaskStatus } from '../types/index.js';
+import { listStaleRunningLogs, markStageLogFailed } from '../db/stage-log-queries.js';
 
 const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
 const AGENT_CONTROLLED_STATUSES: TaskStatus[] = [
+  'spec_review',
   'planning',
   'implementing',
   'checks',
-  'review_spec',
-  'review_code',
+  'code_quality',
+  'final_review',
 ];
 
 /**
@@ -30,23 +32,33 @@ export function recoverStaleTasks(db: Database.Database): number {
          WHERE status = ? AND claimed_at IS NOT NULL AND claimed_at < ?`
       )
       .all(status, cutoff) as Array<{
-      id: string;
+      id: number;
       title: string;
       status: string;
       claimed_at: string;
     }>;
 
     for (const row of rows) {
+      const resetStatus = 'ready';
       db.prepare(
-        `UPDATE tasks SET status = 'ready', claimed_at = NULL, claimed_by = NULL, updated_at = ? WHERE id = ?`
-      ).run(now, row.id);
+        `UPDATE tasks SET status = ?, claimed_at = NULL, claimed_by = NULL, updated_at = ? WHERE id = ?`
+      ).run(resetStatus, now, row.id);
 
       console.log(
-        `[recovery] Reset stale task "${row.title}" (${row.id}) from ${row.status} to ready (claimed at ${row.claimed_at})`
+        `[recovery] Reset stale task "${row.title}" (${row.id}) from ${row.status} to ${resetStatus} (claimed at ${row.claimed_at})`
       );
       recovered++;
     }
   }
 
+  // Mark stale stage_logs as failed: stage_logs left in 'running' state from
+  // a previous crash are marked failed so the UI doesn't show a spinner forever.
+  const staleLogs = listStaleRunningLogs(db);
+  for (const log of staleLogs) {
+    markStageLogFailed(db, log.id);
+    console.log(`[recovery] Marked stale stage_log ${log.id} (${log.stage}) as failed`);
+  }
+
   return recovered;
 }
+

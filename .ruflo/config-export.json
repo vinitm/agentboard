@@ -1,0 +1,13 @@
+
+Configuration Management
+
+Usage: claude-flow config <subcommand> [options]
+
+Subcommands:
+  - init       - Initialize configuration
+  - get        - Get configuration value
+  - set        - Set configuration value
+  - providers  - Manage AI providers
+  - reset      - Reset to defaults
+  - export     - Export configuration
+  - import     - Import configuration

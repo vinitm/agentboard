@@ -67,13 +67,15 @@ agentboard up
 
 ### `modelDefaults`
 
+All stages currently use `opus` by default. The config fields are retained for future per-stage tuning:
+
 | Field            | Default    | Description                        |
 | ---------------- | ---------- | ---------------------------------- |
-| `planning`       | `"sonnet"` | Model for the planning stage       |
+| `planning`       | `"opus"`   | Model for the planning stage       |
 | `implementation` | `"opus"`   | Model for the implementation stage |
-| `reviewSpec`     | `"sonnet"` | Model for spec review              |
-| `reviewCode`     | `"sonnet"` | Model for code review              |
-| `security`       | `"haiku"`  | Model for security checks          |
+| `review`         | `"opus"`   | Model for code quality and final review |
+| `security`       | `"opus"`   | Model for security checks          |
+| `learning`       | `"haiku"`  | Model for post-task learning extraction |
 
 ### `commands`
 
@@ -97,24 +99,29 @@ Auto-detected check commands. Set to `null` to disable a check.
 
 ## Architecture Overview
 
+For the complete agent orchestration architecture — state machine, stage details, context flow, review panel, auto-merge gate, and recovery — see [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestration.md).
+
 ### Pipeline Stages
 
 Each task flows through a structured pipeline:
 
 ```
-Backlog -> Ready -> Planning -> Implementing -> Checks -> Review: Spec -> Review: Code -> PR Creation -> Needs Human Review -> Done
+Backlog → Ready → Spec Review → Planning → Plan Review → Implementing
+  [per-subtask: Implement → Checks → Code Quality]
+  → Final Review → PR Creation → Needs Human Review → Done
 ```
 
-1. **Backlog**: Tasks waiting to be specified. Add a spec to move to Ready.
-2. **Ready**: Tasks queued for the worker to pick up.
-3. **Planning**: The agent analyzes the spec, may decompose into subtasks or ask clarifying questions (task becomes Blocked).
-4. **Implementing**: The agent writes code in an isolated git worktree.
-5. **Checks**: Automated checks run (test, lint, format, typecheck, security). On failure, retries implementation up to `maxAttemptsPerTask` times.
-6. **Review: Spec**: Agent reviews implementation against the original spec.
-7. **Review: Code**: Agent reviews code quality. If review fails, cycles back to implementation (up to `maxReviewCycles`).
-8. **PR Creation**: Agent pushes the branch and creates a GitHub PR.
-9. **Needs Human Review**: A human reviews the PR. Click "Mark as Done" to complete.
-10. **Done**: Task is complete. Worktree is cleaned up.
+1. **Backlog**: PM builds spec conversationally via chat UI. AI asks clarifying questions and drafts spec.
+2. **Ready**: PM moves task to Ready when spec is finalized.
+3. **Spec Review**: Automated gate checks spec completeness, testability, and scope.
+4. **Planning**: Agent breaks the task into bite-sized TDD subtasks. Automated plan review validates before human sees it.
+5. **Plan Review**: Engineer reviews and approves the plan (with optional edits) or rejects it.
+6. **Implementing**: Per-subtask execution — each subtask goes through implement → checks → code quality.
+7. **Code Quality**: Single reviewer checks code quality, test quality, security, and architecture per subtask.
+8. **Final Review**: Holistic review of all changes with spec compliance check.
+9. **PR Creation**: Agent pushes the branch and creates a GitHub PR.
+10. **Needs Human Review**: A human reviews the PR. Click "Mark as Done" to complete.
+11. **Done**: Task is complete. Worktree is cleaned up.
 
 Tasks can also be **Blocked** (waiting for human input), **Failed** (max retries exhausted), or **Cancelled**.
 
@@ -142,6 +149,8 @@ Tasks can also be **Blocked** (waiting for human input), **Failed** (max retries
 | POST   | `/api/tasks/:id/move`        | Move task to column                  |
 | POST   | `/api/tasks/:id/answer`      | Answer a blocked task's questions    |
 | POST   | `/api/tasks/:id/retry`       | Retry a failed task                  |
+| POST   | `/api/tasks/:id/chat/stream` | SSE streaming chat for spec building |
+| GET    | `/api/tasks/:id/chat/messages` | Get chat history for task          |
 | GET    | `/api/runs?taskId=...`       | List runs for a task                 |
 | GET    | `/api/artifacts?runId=...`   | List artifacts for a run             |
 | GET    | `/api/config`                | Get current configuration            |
@@ -150,13 +159,15 @@ Tasks can also be **Blocked** (waiting for human input), **Failed** (max retries
 
 ## How the Agent Pipeline Works
 
-1. **Task Creation**: Create a task in Backlog, write a spec, then move it to Ready.
-2. **Planning**: The worker picks up Ready tasks, creates a git worktree, and runs the planning stage. The planner may ask clarifying questions (blocking the task) or decompose into subtasks.
-3. **Implementation with Retries**: The agent writes code. If checks fail, it retries with the error output as context, up to `maxAttemptsPerTask` times.
-4. **Checks**: After each implementation attempt, automated checks (test, lint, format, typecheck, security) run. Formatting issues can be auto-fixed.
-5. **Reviews**: Spec review ensures the implementation matches requirements. Code review checks quality. Failed reviews cycle back to implementation, up to `maxReviewCycles` times.
-6. **PR Creation**: The agent pushes the branch and creates a GitHub PR (draft by default).
-7. **Human Review**: The task moves to "Needs Human Review". A human reviews the PR on GitHub and marks the task as Done in the UI.
+1. **Spec Building**: PM opens a new task and chats with AI. The AI asks clarifying questions one at a time, proposes approaches, and drafts the spec from the conversation.
+2. **Spec Review**: Automated gate validates the spec is complete, testable, and well-scoped before planning begins.
+3. **Planning**: The agent breaks the task into bite-sized TDD subtasks with exact file paths and code snippets. An automated plan reviewer validates before the engineer sees it.
+4. **Plan Review**: Engineer reviews the plan, approves (with optional edits) or rejects (with feedback for re-planning).
+5. **Per-Subtask Execution**: Each subtask gets a single implementation attempt. If checks fail, one inline fix attempt. If that fails, the task is blocked for human intervention.
+6. **Code Quality Review**: After each subtask passes checks, a single reviewer evaluates code quality, test quality, security, and architecture.
+7. **Final Review**: After all subtasks complete, a holistic review checks cross-file consistency, integration, and spec compliance.
+8. **PR Creation**: The agent pushes the branch and creates a GitHub PR (draft by default).
+9. **Human Review**: The task moves to "Needs Human Review". A human reviews the PR on GitHub and marks the task as Done in the UI.
 
 ## Contributing
 

@@ -22,38 +22,83 @@ async function git(
  */
 export async function createWorktree(
   repoPath: string,
-  taskId: string,
+  taskId: number,
   slug: string,
   baseBranch: string,
   branchPrefix: string
 ): Promise<{ worktreePath: string; branch: string }> {
   const branch = `${branchPrefix}${taskId}-${slug}`;
-  const worktreePath = path.join(repoPath, '.agentboard', 'worktrees', taskId);
+  const worktreePath = path.join(repoPath, '.agentboard', 'worktrees', String(taskId));
 
-  await git(
-    ['worktree', 'add', '-b', branch, worktreePath, baseBranch],
-    repoPath
-  );
+  try {
+    await git(
+      ['worktree', 'add', '-b', branch, worktreePath, baseBranch],
+      repoPath
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '';
+    if (msg.includes('already exists')) {
+      // Branch or worktree exists from a previous attempt — clean up stale state
+      await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoPath }).catch(() => {});
+      await execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath }).catch(() => {});
+      // Delete the stale branch so we get a fresh one from baseBranch
+      await execFileAsync('git', ['branch', '-D', branch], { cwd: repoPath }).catch(() => {});
+      // Retry the original command with a fresh branch
+      await git(
+        ['worktree', 'add', '-b', branch, worktreePath, baseBranch],
+        repoPath
+      );
+    } else {
+      throw err;
+    }
+  }
 
   return { worktreePath, branch };
 }
 
 /**
- * Remove a git worktree.
+ * Remove a git worktree and its associated branch.
  */
-export async function cleanupWorktree(repoPath: string, worktreePath: string): Promise<void> {
-  await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoPath });
+export async function cleanupWorktree(repoPath: string, worktreePath: string, branch?: string): Promise<void> {
+  // Remove the worktree
+  try {
+    await execFileAsync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoPath });
+  } catch {
+    // Worktree may already be gone — prune stale entries
+    await execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath }).catch(() => {});
+  }
+
+  // Delete the branch if provided
+  if (branch) {
+    try {
+      await execFileAsync('git', ['branch', '-D', branch], { cwd: repoPath });
+    } catch {
+      // Branch may already be gone
+    }
+  }
 }
 
 /**
  * Stage all changes and commit, returning the commit SHA.
+ * Returns empty string if there are no changes to commit (no-op).
  */
 export async function commitChanges(
   worktreePath: string,
   message: string
 ): Promise<string> {
   await git(['add', '-A'], worktreePath);
-  await git(['commit', '-m', message, '--allow-empty'], worktreePath);
+
+  // Check if there are staged changes before committing
+  try {
+    await git(['diff', '--cached', '--quiet'], worktreePath);
+    // If diff --cached --quiet exits 0, there are NO changes staged
+    console.log('[git] No changes to commit — skipping');
+    return '';
+  } catch {
+    // diff --cached --quiet exits 1 when there ARE changes — proceed with commit
+  }
+
+  await git(['commit', '-m', message], worktreePath);
   return getCurrentSha(worktreePath);
 }
 

@@ -1,0 +1,33 @@
+{
+  "repos": {
+    "user/agentboard": {
+      "owner": "user",
+      "name": "agentboard",
+      "branch": "main",
+      "lastAnalyzed": "2026-03-18T19:17:49.337Z",
+      "metrics": {
+        "commits": 715,
+        "branches": 14,
+        "contributors": 23,
+        "openIssues": 9,
+        "openPRs": 8
+      }
+    },
+    "vinitm/agentboard": {
+      "owner": "vinitm",
+      "name": "agentboard",
+      "branch": "main",
+      "lastAnalyzed": "2026-03-19T07:13:14.333Z",
+      "metrics": {
+        "commits": 657,
+        "branches": 18,
+        "contributors": 46,
+        "openIssues": 25,
+        "openPRs": 7
+      }
+    }
+  },
+  "prs": {},
+  "issues": {},
+  "version": "3.0.0"
+}

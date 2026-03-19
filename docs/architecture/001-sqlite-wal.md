@@ -1,0 +1,37 @@
+# ADR-001: SQLite with WAL Mode
+
+## Status
+Accepted
+
+## Context
+Agentboard is a self-hosted tool that runs on a single machine and orchestrates multiple projects. It needs persistence for tasks, runs, artifacts, and events across all projects. The Express server reads the DB while the worker writes concurrently. The database lives at `~/.agentboard/agentboard.db` (shared across all projects), not per-project.
+
+Options considered: PostgreSQL, MySQL, SQLite, or an embedded key-value store.
+
+## Decision
+Use SQLite with WAL (Write-Ahead Logging) mode via `better-sqlite3`.
+
+- Single connection singleton pattern (`getDatabase()` in `src/db/index.ts`)
+- Synchronous prepared statements for all queries
+- WAL mode enabled via `db.pragma('journal_mode = WAL')` to allow concurrent readers without blocking the writer
+- Snake_case DB columns mapped to camelCase TypeScript via row-conversion functions in `queries.ts`
+
+For the full schema (7 tables, 13 indexes) and query patterns, see [Agent Orchestration → Database Schema](agent-orchestration.md#database-schema).
+
+## Consequences
+
+### Positive
+- Zero-config deployment — no external database to install or manage
+- Fast reads, simple single-file backup
+- WAL allows the HTTP server to read while the worker writes without blocking
+
+### Negative
+- Single-writer limits throughput (acceptable for single-machine use case)
+- No built-in replication or multi-server support
+
+### Risks
+- If multi-server deployment is ever needed, SQLite becomes a bottleneck
+- WAL files can grow large under sustained write load
+- The singleton pattern means the entire process shares one connection — connection lifecycle bugs affect everything
+
+See also: [Database Gotchas](../gotchas/database.md)

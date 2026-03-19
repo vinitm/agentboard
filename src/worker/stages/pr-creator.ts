@@ -10,6 +10,8 @@ import {
   updateGitRef,
   getLatestRunByTaskAndStage,
   listArtifactsByRun,
+  listRunsByTask,
+  getTaskById,
 } from '../../db/queries.js';
 
 export interface PRResult {
@@ -42,8 +44,7 @@ export async function createPR(
   });
 
   try {
-    // Get the git ref for this task
-    const gitRefs = listGitRefsByTask(db, task.id);
+    let gitRefs = listGitRefsByTask(db, task.id);
     if (gitRefs.length === 0) {
       throw new Error(`No git ref found for task ${task.id}`);
     }
@@ -72,6 +73,19 @@ export async function createPR(
 
     // Build PR body
     const prBody = buildPRBody(db, task);
+
+    // Ensure required labels exist on the repo (gh label create is idempotent)
+    const labels = ['agentboard', `risk:${task.riskLevel}`];
+    for (const label of labels) {
+      await new Promise<void>((resolve) => {
+        const child = spawn('gh', ['label', 'create', label, '--force'], {
+          cwd: worktreePath,
+          stdio: 'pipe',
+        });
+        child.on('close', () => resolve());
+        child.on('error', () => resolve());
+      });
+    }
 
     // Create PR via gh CLI
     const ghArgs = [
@@ -174,6 +188,111 @@ export async function createPR(
 }
 
 /**
+ * Collect all planning assumptions for a task and its subtasks.
+ */
+function collectAssumptions(db: Database.Database, task: Task): string[] {
+  const assumptions: string[] = [];
+
+  const planningRun = getLatestRunByTaskAndStage(db, task.id, 'planning');
+  if (planningRun) {
+    const artifacts = listArtifactsByRun(db, planningRun.id);
+    const assumptionArtifact = artifacts.find((a) => a.type === 'assumptions');
+    if (assumptionArtifact) {
+      try {
+        const parsed = JSON.parse(assumptionArtifact.content) as string[];
+        assumptions.push(...parsed);
+      } catch {
+        // Malformed JSON — skip
+      }
+    }
+  }
+
+  return assumptions;
+}
+
+/**
+ * Format the spec JSON into readable markdown sections.
+ * Handles SpecDocument (goal/userScenarios/successCriteria), SpecResult, and legacy formats.
+ */
+function formatSpec(spec: string): string {
+  const lines: string[] = [];
+
+  try {
+    const parsed = JSON.parse(spec) as Record<string, unknown>;
+
+    // New spec-kit format: goal, userScenarios, successCriteria
+    if (typeof parsed.goal === 'string' && parsed.goal) {
+      lines.push('**Goal:**');
+      lines.push('> ' + parsed.goal.replace(/\n/g, '\n> '));
+      lines.push('');
+    }
+
+    if (typeof parsed.userScenarios === 'string' && parsed.userScenarios) {
+      lines.push('**User Scenarios:**');
+      lines.push(parsed.userScenarios);
+      lines.push('');
+    }
+
+    if (typeof parsed.successCriteria === 'string' && parsed.successCriteria) {
+      lines.push('**Success Criteria:**');
+      const items = (parsed.successCriteria as string)
+        .split('\n')
+        .map(l => l.replace(/^-\s*/, '').trim())
+        .filter(Boolean);
+      for (const item of items) {
+        lines.push(`- [ ] ${item}`);
+      }
+      lines.push('');
+    }
+
+    // SpecResult format: acceptanceCriteria array
+    const criteria = parsed.acceptanceCriteria;
+    if (criteria && !parsed.goal) {
+      if (Array.isArray(criteria)) {
+        for (const item of criteria as string[]) {
+          lines.push(`- [ ] ${item}`);
+        }
+      } else if (typeof criteria === 'string') {
+        const items = (criteria as string)
+          .split('\n')
+          .map(l => l.replace(/^-\s*/, '').trim())
+          .filter(Boolean);
+        for (const item of items) {
+          lines.push(`- [ ] ${item}`);
+        }
+      }
+      lines.push('');
+    }
+
+    // File scope (SpecResult format)
+    const fileScope = parsed.fileScope as string[] | undefined;
+    if (Array.isArray(fileScope) && fileScope.length > 0) {
+      lines.push('**File scope:**');
+      for (const f of fileScope) {
+        lines.push(`- \`${f}\``);
+      }
+      lines.push('');
+    }
+
+    // Risk assessment (SpecResult format)
+    if (typeof parsed.riskAssessment === 'string' && parsed.riskAssessment) {
+      lines.push(`**Risk assessment:** ${parsed.riskAssessment}`);
+      lines.push('');
+    }
+
+    // If nothing was extracted, fall back to raw
+    if (lines.length === 0) {
+      return spec;
+    }
+
+    return lines.join('\n').trimEnd();
+  } catch {
+    // Not valid JSON — return as-is (it may already be markdown)
+    return spec;
+  }
+}
+
+/**
  * Build the PR body from task data and run artifacts.
  */
 function buildPRBody(db: Database.Database, task: Task): string {
@@ -193,15 +312,35 @@ function buildPRBody(db: Database.Database, task: Task): string {
   sections.push('## Summary');
   sections.push(planSummary);
 
+  // Assumptions from planning (collapsible if 3+)
+  const assumptions = collectAssumptions(db, task);
+  if (assumptions.length > 0) {
+    sections.push('## Assumptions Made');
+    sections.push('> These decisions were made autonomously. Please verify during review.');
+    sections.push('');
+
+    const assumptionLines = assumptions.map(a => `- ${a}`).join('\n');
+
+    if (assumptions.length >= 3) {
+      sections.push(`<details><summary>${assumptions.length} assumptions — click to expand</summary>`);
+      sections.push('');
+      sections.push(assumptionLines);
+      sections.push('');
+      sections.push('</details>');
+    } else {
+      sections.push(assumptionLines);
+    }
+  }
+
   // Task info
-  sections.push('## Task');
+  sections.push(`## Task`);
   sections.push(`**Title:** ${task.title}`);
   sections.push(`**Risk Level:** ${task.riskLevel}`);
 
-  // Acceptance criteria from spec
+  // Acceptance criteria from spec — parsed into readable markdown
   if (task.spec) {
     sections.push('## Acceptance Criteria');
-    sections.push(task.spec);
+    sections.push(formatSpec(task.spec));
   }
 
   // Check results
@@ -227,35 +366,48 @@ function buildPRBody(db: Database.Database, task: Task): string {
     sections.push('</details>');
   }
 
-  // Review results
-  const specReviewRun = getLatestRunByTaskAndStage(db, task.id, 'review_spec');
-  const codeReviewRun = getLatestRunByTaskAndStage(db, task.id, 'review_code');
+  // Review panel results
+  const allRuns = listRunsByTask(db, task.id);
+  const panelRuns = allRuns
+    .filter(r => r.stage === 'final_review')
+    .slice(-3);
 
-  sections.push('## Review');
+  if (panelRuns.length > 0) {
+    sections.push('## Review Panel');
 
-  if (specReviewRun?.output) {
-    try {
-      const specResult = JSON.parse(specReviewRun.output) as { passed: boolean };
-      const icon = specResult.passed ? '\u2705 Passed' : '\u274c Failed';
-      sections.push(`- Spec compliance: ${icon}`);
-    } catch {
-      sections.push('- Spec compliance: \u2753 Unknown');
+    const ROLE_LABELS: Record<string, string> = {
+      architect: 'Architect',
+      qa: 'QA Engineer',
+      security: 'Security',
+    };
+
+    for (const run of panelRuns) {
+      const artifacts = listArtifactsByRun(db, run.id);
+      const roleArtifact = artifacts.find(a => a.type === 'review_result');
+      if (roleArtifact) {
+        try {
+          const result = JSON.parse(roleArtifact.content) as {
+            passed: boolean;
+            issues?: string[];
+            feedback?: string;
+          };
+          const label = ROLE_LABELS[roleArtifact.name] ?? roleArtifact.name;
+          const icon = result.passed ? '\u2705 Passed' : '\u274c Failed';
+          const issueCount = Array.isArray(result.issues) && result.issues.length > 0
+            ? ` (${result.issues.length} issue${result.issues.length === 1 ? '' : 's'})`
+            : '';
+          sections.push(`- ${label}: ${icon}${issueCount}`);
+        } catch {
+          sections.push(`- ${roleArtifact.name}: \u2753 Unknown`);
+        }
+      }
     }
-  } else {
-    sections.push('- Spec compliance: \u2753 Not run');
   }
 
-  if (codeReviewRun?.output) {
-    try {
-      const codeResult = JSON.parse(codeReviewRun.output) as { passed: boolean };
-      const icon = codeResult.passed ? '\u2705 Passed' : '\u274c Failed';
-      sections.push(`- Code quality: ${icon}`);
-    } catch {
-      sections.push('- Code quality: \u2753 Unknown');
-    }
-  } else {
-    sections.push('- Code quality: \u2753 Not run');
-  }
+  // Footer
+  sections.push('');
+  sections.push('---');
+  sections.push('\ud83e\udd16 Generated by [agentboard](https://github.com/vinitm/agentboard)');
 
   return sections.join('\n');
 }

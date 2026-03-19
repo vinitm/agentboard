@@ -1,0 +1,907 @@
+{
+  "workflows": {
+    "workflow-1773861677238-elnpdx": {
+      "workflowId": "workflow-1773861677238-elnpdx",
+      "name": "cost-dashboard-implementation",
+      "description": "Implement Pipeline Cost & Performance Dashboard for agentboard: DB queries, API routes, UI page",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "db-cost-queries",
+          "type": "task",
+          "config": {
+            "description": "Add cost aggregation queries to stage-log-queries.ts: getTaskCostRollup, getStageCostBreakdown, getCostTrend"
+          },
+          "status": "completed",
+          "startedAt": "2026-03-18T19:21:23.876Z",
+          "completedAt": "2026-03-18T19:21:23.876Z",
+          "result": {
+            "executed": true,
+            "stepType": "task"
+          }
+        },
+        {
+          "stepId": "step-2",
+          "name": "api-cost-routes",
+          "type": "task",
+          "config": {
+            "description": "Create cost API routes: GET /api/tasks/:id/costs, GET /api/projects/:projectId/costs/breakdown, GET /api/projects/:projectId/costs/trend"
+          },
+          "status": "completed",
+          "startedAt": "2026-03-18T19:21:23.876Z",
+          "completedAt": "2026-03-18T19:21:23.876Z",
+          "result": {
+            "executed": true,
+            "stepType": "task"
+          }
+        },
+        {
+          "stepId": "step-3",
+          "name": "ui-cost-dashboard",
+          "type": "task",
+          "config": {
+            "description": "Build CostDashboard React component with stage heatmap, cost trend chart, and per-task rollups"
+          },
+          "status": "completed",
+          "startedAt": "2026-03-18T19:21:23.876Z",
+          "completedAt": "2026-03-18T19:21:23.876Z",
+          "result": {
+            "executed": true,
+            "stepType": "task"
+          }
+        },
+        {
+          "stepId": "step-4",
+          "name": "integration-wiring",
+          "type": "task",
+          "config": {
+            "description": "Wire up routes in server/index.ts, add nav link in Sidebar, add route in App.tsx"
+          },
+          "status": "completed",
+          "startedAt": "2026-03-18T19:21:23.876Z",
+          "completedAt": "2026-03-18T19:21:23.876Z",
+          "result": {
+            "executed": true,
+            "stepType": "task"
+          }
+        }
+      ],
+      "status": "completed",
+      "currentStep": 4,
+      "variables": {},
+      "createdAt": "2026-03-18T19:21:17.238Z",
+      "startedAt": "2026-03-18T19:21:23.876Z",
+      "completedAt": "2026-03-18T19:21:23.876Z"
+    },
+    "workflow-1773904368220-tp1lk2": {
+      "workflowId": "workflow-1773904368220-tp1lk2",
+      "name": "feature-implementation",
+      "description": "Full feature implementation pipeline: route → plan → TDD → implement → review → docs → verify → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "route",
+          "type": "task",
+          "config": {
+            "action": "guidance_retrieve + memory_search + hooks_route"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "plan",
+          "type": "task",
+          "config": {
+            "agent": "planner"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "tdd",
+          "type": "task",
+          "config": {
+            "agent": "tdd-guide"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "implement",
+          "type": "task",
+          "config": {
+            "agent": "coder"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "review",
+          "type": "parallel",
+          "config": {
+            "agents": [
+              "code-reviewer",
+              "security-reviewer"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-6",
+          "name": "docs",
+          "type": "task",
+          "config": {
+            "agent": "doc-updater"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-7",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "action": "npm test && npm run build"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-8",
+          "name": "pre-commit",
+          "type": "task",
+          "config": {
+            "action": "analyze_diff + security_secrets"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-9",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "action": "git commit + hooks_post-task"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T07:12:48.220Z"
+    },
+    "workflow-1773904371161-nmqef5": {
+      "workflowId": "workflow-1773904371161-nmqef5",
+      "name": "bug-fix",
+      "description": "Bug fix pipeline: diagnose → reproduce → fix → verify → learn → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "diagnose",
+          "type": "task",
+          "config": {
+            "action": "memory_search + pattern-search"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "reproduce",
+          "type": "task",
+          "config": {
+            "agent": "tdd-guide",
+            "action": "write failing test"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "fix",
+          "type": "task",
+          "config": {
+            "agent": "coder"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "verify",
+          "type": "parallel",
+          "config": {
+            "actions": [
+              "npm test",
+              "code-reviewer"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "learn",
+          "type": "task",
+          "config": {
+            "action": "pattern-store + hooks_post-task"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-6",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "action": "analyze_diff + git commit"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T07:12:51.161Z"
+    },
+    "workflow-1773904373379-749a8j": {
+      "workflowId": "workflow-1773904373379-749a8j",
+      "name": "docs-improvement",
+      "description": "Documentation improvement pipeline: audit → research → edit → verify → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "audit",
+          "type": "task",
+          "config": {
+            "action": "worker-dispatch document + testgaps"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "research",
+          "type": "parallel",
+          "config": {
+            "agents": [
+              "researcher",
+              "researcher"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "edit",
+          "type": "task",
+          "config": {
+            "agent": "doc-updater"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "action": "npm run build"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "action": "analyze_diff + git commit"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T07:12:53.379Z"
+    },
+    "workflow-1773904375351-54y83g": {
+      "workflowId": "workflow-1773904375351-54y83g",
+      "name": "security-audit",
+      "description": "Security audit pipeline: scan → deps → review → fix → verify",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "scan",
+          "type": "task",
+          "config": {
+            "action": "security_scan + security_secrets + security_threats"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "deps",
+          "type": "task",
+          "config": {
+            "action": "analyze deps --security"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "review",
+          "type": "task",
+          "config": {
+            "agent": "security-reviewer"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "fix",
+          "type": "task",
+          "config": {
+            "agent": "coder"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "action": "security_scan"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T07:12:55.351Z"
+    },
+    "workflow-1773917545607-0le3qb": {
+      "workflowId": "workflow-1773917545607-0le3qb",
+      "name": "feature-implementation",
+      "description": "Full feature implementation: route → plan → TDD → implement → review → docs → verify → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "route",
+          "type": "task",
+          "config": {
+            "description": "Route to appropriate agent"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "plan",
+          "type": "task",
+          "config": {
+            "description": "Create implementation plan"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "tdd",
+          "type": "task",
+          "config": {
+            "description": "Write tests first (RED)"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "implement",
+          "type": "task",
+          "config": {
+            "description": "Implement to pass tests (GREEN)"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "review",
+          "type": "parallel",
+          "config": {
+            "description": "Code review + security review in parallel"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-6",
+          "name": "docs",
+          "type": "task",
+          "config": {
+            "description": "Update documentation"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-7",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "description": "Run build + tests"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-8",
+          "name": "pre-commit",
+          "type": "task",
+          "config": {
+            "description": "Pre-commit checks"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-9",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "description": "Commit changes"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T10:52:25.607Z"
+    },
+    "workflow-1773917547340-ygmtgy": {
+      "workflowId": "workflow-1773917547340-ygmtgy",
+      "name": "bug-fix",
+      "description": "Bug fix workflow: diagnose → reproduce → fix → verify → learn → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "diagnose",
+          "type": "task",
+          "config": {
+            "description": "Identify root cause"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "reproduce",
+          "type": "task",
+          "config": {
+            "description": "Create failing test"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "fix",
+          "type": "task",
+          "config": {
+            "description": "Implement fix"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "description": "Run tests + build"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "learn",
+          "type": "task",
+          "config": {
+            "description": "Extract patterns"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-6",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "description": "Commit changes"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T10:52:27.340Z"
+    },
+    "workflow-1773917549942-ua2906": {
+      "workflowId": "workflow-1773917549942-ua2906",
+      "name": "docs-improvement",
+      "description": "Documentation improvement: audit → research → edit → verify → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "audit",
+          "type": "task",
+          "config": {
+            "description": "Audit existing docs"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "research",
+          "type": "parallel",
+          "config": {
+            "description": "Research best practices"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "edit",
+          "type": "task",
+          "config": {
+            "description": "Edit documentation"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "description": "Verify links and accuracy"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "description": "Commit changes"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T10:52:29.942Z"
+    },
+    "workflow-1773917551392-6oq6ad": {
+      "workflowId": "workflow-1773917551392-6oq6ad",
+      "name": "security-audit",
+      "description": "Security audit: scan → deps → review → fix → verify",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "scan",
+          "type": "task",
+          "config": {
+            "description": "Scan for vulnerabilities"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "deps",
+          "type": "task",
+          "config": {
+            "description": "Check dependencies"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "review",
+          "type": "task",
+          "config": {
+            "description": "Review findings"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "fix",
+          "type": "task",
+          "config": {
+            "description": "Fix issues"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "description": "Verify fixes"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "ready",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T10:52:31.392Z"
+    }
+  },
+  "templates": {
+    "template-1773904379184-kjf4c1": {
+      "workflowId": "template-1773904379184-kjf4c1",
+      "name": "feature-implementation",
+      "description": "Full feature implementation pipeline: route → plan → TDD → implement → review → docs → verify → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "route",
+          "type": "task",
+          "config": {
+            "action": "guidance_retrieve + memory_search + hooks_route"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "plan",
+          "type": "task",
+          "config": {
+            "agent": "planner"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "tdd",
+          "type": "task",
+          "config": {
+            "agent": "tdd-guide"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "implement",
+          "type": "task",
+          "config": {
+            "agent": "coder"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "review",
+          "type": "parallel",
+          "config": {
+            "agents": [
+              "code-reviewer",
+              "security-reviewer"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-6",
+          "name": "docs",
+          "type": "task",
+          "config": {
+            "agent": "doc-updater"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-7",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "action": "npm test && npm run build"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-8",
+          "name": "pre-commit",
+          "type": "task",
+          "config": {
+            "action": "analyze_diff + security_secrets"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-9",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "action": "git commit + hooks_post-task"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "draft",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T07:12:59.184Z"
+    },
+    "template-1773904380070-8jtwh0": {
+      "workflowId": "template-1773904380070-8jtwh0",
+      "name": "bug-fix",
+      "description": "Bug fix pipeline: diagnose → reproduce → fix → verify → learn → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "diagnose",
+          "type": "task",
+          "config": {
+            "action": "memory_search + pattern-search"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "reproduce",
+          "type": "task",
+          "config": {
+            "agent": "tdd-guide",
+            "action": "write failing test"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "fix",
+          "type": "task",
+          "config": {
+            "agent": "coder"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "verify",
+          "type": "parallel",
+          "config": {
+            "actions": [
+              "npm test",
+              "code-reviewer"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "learn",
+          "type": "task",
+          "config": {
+            "action": "pattern-store + hooks_post-task"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-6",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "action": "analyze_diff + git commit"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "draft",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T07:13:00.070Z"
+    },
+    "template-1773904380560-1le1f1": {
+      "workflowId": "template-1773904380560-1le1f1",
+      "name": "docs-improvement",
+      "description": "Documentation improvement pipeline: audit → research → edit → verify → commit",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "audit",
+          "type": "task",
+          "config": {
+            "action": "worker-dispatch document + testgaps"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "research",
+          "type": "parallel",
+          "config": {
+            "agents": [
+              "researcher",
+              "researcher"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "edit",
+          "type": "task",
+          "config": {
+            "agent": "doc-updater"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "action": "npm run build"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "commit",
+          "type": "task",
+          "config": {
+            "action": "analyze_diff + git commit"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "draft",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T07:13:00.560Z"
+    },
+    "template-1773904380968-qgfd3j": {
+      "workflowId": "template-1773904380968-qgfd3j",
+      "name": "security-audit",
+      "description": "Security audit pipeline: scan → deps → review → fix → verify",
+      "steps": [
+        {
+          "stepId": "step-1",
+          "name": "scan",
+          "type": "task",
+          "config": {
+            "action": "security_scan + security_secrets + security_threats"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-2",
+          "name": "deps",
+          "type": "task",
+          "config": {
+            "action": "analyze deps --security"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-3",
+          "name": "review",
+          "type": "task",
+          "config": {
+            "agent": "security-reviewer"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-4",
+          "name": "fix",
+          "type": "task",
+          "config": {
+            "agent": "coder"
+          },
+          "status": "pending"
+        },
+        {
+          "stepId": "step-5",
+          "name": "verify",
+          "type": "task",
+          "config": {
+            "action": "security_scan"
+          },
+          "status": "pending"
+        }
+      ],
+      "status": "draft",
+      "currentStep": 0,
+      "variables": {},
+      "createdAt": "2026-03-19T07:13:00.968Z"
+    }
+  },
+  "version": "3.0.0"
+}

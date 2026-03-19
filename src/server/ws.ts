@@ -1,4 +1,5 @@
 import type { Server } from 'socket.io';
+import type { StageTransitionEvent } from '../types/index.js';
 
 /**
  * Broadcast an event to all connected WebSocket clients.
@@ -12,9 +13,25 @@ export function broadcast(io: Server, event: string, data: unknown): void {
  */
 export function broadcastLog(
   io: Server,
-  data: { taskId: string; runId: string; chunk: string; timestamp: string }
+  data: {
+    taskId: number;
+    runId: string;
+    stage?: string;
+    chunk: string;
+    timestamp: string;
+  }
 ): void {
   io.emit('run:log', data);
+}
+
+/**
+ * Broadcast a stage:transition event when a pipeline stage changes.
+ */
+export function broadcastStageTransition(
+  io: Server,
+  data: StageTransitionEvent
+): void {
+  io.emit('stage:transition', data);
 }
 
 /**
