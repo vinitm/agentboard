@@ -87,14 +87,49 @@ See [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestra
 
 - Don't add dependencies without discussion
 - Don't modify the worker loop's 5-second polling or stage ordering
-- Don't commit directly to master — feature branches per task
+- Don't commit directly to master — feature branches per task (enforced by pre-bash hook)
 - Don't hardcode model names — use config.modelDefaults and model-selector.ts
 - Don't create new DB connections — use `getDatabase()` singleton
+- Don't skip workflow steps without explicit user approval
+- Don't commit without `npm test` and `npm run build` passing
+- Don't skip learning capture after significant tasks
 
-## Workflow
+## Workflow (Mandatory)
 
-Interactive sessions: Research → Plan → TDD → Review → Docs & Learn → Commit
-See [.claude/rules/common/development-workflow.md](.claude/rules/common/development-workflow.md) for the full process.
+Every task follows: **Research → Plan → Branch → TDD → Review → Learn → Commit**
+Branch creation is deferred to implementation — no branch during research/planning.
+Commits to master are blocked by hook. See [development-workflow.md](.claude/rules/common/development-workflow.md) for full details (auto-loaded).
+
+### Quick Checklist
+- [ ] Searched for existing solutions (codebase, npm, GitHub)
+- [ ] Plan created and user-approved (use **planner** agent)
+- [ ] Feature branch created before first code change (`agentboard/<task-slug>`)
+- [ ] Tests written first, all passing (`npm test`)
+- [ ] **code-reviewer** agent run (MANDATORY)
+- [ ] **security-reviewer** run if touching auth/APIs/DB/worker
+- [ ] Build passes (`npm run build`)
+- [ ] Patterns captured (`agentdb_pattern_store`, skill files)
+- [ ] Decision log updated if architectural choices made
+
+### Ruflo/Claude-Flow Tools by Step
+
+| Step | Tools to Use |
+|------|-------------|
+| Research | `memory_search`, `agentdb_pattern_search`, `hooks_intelligence_pattern_search` |
+| Plan | `swarm_init` + `agent_spawn` for parallel research, `task_create`, `workflow_run feature-implementation` |
+| TDD | `hooks_pre_edit`, `hooks_post_edit`, `worker_dispatch testgaps` |
+| Review | `analyze_diff_risk`, `analyze_diff_reviewers`, `aidefence_scan` |
+| Learn | `agentdb_pattern_store`, `agentdb_feedback`, `memory_store`, `hooks_intelligence_pattern_store` |
+| Multi-agent | `swarm_init`, `agent_spawn`, `task_orchestrate`, `claims_claim`, `coordination_sync` |
+| E2E test | `browser_open`, `browser_snapshot`, `browser_click` |
+| Background | `worker_dispatch` (testgaps, audit, optimize, document) |
+
+### Backpressure — Stop and Ask When:
+- Change touches >5 unexpected files
+- Adding a new dependency
+- Modifying worker loop polling or stage ordering
+- Tests fail after 3 attempts
+- Changing the pipeline state machine
 
 ## References
 

@@ -42,4 +42,13 @@ program
     await doctor();
   });
 
+program
+  .command('prune')
+  .description('Delete orphaned agentboard/* branches with no active task')
+  .option('--dry-run', 'List orphaned branches without deleting')
+  .action(async (opts: { dryRun?: boolean }) => {
+    const { default: prune } = await import('../src/cli/prune.js');
+    await prune(opts);
+  });
+
 program.parse();

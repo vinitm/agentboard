@@ -103,6 +103,27 @@ export default async function doctor(): Promise<void> {
     }
   }
 
+  // Check for orphaned agentboard/* branches
+  if (fs.existsSync(path.join(cwd, '.git'))) {
+    try {
+      const { listOrphanedBranches } = await import('./prune.js');
+      const orphaned = await listOrphanedBranches(cwd);
+      if (orphaned.length > 0) {
+        console.log(chalk.yellow(`\n  ⚠ ${orphaned.length} orphaned agentboard/* branch(es) found:`));
+        for (const b of orphaned.slice(0, 5)) {
+          console.log(chalk.dim(`    • ${b}`));
+        }
+        if (orphaned.length > 5) {
+          console.log(chalk.dim(`    … and ${orphaned.length - 5} more`));
+        }
+        console.log(chalk.dim('    Run: agentboard prune --dry-run'));
+        failures++;
+      }
+    } catch {
+      // DB not available or git error — skip silently
+    }
+  }
+
   // Show registered projects
   if (fs.existsSync(GLOBAL_REGISTRY_PATH)) {
     try {
