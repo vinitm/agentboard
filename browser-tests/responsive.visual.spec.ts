@@ -6,7 +6,7 @@ test.describe('Responsive — visual regression', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await expect(page).toHaveScreenshot('board-mobile.png', {
+    await expect(page).toHaveScreenshot('grid-mobile.png', {
       fullPage: true,
     });
   });
@@ -16,7 +16,7 @@ test.describe('Responsive — visual regression', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await expect(page).toHaveScreenshot('board-tablet.png', {
+    await expect(page).toHaveScreenshot('grid-tablet.png', {
       fullPage: true,
     });
   });
@@ -26,7 +26,7 @@ test.describe('Responsive — visual regression', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await expect(page).toHaveScreenshot('board-wide.png', {
+    await expect(page).toHaveScreenshot('grid-wide.png', {
       fullPage: true,
     });
   });

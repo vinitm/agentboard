@@ -13,6 +13,7 @@ import { ToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { TaskGrid } from './components/TaskGrid';
+import { TaskForm } from './components/TaskForm';
 import { useTasks } from './hooks/useTasks';
 import { useConnectionStatus } from './hooks/useSocket';
 import { api, setApiErrorHandler } from './api/client';
@@ -192,6 +193,16 @@ const AppContent: React.FC = () => {
         )}
       </div>
       <ShortcutsModal open={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      {showNewTask && (
+        <TaskForm
+          projectId={projectId}
+          onSubmit={async (data) => {
+            await createTask(data);
+            setShowNewTask(false);
+          }}
+          onCancel={() => setShowNewTask(false)}
+        />
+      )}
     </div>
   );
 };

@@ -1,21 +1,21 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Board — visual regression', () => {
-  test('board page renders correctly', async ({ page }) => {
+test.describe('Task Grid — visual regression', () => {
+  test('grid page renders correctly', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await expect(page).toHaveScreenshot('board-full.png', {
+    await expect(page).toHaveScreenshot('grid-full.png', {
       fullPage: true,
     });
   });
 
-  test('kanban columns layout', async ({ page }) => {
+  test('task grid layout', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    const board = page.locator('.board-scroll-container').first();
-    await expect(board).toHaveScreenshot('board-columns.png');
+    const mainContent = page.locator('#main-content').first();
+    await expect(mainContent).toHaveScreenshot('grid-content.png');
   });
 
   test('sidebar navigation', async ({ page }) => {
