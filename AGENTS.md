@@ -26,6 +26,17 @@ agentboard up          # Start global server + worker
 agentboard down        # Graceful shutdown
 agentboard doctor      # Verify prerequisites + show registered projects
 
+### Browser Automation (agent-browser → Lightpanda CDP)
+
+npm run lightpanda:start                                    # Start Lightpanda on port 9222
+npx agent-browser --cdp 9222 --json open http://localhost:3000  # Open URL
+npx agent-browser --cdp 9222 --json snapshot                # AI-optimized accessibility tree
+npx agent-browser --cdp 9222 --json click @e2               # Click element ref
+
+MCP browser tools (`browser_open`, `browser_snapshot`, etc.) use `agent-browser` under the hood.
+`.mcp.json` sets `AGENT_BROWSER_CDP=9222` and adds `node_modules/.bin` to PATH.
+See [docs/browser-testing.md](docs/browser-testing.md) for full setup.
+
 ## Conventions
 
 - ES module imports with `.js` extensions (even for .ts files)

@@ -42,7 +42,13 @@ export const Settings: React.FC = () => {
     return <div className="flex items-center justify-center h-64">{error ? <span className="text-accent-red">{error}</span> : <span className="text-text-secondary">Loading settings...</span>}</div>;
   }
 
-  const setCmd = (key: keyof Commands, value: string) => setConfig({ ...config, commands: { ...config.commands, [key]: value || null } });
+  // Ensure nested objects exist (API may omit them)
+  const commands = config.commands ?? { test: null, lint: null, format: null, formatFix: null, typecheck: null, security: null };
+  const notifications = config.notifications ?? { desktop: false, terminal: false };
+  const modelDefaults = config.modelDefaults ?? { planning: '', implementation: '', review: '', security: '' };
+  const safeConfig = { ...config, commands, notifications, modelDefaults };
+
+  const setCmd = (key: keyof Commands, value: string) => setConfig({ ...safeConfig, commands: { ...commands, [key]: value || null } });
 
   return (
     <div className="flex h-full">
@@ -61,7 +67,7 @@ export const Settings: React.FC = () => {
         {activeSection === 'commands' && (
           <FormSection title="Check Commands">
             {(['test', 'lint', 'format', 'formatFix', 'typecheck', 'security'] as const).map((key) => (
-              <Field key={key} label={key}><input type="text" value={config.commands[key] ?? ''} onChange={(e) => setCmd(key, e.target.value)} placeholder={`${key} command (leave empty to disable)`} className={inputClasses} /></Field>
+              <Field key={key} label={key}><input type="text" value={commands[key] ?? ''} onChange={(e) => setCmd(key, e.target.value)} placeholder={`${key} command (leave empty to disable)`} className={inputClasses} /></Field>
             ))}
           </FormSection>
         )}
@@ -99,14 +105,14 @@ export const Settings: React.FC = () => {
         {activeSection === 'models' && (
           <FormSection title="Model Defaults">
             {(['planning', 'implementation', 'review', 'security'] as const).map((key) => (
-              <Field key={key} label={key}><input type="text" value={config.modelDefaults[key]} onChange={(e) => setConfig({ ...config, modelDefaults: { ...config.modelDefaults, [key]: e.target.value } })} placeholder={`Model for ${key}`} className={inputClasses} /></Field>
+              <Field key={key} label={key}><input type="text" value={modelDefaults[key]} onChange={(e) => setConfig({ ...safeConfig, modelDefaults: { ...modelDefaults, [key]: e.target.value } })} placeholder={`Model for ${key}`} className={inputClasses} /></Field>
             ))}
           </FormSection>
         )}
         {activeSection === 'notifications' && (
           <FormSection title="Notifications">
-            <Field label="Desktop"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={config.notifications.desktop} onChange={(e) => setConfig({ ...config, notifications: { ...config.notifications, desktop: e.target.checked } })} className="accent-accent-blue" /> Desktop notifications</label></Field>
-            <Field label="Terminal"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={config.notifications.terminal} onChange={(e) => setConfig({ ...config, notifications: { ...config.notifications, terminal: e.target.checked } })} className="accent-accent-blue" /> Terminal notifications</label></Field>
+            <Field label="Desktop"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={notifications.desktop} onChange={(e) => setConfig({ ...safeConfig, notifications: { ...notifications, desktop: e.target.checked } })} className="accent-accent-blue" /> Desktop notifications</label></Field>
+            <Field label="Terminal"><label className="flex items-center gap-2 text-sm text-text-primary"><input type="checkbox" checked={notifications.terminal} onChange={(e) => setConfig({ ...safeConfig, notifications: { ...notifications, terminal: e.target.checked } })} className="accent-accent-blue" /> Terminal notifications</label></Field>
           </FormSection>
         )}
 

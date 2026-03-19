@@ -244,9 +244,9 @@ export const Board: React.FC<Props> = ({
           <div className="mb-3 flex items-center gap-2 bg-bg-elevated rounded-lg px-3 py-2 text-[13px] border border-border-default animate-fade-in">
             <span className="font-semibold text-accent-blue">{selectedIds.size} selected</span>
             <select
-              onChange={(e) => { if (e.target.value) { bulkMove(e.target.value as TaskStatus); e.target.value = ''; } }}
+              value=""
+              onChange={(e) => { if (e.target.value) { bulkMove(e.target.value as TaskStatus); } }}
               className="rounded-md px-2 py-1 text-xs bg-bg-tertiary border border-border-default text-text-primary"
-              defaultValue=""
             >
               <option value="" disabled>Move to...</option>
               {MOVABLE_COLUMNS.map((col) => <option key={col} value={col}>{col}</option>)}

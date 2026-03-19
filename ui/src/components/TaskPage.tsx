@@ -164,6 +164,7 @@ export const TaskPage: React.FC = () => {
         <div className="flex gap-2 flex-shrink-0">
           {!isSubtask && (
             <select
+              value=""
               onChange={async (e) => {
                 if (!e.target.value) return;
                 try {
@@ -172,10 +173,8 @@ export const TaskPage: React.FC = () => {
                 } catch (err) {
                   toast(`Cannot move task: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
                 }
-                e.target.value = '';
               }}
               className="rounded-md px-2 py-1 text-xs bg-bg-tertiary border border-border-default text-text-primary"
-              defaultValue=""
             >
               <option value="" disabled>Move to...</option>
               {MOVABLE_COLUMNS.map((col) => <option key={col} value={col}>{col}</option>)}

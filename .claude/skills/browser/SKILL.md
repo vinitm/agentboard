@@ -166,6 +166,20 @@ agent-browser --session scrape open https://example.com/data
 agent-browser --session scrape snapshot -i
 ```
 
+## Lightpanda CDP Setup
+
+The `agent-browser` CLI connects to Lightpanda (or any CDP-compatible browser) via the `--cdp` flag. In this project:
+
+1. Start Lightpanda: `npm run lightpanda:start` (port 9222)
+2. MCP config (`.mcp.json`) sets `AGENT_BROWSER_CDP=9222` so claude-flow browser tools auto-connect
+3. `node_modules/.bin` is on PATH so the MCP server finds the `agent-browser` binary
+
+```bash
+# Direct CLI usage with Lightpanda
+npx agent-browser --cdp 9222 --json open http://localhost:3000
+npx agent-browser --cdp 9222 --json snapshot -i
+```
+
 ## Integration with Claude Flow
 
 ### MCP Tools

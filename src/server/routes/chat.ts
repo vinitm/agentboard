@@ -540,11 +540,34 @@ function parseResponseJson(fullOutput: string): ParsedResponse {
     isComplete: false,
   };
 
+  // Try fenced JSON first (```json ... ```)
   const fenceMatch = fullOutput.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (!fenceMatch) return defaults;
+  // Fall back to last JSON object in the output (unfenced)
+  let jsonStr: string | null = fenceMatch?.[1]?.trim() ?? null;
+  if (!jsonStr) {
+    // Find last { ... } block that looks like our response JSON
+    const lastBrace = fullOutput.lastIndexOf('}');
+    if (lastBrace >= 0) {
+      // Walk backwards to find the matching opening brace
+      let depth = 0;
+      for (let i = lastBrace; i >= 0; i--) {
+        if (fullOutput[i] === '}') depth++;
+        else if (fullOutput[i] === '{') depth--;
+        if (depth === 0) {
+          const candidate = fullOutput.slice(i, lastBrace + 1);
+          // Only accept if it has specUpdates or isComplete — not just any random JSON
+          if (candidate.includes('specUpdates') || candidate.includes('isComplete')) {
+            jsonStr = candidate;
+          }
+          break;
+        }
+      }
+    }
+  }
+  if (!jsonStr) return defaults;
 
   try {
-    const parsed = JSON.parse(fenceMatch[1].trim()) as Record<string, unknown>;
+    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
 
     const specUpdates: Record<string, string> = {};
     if (parsed.specUpdates && typeof parsed.specUpdates === 'object') {

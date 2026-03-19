@@ -84,6 +84,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const creatingTaskRef = useRef(false);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -149,12 +150,19 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
       // If no taskId yet (new task), create a minimal task first
       let currentTaskId = taskId;
       if (!currentTaskId) {
-        const created = await api.post<Task>('/api/tasks', {
-          projectId,
-          title: text.slice(0, 80),
-        });
-        currentTaskId = created.id;
-        setTaskId(currentTaskId);
+        // Guard against double creation from rapid clicks
+        if (creatingTaskRef.current) return;
+        creatingTaskRef.current = true;
+        try {
+          const created = await api.post<Task>('/api/tasks', {
+            projectId,
+            title: text.slice(0, 80),
+          });
+          currentTaskId = created.id;
+          setTaskId(currentTaskId);
+        } finally {
+          creatingTaskRef.current = false;
+        }
       }
 
       // Start SSE stream

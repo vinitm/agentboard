@@ -102,6 +102,44 @@ docker pull lightpanda/browser:nightly
 LIGHTPANDA_DOCKER=1 npm run test:browser
 ```
 
+## MCP Browser Tools (agent-browser)
+
+The claude-flow MCP server exposes `browser_open`, `browser_snapshot`, `browser_click`, etc. These tools call the `agent-browser` CLI (installed as a dev dependency) which connects to Lightpanda via CDP.
+
+### Setup
+
+1. `agent-browser` is installed as a dev dependency (`npm install`)
+2. `.mcp.json` sets `AGENT_BROWSER_CDP=9222` and adds `node_modules/.bin` to `PATH`
+3. Start Lightpanda before using MCP browser tools:
+
+```bash
+npm run lightpanda:start
+```
+
+### Manual testing
+
+```bash
+# Open a page
+npx agent-browser --cdp 9222 --json open http://localhost:3000
+
+# Get accessibility snapshot
+npx agent-browser --cdp 9222 --json snapshot
+
+# Click an element ref
+npx agent-browser --cdp 9222 --json click @e2
+```
+
+### Via MCP tools
+
+Once Lightpanda is running and the claude-flow MCP server is connected, use the browser tools directly:
+
+- `browser_open` — navigate to a URL
+- `browser_snapshot` — get AI-optimized accessibility tree
+- `browser_click` — click an element by ref or selector
+- `browser_fill` — fill an input field
+
+See [.claude/skills/browser/SKILL.md](../.claude/skills/browser/SKILL.md) for the full command reference.
+
 ## Limitations
 
 - Lightpanda is in beta — some Web APIs may not be fully supported

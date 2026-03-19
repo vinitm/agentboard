@@ -36,6 +36,7 @@
     "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
     "@vitest/coverage-v8": "^4.1.0",
+    "agent-browser": "^0.21.2",
     "supertest": "^7.2.2",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
