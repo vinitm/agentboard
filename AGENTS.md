@@ -113,19 +113,6 @@ Commits to master are blocked by hook. See [development-workflow.md](.claude/rul
 - [ ] Patterns captured (`agentdb_pattern_store`, skill files)
 - [ ] Decision log updated if architectural choices made
 
-### Ruflo/Claude-Flow Tools by Step
-
-| Step | Tools to Use |
-|------|-------------|
-| Research | `memory_search`, `agentdb_pattern_search`, `hooks_intelligence_pattern_search` |
-| Plan | `swarm_init` + `agent_spawn` for parallel research, `task_create`, `workflow_run feature-implementation` |
-| TDD | `hooks_pre_edit`, `hooks_post_edit`, `worker_dispatch testgaps` |
-| Review | `analyze_diff_risk`, `analyze_diff_reviewers`, `aidefence_scan` |
-| Learn | `agentdb_pattern_store`, `agentdb_feedback`, `memory_store`, `hooks_intelligence_pattern_store` |
-| Multi-agent | `swarm_init`, `agent_spawn`, `task_orchestrate`, `claims_claim`, `coordination_sync` |
-| E2E test | `browser_open`, `browser_snapshot`, `browser_click` |
-| Background | `worker_dispatch` (testgaps, audit, optimize, document) |
-
 ### Backpressure — Stop and Ask When:
 - Change touches >5 unexpected files
 - Adding a new dependency
@@ -140,13 +127,16 @@ Commits to master are blocked by hook. See [development-workflow.md](.claude/rul
 - [ADR Index](docs/architecture/README.md) — why key decisions were made (8 ADRs)
 - [Decision Log](docs/decisions.md) — quick-reference decision diary (complements ADRs)
 
+### Codebase Reference (load on demand)
+- [Source Map](docs/source-map.md) — directory structure, key types, pipeline state machine
+- [API Routes](docs/api-routes.md) — all REST endpoints
+
 ### Gotchas (failure-backed)
 - [Index](docs/gotchas/README.md) — selection criteria and file list
 - [Imports](docs/gotchas/imports.md) | [Worker](docs/gotchas/worker.md) | [Subtasks](docs/gotchas/subtasks.md) | [Database](docs/gotchas/database.md)
 
 ### Ruflo (enabled by default)
 - [Ruflo Setup](docs/ruflo-setup.md) — hooks, memory, daemon, neural models, debugging
-- [Ruflo Replication](docs/ruflo-replication-guide.md) — replicate ruflo to other repos
 - Config: `ruflo.enabled` in `.agentboard/config.json` (set `false` to disable)
 
 ### Rules (auto-loaded per task)

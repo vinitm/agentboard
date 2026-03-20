@@ -1,6 +1,6 @@
 # Agent Orchestration Architecture
 
-This document describes how agentboard orchestrates AI coding agents through its autonomous pipeline — from conversational spec building through planning, per-subtask implementation with inline fixes, code quality review, and PR creation.
+This document describes how agentboard orchestrates AI coding agents through its autonomous pipeline — from conversational spec building through planning, implementation with inline fixes, code quality review, and PR creation.
 
 ## System Overview
 
@@ -107,30 +107,26 @@ A task moves through the pipeline stages below. The happy path is linear; failur
                                               │ implementing │
                                               └──────┬───────┘
                                                      │
-                              ┌───────────────────────┼──────────────────┐
-                              │  Per-Subtask Loop     │                  │
-                              │                       ▼                  │
-                              │              ┌────────────────┐          │
-                              │              │   implement    │          │
-                              │              └───────┬────────┘          │
-                              │                      │                   │
-                              │              ┌───────▼────────┐          │
-                              │              │    checks      │          │
-                              │              └───────┬────────┘          │
-                              │                      │                   │
-                              │           ┌──────────┼──────────┐        │
-                              │           │ pass     │ fail     │        │
-                              │           │          ▼          │        │
-                              │           │   (inline fix →     │        │
-                              │           │    re-check)        │        │
-                              │           │                     │        │
-                              │           ▼                     ▼        │
-                              │  ┌────────────────┐     ┌────────┐      │
-                              │  │  code_quality  │     │blocked/│      │
-                              │  │ (single review)│     │failed  │      │
-                              │  └────────┬───────┘     └────────┘      │
-                              │           │                              │
-                              └───────────┼──────────────────────────────┘
+                                                     │
+                                              ┌──────▼───────┐
+                                              │   implement  │
+                                              └──────┬───────┘
+                                                     │
+                                              ┌──────▼───────┐
+                                              │    checks    │
+                                              └──────┬───────┘
+                                                     │
+                                          ┌──────────┼──────────┐
+                                          │ pass     │ fail     │
+                                          │          ▼          │
+                                          │   (inline fix →     │
+                                          │    re-check)        │
+                                          │                     │
+                                          ▼                     ▼
+                                 ┌────────────────┐     ┌────────┐
+                                 │  code_quality  │     │blocked/│
+                                 │ (single review)│     │failed  │
+                                 └────────┬───────┘     └────────┘
                                           │
                                           ▼
                               ┌──────────────────┐
@@ -155,19 +151,6 @@ A task moves through the pipeline stages below. The happy path is linear; failur
                       └──────┘
 ```
 
-### Subtask Pipeline
-
-Subtasks follow a per-subtask pipeline with inline fixes instead of a separate retry loop:
-
-```
-backlog → ready → implement → checks → (inline fix on failure) → code_quality → done | failed | blocked
-```
-
-- Subtasks execute serially (first = `ready`, rest = `backlog`)
-- On completion, the next backlog sibling is promoted to `ready`
-- On failure, remaining backlog siblings are cancelled
-- Implementer returns structured status: DONE, NEEDS_CONTEXT, or BLOCKED
-- Parent creates a single PR after all subtasks complete, preceded by a final review of the full changeset
 
 ## Pipeline Stages
 
@@ -200,7 +183,7 @@ Reviews the finalized spec for completeness, clarity, and feasibility before pla
 ### Stage 3: Planning
 
 **File:** `src/worker/stages/planner.ts`
-**Prompt:** `prompts/planner.md`
+**Prompt:** `prompts/planner-v2.md`
 **Model:** opus
 
 Analyzes the spec and produces an implementation plan:
@@ -208,30 +191,32 @@ Analyzes the spec and produces an implementation plan:
 ```typescript
 {
   planSummary: string;                                    // High-level approach
-  subtasks: Array<{ title: string; description: string }>;// Decomposition (max 10)
+  confidence: number;                                     // 0-1 confidence score
+  steps: Array<{ title: string; description: string; files?: string[] }>; // Implementation steps
   assumptions: string[];                                  // Stated assumptions
-  fileHints: string[];                                    // Files to examine
+  fileMap: string[];                                      // All files across all steps
 }
 ```
 
-If subtasks are returned, the worker creates child tasks. The first gets status `ready`; the rest get `backlog` for serial execution. The parent waits for all subtasks to complete.
+Steps are implementation guidance for the task, not separate tasks. The planner decomposes the work into logical steps that the implementer follows sequentially within a single task.
 
 If the planner has clarifying questions, the task moves to `blocked` and the user answers via the UI.
 
-### Stage 4: Per-Subtask Implementation (Implement → Checks → Inline Fix)
+### Stage 4: Implementation (Implement → Checks → Inline Fix)
 
 **Stages:** `src/worker/stages/implementer.ts`, `src/worker/stages/checks.ts`
 
-Each subtask goes through implement → checks in sequence. There is no separate retry loop orchestrator (the old "ralph loop" has been removed).
+Each task goes through implement → checks in sequence. There is no separate retry loop orchestrator (the old "ralph loop" has been removed).
 
 #### Implementer
 
-**Prompt:** `prompts/implementer.md`
+**Prompt:** `prompts/implementer-v2.md`
 **Model:** opus
 
 The implementer writes code directly in the worktree using Claude Code's file editing capabilities. It returns a structured status:
 
 - **DONE** — implementation is complete, proceed to checks
+- **DONE_WITH_CONCERNS** — implementation complete but with noted concerns
 - **NEEDS_CONTEXT** — missing information needed to continue
 - **BLOCKED** — cannot proceed due to an external dependency or issue
 
@@ -256,19 +241,19 @@ Secret detection scans the git diff for patterns like AWS keys (`AKIA...`), PEM 
 
 When checks fail, the implementer is re-invoked with failure context to fix the issues inline. This replaces the old ralph loop's separate iteration mechanism — fixes happen within the same flow rather than as numbered retry iterations.
 
-### Stage 5: Code Quality Review (Per-Subtask)
+### Stage 5: Code Quality Review
 
 **File:** `src/worker/stages/code-quality.ts`
 **Model:** opus
 
-A single reviewer evaluates code quality for each subtask after checks pass. This replaces the old 3-reviewer panel (Architect, QA, Security) that required unanimous approval. The code quality reviewer covers design, testing, and security concerns in a single pass.
+A single reviewer evaluates code quality for each task after checks pass. This replaces the old 3-reviewer panel (Architect, QA, Security) that required unanimous approval. The code quality reviewer covers design, testing, and security concerns in a single pass.
 
 ### Stage 6: Final Review
 
 **File:** `src/worker/stages/final-review.ts`
 **Model:** opus
 
-After all subtasks complete, a final review examines the full changeset holistically before PR creation. This catches cross-cutting concerns that per-subtask reviews might miss.
+After code quality passes, a final review examines the full changeset holistically — providing holistic verification against the spec before PR creation.
 
 ### Stage 7: PR Creation
 
@@ -281,8 +266,6 @@ After all subtasks complete, a final review examines the full changeset holistic
 4. Run `gh pr create` (draft if `config.prDraft`)
 5. Store PR URL and number as artifacts
 
-For parent tasks with subtasks, a single PR is created after all subtasks complete (after final review).
-
 ### Stage 8: Auto-Merge Gate
 
 **File:** `src/worker/auto-merge.ts`
@@ -293,7 +276,6 @@ Evaluates whether the task can skip human review. **All criteria must pass:**
 2. `task.riskLevel === 'low'`
 3. No security-sensitive files touched (`.env`, `secret`, `credential`, `auth`, `password`, `token`, `.pem`, `.key`)
 4. Code quality and final review passed with no blocking issues
-5. Task is not a parent with subtasks
 
 If the gate passes → task moves directly to `done`.
 Otherwise → task moves to `needs_human_review`.
@@ -353,16 +335,15 @@ New REST endpoints for stage-wise log viewing:
 
 ### GET /api/tasks/:id/stages
 
-Lists all stages executed for a task (including subtasks):
+Lists all stages executed for a task:
 
 ```typescript
 {
   stages: [
     {
       id: "sl-001",
-      taskId: "task-abc123",
+      taskId: 1,
       stage: "spec_review",
-      subtaskId: null,
       attempt: 1,
       status: "completed",
       summary: "Spec validated: 4 acceptance criteria...",
@@ -373,12 +354,11 @@ Lists all stages executed for a task (including subtasks):
     },
     {
       id: "sl-002",
-      taskId: "task-abc123",
+      taskId: 1,
       stage: "planning",
-      subtaskId: null,
       attempt: 1,
       status: "completed",
-      summary: "Decomposed into 3 subtasks...",
+      summary: "Created implementation plan with 3 steps...",
       tokensUsed: 2100,
       durationMs: 8000,
       startedAt: "2026-03-17T10:00:10Z",
@@ -386,9 +366,8 @@ Lists all stages executed for a task (including subtasks):
     },
     {
       id: "sl-003",
-      taskId: "task-abc123",
+      taskId: 1,
       stage: "implement",
-      subtaskId: "sub-001",
       attempt: 1,
       status: "completed",
       summary: null,
@@ -401,7 +380,7 @@ Lists all stages executed for a task (including subtasks):
 }
 ```
 
-Sorted by `startedAt`. Subtasks appear in the same list, identified by `subtaskId` field.
+Sorted by `startedAt`.
 
 ### GET /api/tasks/:id/stages/:stageLogId/logs
 
@@ -452,7 +431,6 @@ Each task gets an isolated git worktree:
 ```
 
 - Created from `config.baseBranch` at task start
-- Subtasks share the parent's worktree (serial execution ensures no conflicts)
 - Cleaned up on task completion (`git worktree remove --force`)
 - Stale worktrees pruned on worker startup
 
@@ -506,10 +484,10 @@ Claude Code ──(stdout chunks)──▶ onOutput callback
 | `task:created` | `{ task }` | New task created |
 | `task:updated` | `{ taskId, status }` | Status change |
 | `task:event` | `{ type, payload }` | Stage milestones |
-| `run:log` | `{ taskId, runId, stage, subtaskId, chunk, timestamp }` | Claude output chunks (now with stage context) |
-| `stage:transition` | `{ taskId, stage, subtaskId, status, summary, durationMs, tokensUsed }` | Stage lifecycle (running → completed/failed) |
+| `run:log` | `{ taskId, runId, stage, chunk, timestamp }` | Claude output chunks (now with stage context) |
+| `stage:transition` | `{ taskId, stage, status, summary, durationMs, tokensUsed }` | Stage lifecycle (running → completed/failed) |
 
-**Task Event Types:** `status_changed`, `spec_generated`, `assumptions_made`, `subtasks_created`, `checks_passed`, `checks_failed`, `inline_fix_applied`, `code_quality_passed`, `code_quality_failed`, `final_review_completed`, `pr_created`, `auto_merged`, `task_error`
+**Task Event Types:** `status_changed`, `spec_generated`, `assumptions_made`, `checks_passed`, `checks_failed`, `inline_fix_applied`, `code_quality_passed`, `code_quality_failed`, `final_review_completed`, `pr_created`, `auto_merged`, `task_error`
 
 ## Task Logging & Stage Runner
 
@@ -518,25 +496,20 @@ Claude Code ──(stdout chunks)──▶ onOutput callback
 ### Per-Stage Log Files
 
 Each stage execution writes to its own log file:
-- **Task-level stages:** `.agentboard/logs/{taskId}/{stage}.log` (e.g., `spec_review.log`)
-- **Subtask-level stages:** `.agentboard/logs/{taskId}/subtask-{subtaskId}/{stage}.log`
-- **Retries:** Attempts > 1 append to `{stage}-{attempt}.log` (e.g., `implement-2.log`)
+- **Stage logs:** `.agentboard/logs/{taskId}/{stage}.log` (e.g., `spec_review.log`)
+- **Retries:** Attempts > 1 append to `{stage}-{attempt}.log` (e.g., `implementing-2.log`)
 
 Example structure:
 ```
 .agentboard/logs/
-└── task-abc123/
-    ├── spec_review.log        # Spec review stage
-    ├── planning.log           # Planning stage
-    ├── subtask-sub001/
-    │   ├── implement.log      # First attempt
-    │   ├── implement-2.log    # Retry after inline fix
-    │   ├── checks.log
-    │   └── code_quality.log
-    ├── subtask-sub002/
-    │   ├── implement.log
-    │   ├── checks.log
-    │   └── code_quality.log
+└── {taskId}/
+    ├── spec_review.log
+    ├── planning.log
+    ├── implementing.log
+    ├── implementing-2.log     # Retry after quality fix
+    ├── checks.log
+    ├── inline_fix.log
+    ├── code_quality.log
     ├── final_review.log
     └── pr_creation.log
 ```
@@ -546,13 +519,13 @@ Example structure:
 **File:** `src/worker/stage-runner.ts`
 
 Wraps each stage execution with:
-1. **Stage log creation** — record in `stage_logs` DB table with metadata (stage, subtaskId, attempt, filePath, startedAt)
-2. **onOutput streaming** — append to log file + broadcast `run:log` event with stage/subtaskId context
+1. **Stage log creation** — record in `stage_logs` DB table with metadata (stage, attempt, filePath, startedAt)
+2. **onOutput streaming** — append to log file + broadcast `run:log` event with stage context
 3. **Stage transition** — broadcast `stage:transition` event when stage starts/completes
 4. **Metadata capture** — optionally extract summary and token usage via `summarize()` callback
 
 ```typescript
-const runner = createStageRunner({ taskId, projectId, subtaskId, io, db, logsDir, projectRoot });
+const runner = createStageRunner({ taskId, projectId, io, db, logsDir, projectRoot });
 const result = await runner.execute(
   'implement',
   (onOutput) => implementStage(onOutput),
@@ -567,11 +540,10 @@ New `stage_logs` table provides fast stage lookup:
 ```sql
 CREATE TABLE stage_logs (
   id TEXT PRIMARY KEY,
-  task_id TEXT,
+  task_id INTEGER,
   project_id TEXT,
   run_id TEXT,
   stage TEXT,
-  subtask_id TEXT,
   attempt INTEGER,
   file_path TEXT,
   status TEXT,           -- 'running' | 'completed' | 'failed' | 'skipped'
@@ -595,7 +567,6 @@ Log retention: 30 days (cleaned on worker startup).
 On worker startup:
 
 1. **Stale task recovery** — tasks claimed >30 minutes ago in an agent-controlled status (`spec_review`, `planning`, `implementing`, `checks`, `code_quality`, `final_review`) are reset to `ready` with claims cleared
-2. **Stalled subtask chain recovery** — parents in `implementing` with backlog children but no active children get their next backlog child promoted to `ready`
 
 ## Worker Memory
 
@@ -624,10 +595,10 @@ Tracks recurring failure patterns and project conventions to improve future agen
 | Table | Purpose |
 |-------|---------|
 | `projects` | Registered project repositories (for multi-project indexing) |
-| `tasks` | Task state, spec, ownership, parent-child relationships (cross-project) |
+| `tasks` | Task state, spec, ownership (cross-project) |
 | `runs` | Stage execution records (model, tokens, input/output, timing) |
 | `artifacts` | Structured outputs (specs, plans, review results, PR URLs) |
-| `stage_logs` | Per-stage execution metadata (stage, subtaskId, attempt, file path, status, duration, tokens) — enables stage-wise log streaming in UI |
+| `stage_logs` | Per-stage execution metadata (stage, attempt, file path, status, duration, tokens) — enables stage-wise log streaming in UI |
 | `git_refs` | Branch and worktree tracking per task |
 | `events` | Task lifecycle events for timeline reconstruction |
 | `task_logs` | Log file metadata (path, size) |
@@ -646,12 +617,10 @@ The database is accessed by:
 |---------|-------|-----|
 | **Inline fix on failure** | Implementer + checks | Fixes happen in-flow rather than numbered retry iterations; simpler orchestration |
 | **Structured implementer status** | Implementer | DONE/NEEDS_CONTEXT/BLOCKED enables graceful handling of edge cases |
-| **Per-subtask code quality** | Code quality stage | Catches issues at the subtask level before they compound |
-| **Full-changeset final review** | Final review stage | Catches cross-cutting concerns that per-subtask reviews miss |
+| **Full-changeset final review** | Final review stage | Holistic verification against the spec before PR creation |
 | **Single model (opus)** | All stages | Consistent quality, simpler configuration |
 | **Append-only logs** | Log writer, learning log | Safe concurrent writes without locking |
 | **Atomic task claiming** | Worker loop | Conditional DB update prevents double-pickup |
-| **Cascading subtask execution** | Worker loop | Serial execution via promote-on-complete without extra orchestration |
 | **Event-driven UI** | Socket.IO | No frontend polling; all state changes broadcast immediately |
 | **Immutable task updates** | Worker loop | New DB records, re-fetch after mutations to avoid stale objects |
 
