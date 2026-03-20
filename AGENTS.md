@@ -1,3 +1,5 @@
+<!-- Context budget: this file + .claude/rules/**/*.md auto-load every session.
+     Target: <750 lines. Current: 719 lines. -->
 # Agentboard
 
 Kanban board orchestrating AI coding agents: spec → plan → review → implement → checks → code quality → final review → PR.
@@ -80,45 +82,10 @@ See [docs/architecture/agent-orchestration.md](docs/architecture/agent-orchestra
 
 ## Agent Triggers
 
-- Modifying `src/worker/stages/` → planner + architect (pipeline changes are high-risk)
-- Modifying `src/db/queries.ts` or `src/db/schema.ts` → security-reviewer (SQL injection risk)
-- Modifying `prompts/` → code-reviewer (prompt quality matters)
-- Adding new API routes → security-reviewer + code-reviewer in parallel
-
-## Never Do
-
-- Don't add dependencies without discussion
-- Don't modify the worker loop's 5-second polling or stage ordering
-- Don't commit directly to master — feature branches per task (enforced by pre-bash hook)
-- Don't hardcode model names — use config.modelDefaults and model-selector.ts
-- Don't create new DB connections — use `getDatabase()` singleton
-- Don't skip workflow steps without explicit user approval
-- Don't commit without `npm test` and `npm run build` passing
-- Don't skip learning capture after significant tasks
-
-## Workflow (Mandatory)
-
-Every task follows: **Research → Plan → Branch → TDD → Review → Learn → Commit**
-Branch creation is deferred to implementation — no branch during research/planning.
-Commits to master are blocked by hook. See [development-workflow.md](.claude/rules/common/development-workflow.md) for full details (auto-loaded).
-
-### Quick Checklist
-- [ ] Searched for existing solutions (codebase, npm, GitHub)
-- [ ] Plan created and user-approved (use **planner** agent)
-- [ ] Feature branch created before first code change (`agentboard/<task-slug>`)
-- [ ] Tests written first, all passing (`npm test`)
-- [ ] **code-reviewer** agent run (MANDATORY)
-- [ ] **security-reviewer** run if touching auth/APIs/DB/worker
-- [ ] Build passes (`npm run build`)
-- [ ] Patterns captured (`agentdb_pattern_store`, skill files)
-- [ ] Decision log updated if architectural choices made
-
-### Backpressure — Stop and Ask When:
-- Change touches >5 unexpected files
-- Adding a new dependency
-- Modifying worker loop polling or stage ordering
-- Tests fail after 3 attempts
-- Changing the pipeline state machine
+- Modifying `src/worker/stages/` → MUST run planner + architect agents (pipeline changes are high-risk)
+- Modifying `src/db/queries.ts` or `src/db/schema.ts` → MUST run security-reviewer agent (SQL injection risk)
+- Modifying `prompts/` → MUST run code-reviewer agent (prompt quality matters)
+- Adding new API routes → MUST run security-reviewer + code-reviewer agents in parallel
 
 ## References
 
@@ -134,10 +101,6 @@ Commits to master are blocked by hook. See [development-workflow.md](.claude/rul
 ### Gotchas (failure-backed)
 - [Index](docs/gotchas/README.md) — selection criteria and file list
 - [Imports](docs/gotchas/imports.md) | [Worker](docs/gotchas/worker.md) | [Subtasks](docs/gotchas/subtasks.md) | [Database](docs/gotchas/database.md)
-
-### Ruflo (enabled by default)
-- [Ruflo Setup](docs/ruflo-setup.md) — hooks, memory, daemon, neural models, debugging
-- Config: `ruflo.enabled` in `.agentboard/config.json` (set `false` to disable)
 
 ### Rules (auto-loaded per task)
 - [.claude/rules/common/](.claude/rules/common/) — coding style, git, security, testing, workflow, hooks, learning
