@@ -1,6 +1,6 @@
 import React from 'react';
 
-type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'warning' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'warning' | 'ghost';
 type ButtonSize = 'sm' | 'md';
 
 interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -11,7 +11,7 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-accent-blue text-white hover:bg-blue-600 focus-visible:ring-accent-blue',
+  primary: 'bg-accent-blue text-white hover:bg-accent-blue-hover focus-visible:ring-accent-blue',
   secondary: 'border border-border-hover text-text-secondary hover:text-text-primary hover:bg-bg-tertiary focus-visible:ring-accent-blue',
   danger: 'border border-accent-red text-accent-red hover:bg-accent-red hover:text-white focus-visible:ring-accent-red',
   warning: 'border border-accent-amber text-accent-amber hover:bg-accent-amber hover:text-white focus-visible:ring-accent-amber',

@@ -58,8 +58,8 @@ function formatCost(dollars: number): string {
 }
 
 const STAGE_COLORS: Record<string, string> = {
-  spec_review: 'bg-blue-500',
-  planning: 'bg-purple-500',
+  spec_review: 'bg-accent-blue',
+  planning: 'bg-accent-purple',
   implementing: 'bg-green-500',
   checks: 'bg-yellow-500',
   inline_fix: 'bg-orange-500',

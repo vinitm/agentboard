@@ -145,7 +145,7 @@ export const Settings: React.FC = () => {
 
         {/* Save bar */}
         <div className="sticky bottom-0 bg-bg-primary border-t border-border-default py-3 mt-6 flex items-center gap-3">
-          <button onClick={save} disabled={saving} className="px-5 py-2 rounded-md text-sm font-semibold bg-accent-blue text-white hover:bg-blue-600 transition-colors disabled:opacity-50">
+          <button onClick={save} disabled={saving} className="px-5 py-2 rounded-md text-sm font-semibold bg-accent-blue text-white hover:bg-accent-blue-hover transition-colors disabled:opacity-50">
             {saving ? 'Saving...' : 'Save Settings'}
           </button>
           {error && <span className="text-accent-red text-sm">{error}</span>}

@@ -170,7 +170,7 @@ export const StageAccordion: React.FC<Props> = ({ taskId }) => {
         <div className="flex justify-end">
           <button
             onClick={reengageFollow}
-            className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent-blue text-white hover:bg-blue-600 transition-colors"
+            className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent-blue text-white hover:bg-accent-blue-hover transition-colors"
           >
             Follow live ↓
           </button>

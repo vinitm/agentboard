@@ -11,7 +11,7 @@ const SEVERITY_STYLES: Record<Severity, { badge: string; dot: string }> = {
   critical: { badge: 'bg-red-500/15 text-red-400 ring-1 ring-red-500/20', dot: 'bg-red-400' },
   high:     { badge: 'bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/20', dot: 'bg-orange-400' },
   medium:   { badge: 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20', dot: 'bg-amber-400' },
-  low:      { badge: 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/20', dot: 'bg-blue-400' },
+  low:      { badge: 'bg-accent-blue/15 text-accent-blue ring-1 ring-accent-blue/20', dot: 'bg-accent-blue' },
   info:     { badge: 'bg-gray-500/15 text-gray-400 ring-1 ring-gray-500/20', dot: 'bg-gray-400' },
 };
 

@@ -433,7 +433,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
                       className={`p-2 rounded-lg transition-colors cursor-pointer ${
                         loading || !inputValue.trim()
                           ? 'text-text-tertiary bg-bg-tertiary'
-                          : 'text-white bg-accent-blue hover:bg-blue-600'
+                          : 'text-white bg-accent-blue hover:bg-accent-blue-hover'
                       }`}
                       title="Send (Enter)"
                     >
@@ -573,7 +573,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
                   className={`px-4 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer ${
                     submitting
                       ? 'bg-accent-blue/50 text-white/60'
-                      : 'bg-accent-blue text-white hover:bg-blue-600'
+                      : 'bg-accent-blue text-white hover:bg-accent-blue-hover'
                   }`}
                 >
                   {submitting ? 'Saving...' : phase === 'confirming' ? (isEditing ? 'Update Task' : 'Create Task') : `Review & Create (${filled}/3)`}

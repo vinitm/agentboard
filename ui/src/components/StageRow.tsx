@@ -171,7 +171,7 @@ export const StageRow: React.FC<Props> = ({ stageLog, taskId, isActive, isExpand
             {userScrolledUp && isActive && (
               <button
                 onClick={scrollToBottom}
-                className="absolute bottom-3 right-3 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent-blue text-white hover:bg-blue-600 transition-colors shadow-lg"
+                className="absolute bottom-3 right-3 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent-blue text-white hover:bg-accent-blue-hover transition-colors shadow-lg"
               >
                 Follow live ↓
               </button>

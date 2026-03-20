@@ -209,7 +209,7 @@ export const TopBar: React.FC<Props> = ({
           {onNewTask && (
             <button
               onClick={onNewTask}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-semibold bg-accent-blue text-white rounded-lg hover:bg-blue-600 transition-colors duration-150"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-semibold bg-accent-blue text-white rounded-lg hover:bg-accent-blue-hover transition-colors duration-150"
             >
               <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />

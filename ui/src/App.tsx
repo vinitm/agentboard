@@ -181,7 +181,7 @@ const AppContent: React.FC = () => {
                     </div>
                     <h3 className="text-base font-semibold text-text-primary mb-1">Page not found</h3>
                     <p className="text-sm text-text-secondary mb-4">The page you're looking for doesn't exist.</p>
-                    <a href="/" className="px-4 py-2 text-sm font-semibold bg-accent-blue text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    <a href="/" className="px-4 py-2 text-sm font-semibold bg-accent-blue text-white rounded-lg hover:bg-accent-blue-hover transition-colors">
                       Back to Tasks
                     </a>
                   </div>
