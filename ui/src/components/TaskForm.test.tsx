@@ -104,4 +104,12 @@ describe('TaskForm', () => {
     render(<TaskForm {...defaultProps} initial={baseTask} />);
     expect(screen.getByText('Edit Task')).toBeTruthy();
   });
+
+  it('Cancel on fresh form (no chat progress) calls onCancel without confirm', () => {
+    const onCancel = vi.fn();
+    render(<TaskForm {...defaultProps} onCancel={onCancel} />);
+    // Fresh form: only welcome message, no user input — should cancel directly
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
 });

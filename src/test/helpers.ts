@@ -14,6 +14,7 @@ import { createRunRoutes } from '../server/routes/runs.js';
 import { createArtifactRoutes } from '../server/routes/artifacts.js';
 import { createEventRoutes } from '../server/routes/events.js';
 import { createStageLogRoutes } from '../server/routes/stage-logs.js';
+import { createChatRoutes } from '../server/routes/chat.js';
 import type { AgentboardConfig } from '../types/index.js';
 
 const execFileAsync = promisify(execFile);
@@ -118,6 +119,7 @@ export function createTestApp(db: Database.Database) {
 
   app.use('/api/projects', createProjectRoutes(db));
   app.use('/api/tasks', createTaskRoutes(db, io));
+  app.use('/api/tasks', createChatRoutes(db, io));
   app.use('/api/runs', createRunRoutes(db));
   app.use('/api/artifacts', createArtifactRoutes(db));
   app.use('/api/events', createEventRoutes(db));

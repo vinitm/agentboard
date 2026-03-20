@@ -191,6 +191,32 @@ describe('TaskPage', () => {
     });
   });
 
+  it('shows "Continue Spec" button for backlog task with chatSessionId', async () => {
+    setupDefaultMocks({ ...baseTask, status: 'backlog', chatSessionId: 'session-abc' });
+    renderTaskPage();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /continue spec/i })).toBeTruthy();
+    });
+  });
+
+  it('does not show "Continue Spec" for backlog task without chatSessionId', async () => {
+    setupDefaultMocks({ ...baseTask, status: 'backlog', chatSessionId: null });
+    renderTaskPage();
+    await waitFor(() => {
+      expect(screen.getByText('Test Task Title')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: /continue spec/i })).toBeNull();
+  });
+
+  it('shows "Edit" button instead of "Continue Spec" for non-backlog task', async () => {
+    setupDefaultMocks({ ...baseTask, status: 'done', chatSessionId: 'session-abc' });
+    renderTaskPage();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /edit/i })).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: /continue spec/i })).toBeNull();
+  });
+
   it('stages tab section present in DOM', async () => {
     setupDefaultMocks();
     renderTaskPage();

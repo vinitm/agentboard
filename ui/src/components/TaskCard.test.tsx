@@ -207,4 +207,29 @@ describe('TaskCard', () => {
     render(<TaskCard task={{ ...baseTask, priority: 3 }} />, { wrapper });
     expect(screen.getByText('P3')).toBeTruthy();
   });
+
+  // Draft spec indicator
+  it('shows "Spec in progress" for backlog task with chatSessionId', () => {
+    render(
+      <TaskCard task={{ ...baseTask, status: 'backlog', chatSessionId: 'session-abc' }} />,
+      { wrapper }
+    );
+    expect(screen.getByText('Spec in progress')).toBeTruthy();
+  });
+
+  it('does not show "Spec in progress" for backlog task without chatSessionId', () => {
+    render(
+      <TaskCard task={{ ...baseTask, status: 'backlog', chatSessionId: null }} />,
+      { wrapper }
+    );
+    expect(screen.queryByText('Spec in progress')).toBeNull();
+  });
+
+  it('does not show "Spec in progress" for non-backlog task with chatSessionId', () => {
+    render(
+      <TaskCard task={{ ...baseTask, status: 'implementing', chatSessionId: 'session-abc' }} />,
+      { wrapper }
+    );
+    expect(screen.queryByText('Spec in progress')).toBeNull();
+  });
 });

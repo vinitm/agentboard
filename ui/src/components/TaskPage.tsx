@@ -112,6 +112,10 @@ export const TaskPage: React.FC = () => {
     ])
       .then(([t, r, e, msgs]) => {
         setTask(t); setRuns(r); setEvents(e); setChatCount(msgs.length);
+        // Auto-open spec editor for draft tasks with in-progress chat
+        if (t.status === 'backlog' && t.chatSessionId) {
+          setEditing(true);
+        }
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load task'))
       .finally(() => setLoading(false));
@@ -214,7 +218,13 @@ export const TaskPage: React.FC = () => {
           )}
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          {!isActive && (
+          {task.status === 'backlog' && task.chatSessionId && (
+            <button onClick={() => setEditing(true)}
+              className="px-3 py-1 rounded-lg text-xs font-semibold bg-accent-blue text-white hover:bg-accent-blue-hover transition-colors">
+              Continue Spec
+            </button>
+          )}
+          {!isActive && !(task.status === 'backlog' && task.chatSessionId) && (
             <button onClick={() => setEditing(true)}
               className="px-3 py-1 rounded-lg text-xs font-semibold border border-border-hover text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors">
               Edit

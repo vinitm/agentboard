@@ -168,10 +168,18 @@ Spec authoring happens conversationally via the chat UI. The PM describes the ta
 
 **Chat Session Persistence:** Conversational state persists across messages via Claude Code native session management (`--session-id` on first message, `--resume` on subsequent). Session ID stored on `tasks.chat_session_id`. If session resume fails, graceful fallback replays full chat history from `chat_messages` table to seed a fresh session.
 
+**Mid-Session Close Recovery:** If the user closes the chat mid-stream (browser tab, cancel button, navigation), partial progress is preserved:
+- User messages are persisted synchronously before spawning Claude (never lost).
+- Streaming `text_delta` chunks are accumulated server-side. On client disconnect, the accumulated partial response is saved to `chat_messages`.
+- The task is never deleted if a message was sent (`messageSentRef` in TaskForm).
+- On return, the task shows in the Queued column with a "Spec in progress" indicator. Navigating to the task auto-opens the TaskForm with chat history loaded from DB.
+
+**Missing JSON Block Recovery:** Every brainstorming response must end with a `specUpdates` JSON block. When a response lacks one (truncation, role drift), the server automatically sends a corrective follow-up via `--resume` on the same session, prompting the bot to emit only the JSON block. This recovers spec fields without user intervention.
+
 **Brainstorming Agent Guardrails:**
 - **Tool restrictions:** Read-only tools only (Read, Glob, Grep). No file writes, no shell commands.
-- **Role boundaries:** System prompt (`prompts/brainstorming-system.md`) enforces conversation-only mode. Agent may read codebase for context but never suggests code changes or edits.
-- **Completion:** Sets `isComplete: true` when all 3 spec fields substantive + at least 2 clarifying questions asked, or user explicitly says "done".
+- **Role boundaries:** System prompt (`prompts/brainstorming-system.md`) enforces conversation-only mode with strong primacy/recency framing. Agent may read codebase for context but never implements, even if the user explicitly requests it. Implementation requests trigger spec finalization (`isComplete: true`) instead.
+- **Completion:** Sets `isComplete: true` when all 3 spec fields substantive + at least 2 clarifying questions asked, or user explicitly says "done", "implement it", etc.
 
 ### Stage 2: Spec Review
 

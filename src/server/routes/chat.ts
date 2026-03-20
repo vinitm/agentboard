@@ -13,11 +13,18 @@ import { broadcast } from '../ws.js';
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const promptsDir = path.resolve(currentDir, '..', '..', '..', '..', 'prompts');
 
-// Load system prompt once at module init
-const systemPrompt = fs.readFileSync(
-  path.join(promptsDir, 'brainstorming-system.md'),
-  'utf-8'
-);
+// Lazy-load system prompt (deferred so module can be imported in test environments
+// where the prompts directory may not exist at the expected relative path)
+let _systemPrompt: string | null = null;
+function getSystemPrompt(): string {
+  if (_systemPrompt === null) {
+    _systemPrompt = fs.readFileSync(
+      path.join(promptsDir, 'brainstorming-system.md'),
+      'utf-8'
+    );
+  }
+  return _systemPrompt;
+}
 
 // Concurrency guard: one in-flight chat request per task
 const inFlightTasks = new Set<number>();
@@ -141,7 +148,7 @@ export function createChatRoutes(db: Database.Database, io: Server): Router {
     child.stdin.write(stdinContent);
     child.stdin.end();
 
-    const streamState: StreamState = { fullText: '', resumeFailed: false, resumeError: '' };
+    const streamState: StreamState = { fullText: '', streamedText: '', resumeFailed: false, resumeError: '' };
     let stderr = '';
 
     const timer = setTimeout(() => {
@@ -170,8 +177,10 @@ export function createChatRoutes(db: Database.Database, io: Server): Router {
       stderr += chunk.toString();
     });
 
-    // Handle client disconnect
+    // Handle client disconnect — kill child but let child.on('close') save partial progress
+    let clientDisconnected = false;
     res.on('close', () => {
+      clientDisconnected = true;
       clearTimeout(timer);
       child.kill();
       inFlightTasks.delete(task.id);
@@ -198,7 +207,10 @@ export function createChatRoutes(db: Database.Database, io: Server): Router {
         return;
       }
 
-      if (code !== 0 && !streamState.fullText) {
+      // Use result text if available, otherwise fall back to accumulated stream text
+      const responseText = streamState.fullText || streamState.streamedText;
+
+      if (code !== 0 && !responseText) {
         console.log(`[http] /api/tasks/${task.id}/chat/stream failed: code=${code} stderr=${stderr}`);
         sendSSE(res, {
           type: 'done',
@@ -214,47 +226,70 @@ export function createChatRoutes(db: Database.Database, io: Server): Router {
       }
 
       // Parse the full response text for the JSON block
-      const parsed = parseResponseJson(streamState.fullText);
-      const messageText = extractMessageText(streamState.fullText, parsed.message);
+      const parsed = parseResponseJson(responseText);
+      const messageText = extractMessageText(responseText, parsed.message);
 
-      // Persist assistant message
-      queries.createChatMessage(db, {
-        taskId: task.id,
-        role: 'assistant',
-        content: messageText,
-      });
+      // Detect missing JSON block — covers both truncation AND role violations.
+      // When the bot implements instead of speccing, it also skips the JSON block.
+      const hasJsonBlock = Object.keys(parsed.specUpdates).length > 0 || parsed.isComplete;
+
+      if (messageText.trim() && !hasJsonBlock) {
+        // Response had no JSON block. Could be truncation or the agent going off-script.
+        // Save the raw message, then spawn a corrective follow-up to recover spec fields.
+        // Runs even when client disconnected — spec recovery is server-side.
+        console.log(`[http] /api/tasks/${task.id}/chat/stream missing JSON block, sending corrective follow-up`);
+
+        queries.createChatMessage(db, {
+          taskId: task.id,
+          role: 'assistant',
+          content: messageText,
+        });
+
+        const correctionPrompt = [
+          'STOP. Your previous response is missing the required JSON block.',
+          'You are a SPEC BUILDER. Do NOT write code, implement, or suggest file changes.',
+          'Emit ONLY the JSON block below — no other text, no explanation, no code.',
+          'Fill all spec fields based on what has been discussed. Leave "" for fields not yet covered.',
+          'If the user asked to implement, build, ship, or is done — set isComplete to true.',
+          '',
+          '```json',
+          '{"specUpdates":{"goal":"...","userScenarios":"...","successCriteria":"..."},"titleUpdate":"...","descriptionUpdate":"...","riskLevelUpdate":"low","isComplete":false}',
+          '```',
+        ].join('\n');
+
+        spawnCorrectionFollowup(db, io, task, correctionPrompt, sessionId, projectPath, res);
+        return;
+      }
+
+      // Persist assistant message (even partial — saves progress on disconnect)
+      if (messageText.trim()) {
+        const isPartial = clientDisconnected && !streamState.fullText;
+        if (isPartial) {
+          console.log(`[http] /api/tasks/${task.id}/chat/stream saving partial response (${messageText.length} chars)`);
+        }
+        queries.createChatMessage(db, {
+          taskId: task.id,
+          role: 'assistant',
+          content: messageText,
+        });
+      }
 
       // Persist spec & meta updates
-      const taskUpdate: Parameters<typeof queries.updateTask>[2] = {};
-      if (Object.keys(parsed.specUpdates).length > 0) {
-        const existingSpec = parseSpecJson(task.spec);
-        for (const [key, val] of Object.entries(parsed.specUpdates)) {
-          if (typeof val === 'string' && (val.trim().length > 0 || !existingSpec[key]?.trim())) {
-            existingSpec[key] = val;
-          }
-        }
-        taskUpdate.spec = JSON.stringify(existingSpec);
+      persistSpecUpdates(db, io, task, parsed);
+
+      // Only send SSE if client is still connected
+      if (!clientDisconnected) {
+        sendSSE(res, {
+          type: 'done',
+          message: messageText,
+          specUpdates: parsed.specUpdates,
+          titleUpdate: parsed.titleUpdate,
+          descriptionUpdate: parsed.descriptionUpdate,
+          riskLevelUpdate: parsed.riskLevelUpdate,
+          isComplete: parsed.isComplete,
+        });
+        res.end();
       }
-      if (parsed.titleUpdate) taskUpdate.title = parsed.titleUpdate;
-      if (parsed.descriptionUpdate) taskUpdate.description = parsed.descriptionUpdate;
-      if (parsed.riskLevelUpdate) taskUpdate.riskLevel = parsed.riskLevelUpdate;
-
-      if (Object.keys(taskUpdate).length > 0) {
-        queries.updateTask(db, task.id, taskUpdate);
-      }
-
-      // Send final SSE event
-      sendSSE(res, {
-        type: 'done',
-        message: messageText,
-        specUpdates: parsed.specUpdates,
-        titleUpdate: parsed.titleUpdate,
-        descriptionUpdate: parsed.descriptionUpdate,
-        riskLevelUpdate: parsed.riskLevelUpdate,
-        isComplete: parsed.isComplete,
-      });
-
-      res.end();
     });
 
     child.on('error', (err) => {
@@ -290,7 +325,7 @@ function buildSpawnArgs(isFirstMessage: boolean, sessionId: string): string[] {
   ];
 
   if (isFirstMessage) {
-    args.push('--system-prompt', systemPrompt);
+    args.push('--system-prompt', getSystemPrompt());
     args.push('--session-id', sessionId);
   } else {
     args.push('--resume', sessionId);
@@ -324,6 +359,8 @@ function buildStdinContent(
 /** Tracks stream state including whether a resume failure was detected */
 interface StreamState {
   fullText: string;
+  /** Accumulated text_delta chunks — used as fallback when process is killed before result event */
+  streamedText: string;
   resumeFailed: boolean;
   resumeError: string;
 }
@@ -346,7 +383,8 @@ function handleStreamEvent(
     if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
       sendSSE(res, { type: 'chunk', content: delta.text });
       broadcast(io, 'task:chat', { taskId, chunk: delta.text });
-      // Don't accumulate — result event has authoritative text
+      // Accumulate as fallback for when process is killed before result event
+      state.streamedText += delta.text;
     }
     return;
   }
@@ -420,13 +458,13 @@ function spawnFallbackSession(
     '--verbose',
     '--include-partial-messages',
     '--tools', 'Read,Glob,Grep',
-    '--system-prompt', systemPrompt,
+    '--system-prompt', getSystemPrompt(),
     '--session-id', newSessionId,
   ];
 
   console.log(`[http] /api/tasks/${task.id}/chat/stream fallback: new session ${newSessionId}`);
 
-  const fallbackState: StreamState = { fullText: '', resumeFailed: false, resumeError: '' };
+  const fallbackState: StreamState = { fullText: '', streamedText: '', resumeFailed: false, resumeError: '' };
 
   const child = spawn('claude', args, {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -463,36 +501,28 @@ function spawnFallbackSession(
       } catch { /* ignore */ }
     }
 
-    const parsed = parseResponseJson(fallbackState.fullText);
-    const messageText = extractMessageText(fallbackState.fullText, parsed.message);
+    const fallbackResponseText = fallbackState.fullText || fallbackState.streamedText;
+    const parsed = parseResponseJson(fallbackResponseText);
+    const messageText = extractMessageText(fallbackResponseText, parsed.message);
 
-    queries.createChatMessage(db, { taskId: task.id, role: 'assistant', content: messageText });
-
-    const taskUpdate: Parameters<typeof queries.updateTask>[2] = {};
-    if (Object.keys(parsed.specUpdates).length > 0) {
-      const existingSpec = parseSpecJson(task.spec);
-      for (const [key, val] of Object.entries(parsed.specUpdates)) {
-        if (typeof val === 'string' && (val.trim().length > 0 || !existingSpec[key]?.trim())) {
-          existingSpec[key] = val;
-        }
-      }
-      taskUpdate.spec = JSON.stringify(existingSpec);
+    if (messageText.trim()) {
+      queries.createChatMessage(db, { taskId: task.id, role: 'assistant', content: messageText });
     }
-    if (parsed.titleUpdate) taskUpdate.title = parsed.titleUpdate;
-    if (parsed.descriptionUpdate) taskUpdate.description = parsed.descriptionUpdate;
-    if (parsed.riskLevelUpdate) taskUpdate.riskLevel = parsed.riskLevelUpdate;
-    if (Object.keys(taskUpdate).length > 0) queries.updateTask(db, task.id, taskUpdate);
 
-    sendSSE(res, {
-      type: 'done',
-      message: messageText,
-      specUpdates: parsed.specUpdates,
-      titleUpdate: parsed.titleUpdate,
-      descriptionUpdate: parsed.descriptionUpdate,
-      riskLevelUpdate: parsed.riskLevelUpdate,
-      isComplete: parsed.isComplete,
-    });
-    res.end();
+    persistSpecUpdates(db, io, task, parsed);
+
+    if (!res.writableEnded) {
+      sendSSE(res, {
+        type: 'done',
+        message: messageText,
+        specUpdates: parsed.specUpdates,
+        titleUpdate: parsed.titleUpdate,
+        descriptionUpdate: parsed.descriptionUpdate,
+        riskLevelUpdate: parsed.riskLevelUpdate,
+        isComplete: parsed.isComplete,
+      });
+      res.end();
+    }
   });
 
   child.on('error', (err) => {
@@ -618,4 +648,132 @@ function extractMessageText(fullOutput: string, parsedMessage: string): string {
 
   if (parsedMessage) return parsedMessage;
   return fullOutput.trim();
+}
+
+/** Persist spec & meta updates from a parsed response */
+function persistSpecUpdates(
+  db: import('better-sqlite3').Database,
+  io: import('socket.io').Server,
+  task: { id: number; spec: string | null },
+  parsed: ParsedResponse,
+): void {
+  const taskUpdate: Parameters<typeof queries.updateTask>[2] = {};
+  if (Object.keys(parsed.specUpdates).length > 0) {
+    const existingSpec = parseSpecJson(task.spec);
+    for (const [key, val] of Object.entries(parsed.specUpdates)) {
+      if (typeof val === 'string' && (val.trim().length > 0 || !existingSpec[key]?.trim())) {
+        existingSpec[key] = val;
+      }
+    }
+    taskUpdate.spec = JSON.stringify(existingSpec);
+  }
+  if (parsed.titleUpdate) taskUpdate.title = parsed.titleUpdate;
+  if (parsed.descriptionUpdate) taskUpdate.description = parsed.descriptionUpdate;
+  if (parsed.riskLevelUpdate) taskUpdate.riskLevel = parsed.riskLevelUpdate;
+
+  if (Object.keys(taskUpdate).length > 0) {
+    const updated = queries.updateTask(db, task.id, taskUpdate);
+    broadcast(io, 'task:updated', updated);
+  }
+}
+
+/**
+ * Spawn a corrective follow-up when the response was truncated (no JSON block)
+ * or the agent broke its role boundary. Resumes the session with a correction prompt
+ * and streams the result back to the client.
+ */
+function spawnCorrectionFollowup(
+  db: import('better-sqlite3').Database,
+  io: import('socket.io').Server,
+  task: { id: number; projectId: string; title: string; description: string; spec: string | null },
+  correctionPrompt: string,
+  sessionId: string,
+  projectPath: string | undefined,
+  res: import('express').Response,
+): void {
+  // Resume the session — the correction prompt steers the bot back on track.
+  const args = [
+    '--print',
+    '--output-format', 'stream-json',
+    '--resume', sessionId,
+  ];
+
+  console.log(`[http] /api/tasks/${task.id}/chat/stream correction follow-up on session ${sessionId}`);
+
+  const corrState: StreamState = { fullText: '', streamedText: '', resumeFailed: false, resumeError: '' };
+
+  const child = spawn('claude', args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, CLAUDECODE: undefined },
+    cwd: projectPath ?? undefined,
+  });
+
+  child.stdin.write(correctionPrompt);
+  child.stdin.end();
+
+  const corrTimer = setTimeout(() => { child.kill(); }, 30_000);
+
+  let corrLineBuffer = '';
+  child.stdout.on('data', (chunk: Buffer) => {
+    corrLineBuffer += chunk.toString();
+    const lines = corrLineBuffer.split('\n');
+    corrLineBuffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line) as Record<string, unknown>;
+        handleStreamEvent(event, res, io, task.id, corrState);
+      } catch { /* skip */ }
+    }
+  });
+
+  child.on('close', () => {
+    clearTimeout(corrTimer);
+    if (corrLineBuffer.trim()) {
+      try {
+        const event = JSON.parse(corrLineBuffer) as Record<string, unknown>;
+        handleStreamEvent(event, res, io, task.id, corrState);
+      } catch { /* ignore */ }
+    }
+
+    const corrResponseText = corrState.fullText || corrState.streamedText;
+    const corrParsed = parseResponseJson(corrResponseText);
+
+    // The correction should be JSON-only — don't show it as a separate chat message.
+    // Just apply the spec updates.
+    if (Object.keys(corrParsed.specUpdates).length > 0 || corrParsed.isComplete) {
+      console.log(`[http] /api/tasks/${task.id}/chat/stream correction recovered spec updates`);
+      persistSpecUpdates(db, io, task, corrParsed);
+    }
+
+    if (!res.writableEnded) {
+      sendSSE(res, {
+        type: 'done',
+        message: '', // Original message was already streamed
+        specUpdates: corrParsed.specUpdates,
+        titleUpdate: corrParsed.titleUpdate,
+        descriptionUpdate: corrParsed.descriptionUpdate,
+        riskLevelUpdate: corrParsed.riskLevelUpdate,
+        isComplete: corrParsed.isComplete,
+      });
+      res.end();
+    }
+  });
+
+  child.on('error', (err) => {
+    clearTimeout(corrTimer);
+    console.log(`[http] /api/tasks/${task.id}/chat/stream correction failed: ${err.message}`);
+    if (!res.writableEnded) {
+      sendSSE(res, {
+        type: 'done',
+        message: '',
+        specUpdates: {},
+        titleUpdate: null,
+        descriptionUpdate: null,
+        riskLevelUpdate: null,
+        isComplete: false,
+      });
+      res.end();
+    }
+  });
 }

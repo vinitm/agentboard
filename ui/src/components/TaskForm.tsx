@@ -85,6 +85,8 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const creatingTaskRef = useRef(false);
+  /** Tracks whether user has sent at least one message — ref so it's synchronous */
+  const messageSentRef = useRef(false);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -96,10 +98,13 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
     inputRef.current?.focus();
   }, []);
 
-  // Load persisted chat history on mount if editing
+  // Load persisted chat history on mount when editing an existing task.
+  // Only runs for isEditing (resume) — NOT during the first session where
+  // taskId changes from null to an ID mid-conversation (that would overwrite
+  // the live local chat state).
   useEffect(() => {
-    if (!taskId) return;
-    api.get<PersistedChatMessage[]>(`/api/tasks/${taskId}/chat/messages`)
+    if (!isEditing || !initial?.id) return;
+    api.get<PersistedChatMessage[]>(`/api/tasks/${initial.id}/chat/messages`)
       .then((persisted) => {
         if (persisted.length > 0) {
           const restored: ChatMessage[] = persisted.map((m) => ({
@@ -114,7 +119,8 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
       .catch(() => {
         // Silently ignore — fresh chat is fine
       });
-  }, [taskId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Clear recent field highlights after 2s
   useEffect(() => {
@@ -131,19 +137,25 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   }, []);
 
   const handleCancel = useCallback(async () => {
-    // Warn if there's chat history beyond the welcome message
-    const hasWork = messages.length > 1 || inputValue.trim();
-    if (hasWork && !window.confirm('You have unsaved work. Discard and close?')) {
+    // messageSentRef is synchronous — no React state timing issues
+    if (messageSentRef.current) {
+      // User sent at least one message. Task is (or will be) created server-side.
+      // Keep it as a draft in backlog so they can resume later.
+      abortControllerRef.current?.abort();
+      onCancel();
       return;
     }
-    // Abort any in-flight streaming
-    abortControllerRef.current?.abort();
-    // Delete orphaned task if we created one during chat (not editing an existing task)
-    if (!isEditing && taskId) {
-      try { await api.del(`/api/tasks/${taskId}`); } catch { /* best effort */ }
+
+    // No message sent — check if user was mid-typing
+    if (inputValue.trim()) {
+      if (!window.confirm('You have unsaved work. Discard and close?')) {
+        return;
+      }
     }
+
+    abortControllerRef.current?.abort();
     onCancel();
-  }, [isEditing, taskId, onCancel, messages.length, inputValue]);
+  }, [onCancel, inputValue]);
 
   const addMessage = useCallback((role: 'user' | 'assistant', content: string) => {
     const msg: ChatMessage = { id: makeId(), role, content, timestamp: Date.now() };
@@ -160,6 +172,7 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
     setLoading(true);
     setStreamingContent('');
     setError('');
+    messageSentRef.current = true;
 
     try {
       // If no taskId yet (new task), create a minimal task first

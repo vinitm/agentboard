@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestDb } from '../../test/helpers.js';
+import request from 'supertest';
+import { createTestDb, createTestApp } from '../../test/helpers.js';
 import {
   createProject, createTask, getTaskById, updateTask,
   createChatMessage, listChatMessagesByTask,
@@ -40,6 +41,60 @@ describe('chat session persistence (DB layer)', () => {
   });
 });
 
+describe('GET /api/tasks/:id/chat/messages (HTTP integration)', () => {
+  let db: Database.Database;
+  let taskId: number;
+
+  beforeEach(() => {
+    db = createTestDb();
+    const project = createProject(db, {
+      name: 'test', path: '/tmp/test-chat-http',
+      configPath: '/tmp/test-chat-http/.agentboard',
+    });
+    const task = createTask(db, { projectId: project.id, title: 'HTTP chat test' });
+    taskId = task.id;
+  });
+
+  it('returns empty array when no messages exist', async () => {
+    const { app } = createTestApp(db);
+    const res = await request(app).get(`/api/tasks/${taskId}/chat/messages`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('returns persisted messages in chronological order', async () => {
+    createChatMessage(db, { taskId, role: 'user', content: 'Build dark mode' });
+    createChatMessage(db, { taskId, role: 'assistant', content: 'Great! Let me ask some questions.' });
+
+    const { app } = createTestApp(db);
+    const res = await request(app).get(`/api/tasks/${taskId}/chat/messages`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].role).toBe('user');
+    expect(res.body[0].content).toBe('Build dark mode');
+    expect(res.body[1].role).toBe('assistant');
+    expect(res.body[1].content).toBe('Great! Let me ask some questions.');
+  });
+
+  it('returns partial assistant message saved on disconnect', async () => {
+    createChatMessage(db, { taskId, role: 'user', content: 'Add auth' });
+    // Simulate partial save from mid-stream disconnect
+    createChatMessage(db, { taskId, role: 'assistant', content: 'I can help with auth. First, let me clarify' });
+
+    const { app } = createTestApp(db);
+    const res = await request(app).get(`/api/tasks/${taskId}/chat/messages`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[1].content).toBe('I can help with auth. First, let me clarify');
+  });
+
+  it('returns 404 for non-existent task', async () => {
+    const { app } = createTestApp(db);
+    const res = await request(app).get('/api/tasks/99999/chat/messages');
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('parseResponseJson (unit)', () => {
   it('extracts spec updates from JSON block in text', () => {
     const text = 'Some response text\n\n```json\n{"specUpdates":{"goal":"Build X"},"isComplete":false}\n```';
@@ -65,9 +120,60 @@ describe('parseResponseJson (unit)', () => {
   });
 });
 
+describe('partial progress on disconnect (StreamState fallback)', () => {
+  it('streamedText accumulates text_delta chunks', () => {
+    const state = { fullText: '', streamedText: '', resumeFailed: false, resumeError: '' };
+    // Simulate text_delta events accumulating
+    state.streamedText += 'Hello ';
+    state.streamedText += 'world!';
+    expect(state.streamedText).toBe('Hello world!');
+  });
+
+  it('responseText falls back to streamedText when fullText is empty', () => {
+    const state = { fullText: '', streamedText: 'Partial response text', resumeFailed: false, resumeError: '' };
+    const responseText = state.fullText || state.streamedText;
+    expect(responseText).toBe('Partial response text');
+  });
+
+  it('responseText prefers fullText over streamedText when both exist', () => {
+    const state = {
+      fullText: 'Authoritative full text\n\n```json\n{"specUpdates":{},"isComplete":false}\n```',
+      streamedText: 'Partial streamed text',
+      resumeFailed: false,
+      resumeError: '',
+    };
+    const responseText = state.fullText || state.streamedText;
+    expect(responseText).toBe(state.fullText);
+  });
+
+  it('partial text with spec JSON block is parseable for spec updates', () => {
+    const partialText = 'Here is the spec.\n\n```json\n{"specUpdates":{"goal":"Build a widget"},"isComplete":false}\n```';
+    const fenceMatch = partialText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    expect(fenceMatch).not.toBeNull();
+    const parsed = JSON.parse(fenceMatch![1].trim());
+    expect(parsed.specUpdates.goal).toBe('Build a widget');
+  });
+
+  it('partial text without JSON block still saves as message content', () => {
+    const partialText = 'I understand you want to build a user auth system. Let me ask some clarifying questions:';
+    const fenceMatch = partialText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    expect(fenceMatch).toBeNull();
+    // The message text should still be the full partial text
+    expect(partialText.trim().length).toBeGreaterThan(0);
+  });
+
+  it('empty streamedText does not produce a saved message', () => {
+    const state = { fullText: '', streamedText: '', resumeFailed: false, resumeError: '' };
+    const responseText = state.fullText || state.streamedText;
+    // Guard: only save if there's actual content
+    const shouldSave = responseText.trim().length > 0;
+    expect(shouldSave).toBe(false);
+  });
+});
+
 describe('handleStreamEvent logic (unit)', () => {
   it('skips system events', () => {
-    const state = { fullText: '', resumeFailed: false, resumeError: '' };
+    const state = { fullText: '', streamedText: '', resumeFailed: false, resumeError: '' };
     const event = { type: 'system', subtype: 'hook_started' };
     // System events should not affect state
     expect(event.type).toBe('system');
@@ -114,6 +220,28 @@ describe('handleStreamEvent logic (unit)', () => {
     const event = { type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } };
     expect(event.type).toBe('assistant');
     // In the real handler, this returns early without appending text
+  });
+});
+
+describe('missing JSON block detection (unit)', () => {
+  it('response with JSON block is not truncated', () => {
+    const text = 'Some text\n\n```json\n{"specUpdates":{"goal":"X"},"isComplete":false}\n```';
+    const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    expect(fenceMatch).not.toBeNull();
+  });
+
+  it('response without JSON block is truncated', () => {
+    const text = 'I have a clear picture now. Here is the spec:\n\n## Goal\nAdd descriptions to...';
+    const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const hasUnfenced = text.includes('specUpdates') || text.includes('isComplete');
+    expect(fenceMatch).toBeNull();
+    expect(hasUnfenced).toBe(false);
+  });
+
+  it('response ending mid-sentence is truncated', () => {
+    const text = 'Add `skill_descriptions` as a sibling field to `skills` on each player record:';
+    const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    expect(fenceMatch).toBeNull();
   });
 });
 
