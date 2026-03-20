@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CopyButton } from './CopyButton';
+import { Markdown } from './Markdown';
 import type { Run } from '../types';
 
 interface Props { runs: Run[] }
@@ -39,11 +40,14 @@ export const RunHistory: React.FC<Props> = ({ runs }) => {
               </div>
             </div>
             {isExpanded && run.output && (
-              <div className="relative bg-bg-primary font-mono text-xs text-text-primary p-3 max-h-[200px] overflow-y-auto border-t border-border-default">
-                <div className="absolute top-2 right-2">
+              <div className="relative bg-bg-primary text-xs text-text-primary p-3 max-h-[300px] overflow-y-auto border-t border-border-default">
+                <div className="absolute top-2 right-2 z-10">
                   <CopyButton text={run.output} />
                 </div>
-                <pre className="whitespace-pre-wrap break-all m-0">{run.output}</pre>
+                {run.output.trimStart().startsWith('{') || run.output.trimStart().startsWith('[')
+                  ? <pre className="whitespace-pre-wrap break-all m-0 font-mono">{run.output}</pre>
+                  : <Markdown>{run.output}</Markdown>
+                }
               </div>
             )}
           </div>

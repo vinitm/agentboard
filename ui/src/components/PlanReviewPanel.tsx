@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
+import { Markdown } from './Markdown';
 import type { Task, Run, Artifact, PlanReviewAction, PlanReviewData } from '../types';
 
 interface Props {
@@ -187,9 +188,9 @@ export const PlanReviewPanel: React.FC<Props> = ({ task, onReview }) => {
             className={`${inputClasses} min-h-[80px]`}
           />
         ) : (
-          <p className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed bg-bg-tertiary rounded-md p-3 border border-border-default">
-            {editedSummary || plan.planSummary}
-          </p>
+          <div className="bg-bg-tertiary rounded-md p-3 border border-border-default">
+            <Markdown>{editedSummary || plan.planSummary}</Markdown>
+          </div>
         )}
       </div>
 

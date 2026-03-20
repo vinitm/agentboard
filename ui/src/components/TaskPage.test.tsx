@@ -66,7 +66,7 @@ const emptyEvents: never[] = [];
 
 function setupDefaultMocks(task: Task = baseTask, runs: Run[] = emptyRuns) {
   mockApiGet.mockImplementation((path: string) => {
-    if (path.includes('/api/tasks/') && !path.includes('/runs') && !path.includes('/events') && !path.includes('/stages') && !path.includes('/delete-impact') && !path.includes('/chat')) {
+    if (path.includes('/api/tasks/') && !path.includes('/runs') && !path.includes('/events') && !path.includes('/stages') && !path.includes('/delete-impact') && !path.includes('/chat') && !path.includes('/git-refs') && !path.includes('/costs')) {
       return Promise.resolve(task);
     }
     if (path.includes('/api/runs')) {

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { CopyButton } from './CopyButton';
-import { LogViewer } from './LogViewer';
 import { BlockedPanel } from './BlockedPanel';
 import { PRPanel } from './PRPanel';
 import { PlanReviewPanel } from './PlanReviewPanel';
@@ -11,18 +9,25 @@ import { EventsTimeline } from './EventsTimeline';
 import { PipelineBar } from './PipelineBar';
 import { StageAccordion } from './StageAccordion';
 import { TaskForm } from './TaskForm';
+import { TaskDescription } from './TaskDescription';
+import { TaskSidebar } from './TaskSidebar';
+import { ChatHistory } from './ChatHistory';
+import { ArtifactsTab } from './ArtifactsTab';
+import { CostsTab } from './CostsTab';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './Toast';
 import { useSocket } from '../hooks/useSocket';
-import type { Task, Run, TaskStatus, RiskLevel, PlanReviewAction } from '../types';
+import { timeAgo } from '../lib/time';
+import type { Task, Run, TaskStatus, RiskLevel, PlanReviewAction, PersistedChatMessage } from '../types';
 
-type Tab = 'stages' | 'events' | 'runs';
+type Tab = 'overview' | 'stages' | 'events' | 'runs' | 'chat' | 'artifacts' | 'costs';
 const ACTIVE_STATUSES: TaskStatus[] = ['spec_review', 'planning', 'implementing', 'checks', 'code_quality', 'final_review', 'pr_creation'];
+const ALL_TABS: Tab[] = ['overview', 'stages', 'events', 'runs', 'chat', 'artifacts', 'costs'];
 
 function getInitialTab(): Tab {
-  const hash = window.location.hash.slice(1);
-  if (hash === 'stages' || hash === 'events' || hash === 'runs') return hash;
-  return 'stages';
+  const hash = window.location.hash.slice(1) as Tab;
+  if (ALL_TABS.includes(hash)) return hash;
+  return 'overview';
 }
 
 const statusBadgeColor: Record<string, string> = {
@@ -31,6 +36,7 @@ const statusBadgeColor: Record<string, string> = {
   final_review: 'bg-accent-green', pr_creation: 'bg-accent-green',
   needs_human_review: 'bg-accent-pink', done: 'bg-accent-green',
   blocked: 'bg-accent-amber', failed: 'bg-accent-red', cancelled: 'bg-text-tertiary',
+  needs_plan_review: 'bg-accent-amber',
 };
 
 const riskBorderColor: Record<string, string> = {
@@ -47,16 +53,21 @@ const PageSkeleton: React.FC = () => (
       <div className="skeleton h-5 w-64" />
       <div className="ml-auto skeleton h-5 w-20 rounded-full" />
     </div>
-    <div className="flex border-b border-border-default pl-5">
-      <div className="skeleton h-4 w-20 mx-5 my-3" />
-      <div className="skeleton h-4 w-20 mx-5 my-3" />
-      <div className="skeleton h-4 w-20 mx-5 my-3" />
+    <div className="px-5 py-3 border-b border-border-default">
+      <div className="skeleton h-3 w-full rounded-full" />
     </div>
-    <div className="p-5 space-y-3">
-      <div className="skeleton h-4 w-full" />
-      <div className="skeleton h-4 w-3/4" />
-      <div className="skeleton h-4 w-1/2" />
-      <div className="skeleton h-32 w-full mt-4" />
+    <div className="flex-1 flex gap-5 p-5">
+      <div className="flex-1 space-y-3">
+        <div className="skeleton h-24 w-full rounded-lg" />
+        <div className="skeleton h-40 w-full rounded-lg" />
+        <div className="skeleton h-64 w-full rounded-lg" />
+      </div>
+      <div className="w-[280px] space-y-3 shrink-0">
+        <div className="skeleton h-28 w-full rounded-lg" />
+        <div className="skeleton h-24 w-full rounded-lg" />
+        <div className="skeleton h-40 w-full rounded-lg" />
+        <div className="skeleton h-28 w-full rounded-lg" />
+      </div>
     </div>
   </div>
 );
@@ -70,6 +81,7 @@ export const TaskPage: React.FC = () => {
   const [task, setTask] = useState<Task | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [events, setEvents] = useState<EventRecord[]>([]);
+  const [chatCount, setChatCount] = useState(0);
   const [tab, setTab] = useState<Tab>(getInitialTab);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -92,9 +104,14 @@ export const TaskPage: React.FC = () => {
   useEffect(() => {
     if (taskId === undefined || isNaN(taskId)) return;
     setLoading(true);
-    Promise.all([api.get<Task>(`/api/tasks/${taskId}`), api.get<Run[]>(`/api/runs?taskId=${taskId}`), api.get<EventRecord[]>(`/api/events?taskId=${taskId}`)])
-      .then(async ([t, r, e]) => {
-        setTask(t); setRuns(r); setEvents(e);
+    Promise.all([
+      api.get<Task>(`/api/tasks/${taskId}`),
+      api.get<Run[]>(`/api/runs?taskId=${taskId}`),
+      api.get<EventRecord[]>(`/api/events?taskId=${taskId}`),
+      api.get<PersistedChatMessage[]>(`/api/tasks/${taskId}/chat/messages`).catch(() => []),
+    ])
+      .then(([t, r, e, msgs]) => {
+        setTask(t); setRuns(r); setEvents(e); setChatCount(msgs.length);
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load task'))
       .finally(() => setLoading(false));
@@ -147,16 +164,24 @@ export const TaskPage: React.FC = () => {
         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
       </svg>
       <div className="text-accent-red mb-2">{error || 'Task not found'}</div>
-      <Link to="/" className="text-accent-blue hover:underline text-sm">← Back to Tasks</Link>
+      <Link to="/" className="text-accent-blue hover:underline text-sm">Back to Tasks</Link>
     </div>
   );
 
   const isActive = ACTIVE_STATUSES.includes(task.status);
   const displayStatus = task.status.replace(/_/g, ' ');
+
+  // Count artifacts from runs (lazy — just show run count as proxy until tab is opened)
+  const artifactProxyCount = runs.filter(r => r.status === 'success').length;
+
   const tabs: { key: Tab; label: string; count?: number }[] = [
+    { key: 'overview', label: 'Overview' },
     { key: 'stages', label: 'Stages' },
     { key: 'events', label: 'Events', count: events.length },
     { key: 'runs', label: 'Runs', count: runs.length },
+    { key: 'chat', label: 'Chat', count: chatCount },
+    { key: 'artifacts', label: 'Artifacts', count: artifactProxyCount },
+    { key: 'costs', label: 'Costs' },
   ];
 
   return (
@@ -171,7 +196,11 @@ export const TaskPage: React.FC = () => {
             Tasks
           </Link>
         </div>
-        <h1 className="text-base font-semibold text-white flex-1 truncate">{task.title}</h1>
+        <div className="flex items-baseline gap-2 flex-1 min-w-0">
+          <span className="text-xs text-text-tertiary font-mono shrink-0">#{task.id}</span>
+          <h1 className="text-base font-semibold text-white truncate">{task.title}</h1>
+          <span className="text-[11px] text-text-tertiary shrink-0 hidden sm:inline">{timeAgo(task.updatedAt)}</span>
+        </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className={`${statusBadgeColor[task.status] || 'bg-text-tertiary'} text-white px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase flex items-center gap-1`}>
             {isActive && <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse-dot" />}
@@ -270,29 +299,40 @@ export const TaskPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex border-b border-border-default pl-5 flex-shrink-0">
-        {tabs.map(({ key, label, count }) => (
-          <button key={key} onClick={() => changeTab(key)}
-            className={`flex items-center gap-1.5 px-5 py-2.5 text-sm border-b-2 transition-colors ${tab === key ? 'border-accent-blue text-accent-blue font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>
-            {label}
-            {key === 'stages' && isActive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse-dot" />}
-            {count !== undefined && count > 0 && key !== 'stages' && (
-              <span className="text-[10px] text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full font-medium">{count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Two-column layout: main content + sidebar */}
+      <div className="flex-1 overflow-auto">
+        <div className="flex gap-5 p-5 min-h-full">
+          {/* Main content */}
+          <div className="flex-1 min-w-0 space-y-4">
+            {/* Tabs */}
+            <div className="flex border-b border-border-default -mx-0 overflow-x-auto">
+              {tabs.map(({ key, label, count }) => (
+                <button key={key} onClick={() => changeTab(key)}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap ${tab === key ? 'border-accent-blue text-accent-blue font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>
+                  {label}
+                  {key === 'stages' && isActive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse-dot" />}
+                  {count !== undefined && count > 0 && key !== 'stages' && (
+                    <span className="text-[10px] text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full font-medium">{count}</span>
+                  )}
+                </button>
+              ))}
+            </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-5">
-        {tab === 'stages' && (
-          <StageAccordion
-            taskId={task.id}
-          />
-        )}
-        {tab === 'events' && <EventsTimeline taskId={task.id} events={events} />}
-        {tab === 'runs' && <RunHistory runs={runs} />}
+            {/* Tab content */}
+            <div className="pt-1">
+              {tab === 'overview' && <TaskDescription task={task} />}
+              {tab === 'stages' && <StageAccordion taskId={task.id} />}
+              {tab === 'events' && <EventsTimeline taskId={task.id} events={events} />}
+              {tab === 'runs' && <RunHistory runs={runs} />}
+              {tab === 'chat' && <ChatHistory taskId={task.id} />}
+              {tab === 'artifacts' && <ArtifactsTab runs={runs} />}
+              {tab === 'costs' && <CostsTab taskId={task.id} runs={runs} />}
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <TaskSidebar task={task} events={events} />
+        </div>
       </div>
 
       <ConfirmDialog
