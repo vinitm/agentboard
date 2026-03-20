@@ -43,5 +43,8 @@
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
     "vitest": "^4.1.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
   }
 }
