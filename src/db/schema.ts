@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { runMigration002 } from './migrations/002-remove-subtasks.js';
+import { runMigration003 } from './migrations/003-pty-columns.js';
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -144,6 +145,7 @@ export function initSchema(db: Database.Database): void {
   migrateBlockedAtStage(db);
   migrateParentCascade(db);
   runMigration002(db);
+  runMigration003(db);
 }
 
 export function migrateReviewStages(db: Database.Database): void {

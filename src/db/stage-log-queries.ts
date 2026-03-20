@@ -20,6 +20,8 @@ function rowToStageLog(row: Record<string, unknown>): StageLog {
     createdAt: row.created_at as string,
     startedAt: row.started_at as string,
     completedAt: (row.completed_at as string) ?? null,
+    pid: (row.pid as number) ?? null,
+    terminalMode: (row.terminal_mode as 'pty' | 'print') ?? 'print',
   };
 }
 
@@ -33,6 +35,8 @@ export interface CreateStageLogData {
   attempt?: number;
   filePath: string;
   startedAt: string;
+  pid?: number;
+  terminalMode?: 'pty' | 'print';
 }
 
 export function createStageLog(
@@ -42,8 +46,8 @@ export function createStageLog(
   const id = uuidv4();
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO stage_logs (id, task_id, project_id, run_id, stage, attempt, file_path, status, started_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)`
+    `INSERT INTO stage_logs (id, task_id, project_id, run_id, stage, attempt, file_path, status, started_at, created_at, pid, terminal_mode)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`
   ).run(
     id,
     data.taskId,
@@ -53,7 +57,9 @@ export function createStageLog(
     data.attempt ?? 1,
     data.filePath,
     data.startedAt,
-    now
+    now,
+    data.pid ?? null,
+    data.terminalMode ?? 'print'
   );
   return getStageLogById(db, id)!;
 }
@@ -89,6 +95,7 @@ export interface UpdateStageLogData {
   durationMs?: number | null;
   completedAt?: string;
   runId?: string;
+  pid?: number | null;
 }
 
 export function updateStageLog(
@@ -105,6 +112,7 @@ export function updateStageLog(
   if (data.durationMs !== undefined) { fields.push('duration_ms = ?'); values.push(data.durationMs); }
   if (data.completedAt !== undefined) { fields.push('completed_at = ?'); values.push(data.completedAt); }
   if (data.runId !== undefined) { fields.push('run_id = ?'); values.push(data.runId); }
+  if (data.pid !== undefined) { fields.push('pid = ?'); values.push(data.pid); }
 
   if (fields.length === 0) return;
 
@@ -252,4 +260,13 @@ export function getCostTrend(
     totalDurationMs: r.total_duration_ms,
     taskCount: r.task_count,
   }));
+}
+
+// ── PTY helpers ───────────────────────────────────────────────────────
+
+export function listRunningWithPid(db: Database.Database): StageLog[] {
+  const rows = db
+    .prepare(`SELECT * FROM stage_logs WHERE status = 'running' AND pid IS NOT NULL`)
+    .all() as Record<string, unknown>[];
+  return rows.map(rowToStageLog);
 }

@@ -46,6 +46,8 @@ export interface StageLog {
   createdAt: string;
   startedAt: string;
   completedAt: string | null;
+  pid: number | null;
+  terminalMode: 'pty' | 'print';
 }
 
 export interface StageTransitionEvent {
