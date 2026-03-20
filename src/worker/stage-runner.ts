@@ -5,6 +5,7 @@ import type { Server } from 'socket.io';
 import type { StageLogStage } from '../types/index.js';
 import { createStageLog, updateStageLog } from '../db/stage-log-queries.js';
 import { broadcastLog, broadcastStageTransition } from '../server/ws.js';
+import { createAsyncBufferedWriter, type AsyncBufferedWriter } from './log-writer.js';
 
 export interface StageRunnerOptions {
   taskId: number;
@@ -13,6 +14,7 @@ export interface StageRunnerOptions {
   db: Database.Database;
   logsDir: string;
   projectRoot: string;
+  terminalMode?: 'pty' | 'print';
 }
 
 export interface ExecuteOptions {
@@ -63,17 +65,26 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
         attempt,
         filePath: relativeFilePath,
         startedAt,
+        terminalMode: opts.terminalMode ?? 'print',
       });
 
       broadcastStageTransition(io, { taskId, stage, status: 'running' });
 
+      const asyncWriter: AsyncBufferedWriter | null = opts.terminalMode === 'pty'
+        ? createAsyncBufferedWriter(filePath)
+        : null;
+
       const onOutput = (chunk: string): void => {
-        fs.appendFileSync(filePath, chunk, 'utf-8');
+        if (asyncWriter) {
+          asyncWriter.write(chunk);
+        } else {
+          fs.appendFileSync(filePath, chunk, 'utf-8');
+        }
         broadcastLog(io, {
           taskId,
           runId: options?.runId ?? `stage-${stageLog.id}`,
           stage,
-            chunk,
+          chunk,
           timestamp: new Date().toISOString(),
         });
       };
@@ -82,6 +93,9 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
         const result = await fn(onOutput);
         const durationMs = Date.now() - startTime;
         const extracted = options?.summarize?.(result) ?? {};
+
+        if (asyncWriter) await asyncWriter.flush();
+        asyncWriter?.destroy();
 
         updateStageLog(db, stageLog.id, {
           status: 'completed',
@@ -100,6 +114,9 @@ export function createStageRunner(opts: StageRunnerOptions): StageRunner {
         return result;
       } catch (error) {
         const durationMs = Date.now() - startTime;
+
+        if (asyncWriter) await asyncWriter.flush();
+        asyncWriter?.destroy();
 
         updateStageLog(db, stageLog.id, {
           status: 'failed',

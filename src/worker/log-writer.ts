@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { appendFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const SEPARATOR = '════════════════════════════════════════════════════════════════════════════════';
@@ -209,6 +210,59 @@ export function openTaskLogger(logPath: string): TaskLogger {
       } catch {
         return 0;
       }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Async buffered writer — non-blocking append for PTY mode
+// ---------------------------------------------------------------------------
+
+export interface AsyncBufferedWriter {
+  write(chunk: string): void;
+  flush(): Promise<void>;
+  destroy(): void;
+}
+
+export function createAsyncBufferedWriter(filePath: string, options?: {
+  flushIntervalMs?: number;
+  flushSizeBytes?: number;
+}): AsyncBufferedWriter {
+  const { flushIntervalMs = 100, flushSizeBytes = 4096 } = options ?? {};
+  let buffer = '';
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let flushing = false;
+
+  async function doFlush(): Promise<void> {
+    if (buffer.length === 0 || flushing) return;
+    flushing = true;
+    const data = buffer;
+    buffer = '';
+    try {
+      await appendFile(filePath, data, 'utf-8');
+    } finally {
+      flushing = false;
+    }
+  }
+
+  return {
+    write(chunk: string): void {
+      buffer += chunk;
+      if (buffer.length >= flushSizeBytes) {
+        doFlush().catch(err => console.error('[log-writer] async flush error:', err));
+      } else if (!flushTimer) {
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          doFlush().catch(err => console.error('[log-writer] async flush error:', err));
+        }, flushIntervalMs);
+      }
+    },
+    async flush(): Promise<void> {
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      await doFlush();
+    },
+    destroy(): void {
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
     },
   };
 }

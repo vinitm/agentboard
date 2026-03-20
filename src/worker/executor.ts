@@ -173,3 +173,68 @@ function parseTokenUsageFallback(output: string): number {
   // Estimate: ~4 chars per token
   return Math.ceil(output.length / 4);
 }
+
+// ---------------------------------------------------------------------------
+// PTY-based executor
+// ---------------------------------------------------------------------------
+
+import { createPtyManager, type PtyManager } from './pty-manager.js';
+import { executePtySession } from './pty-executor.js';
+
+let ptyManager: PtyManager | null = null;
+
+export interface PtyExecuteOptions {
+  prompt: string;
+  worktreePath: string;
+  model: string;
+  timeout?: number;
+  tools?: string[];
+  permissionMode?: 'acceptEdits' | 'bypassPermissions';
+  onOutput?: (chunk: string) => void;
+  stageLogId: number;
+  maxConcurrentPtys?: number;
+  cols?: number;
+  rows?: number;
+  quiescenceMs?: number;
+}
+
+export function executePtyClaudeCode(options: PtyExecuteOptions): Promise<ExecuteResult> {
+  const {
+    prompt, worktreePath, model, timeout = 300_000,
+    tools, permissionMode = 'acceptEdits', onOutput,
+    stageLogId, maxConcurrentPtys = 4, cols = 120, rows = 30,
+    quiescenceMs = 3000,
+  } = options;
+
+  if (!ptyManager) {
+    ptyManager = createPtyManager({ maxConcurrentPtys });
+  }
+
+  const args: string[] = ['--model', model, '--permission-mode', permissionMode];
+  if (tools && tools.length > 0) {
+    args.push('--tools', tools.join(','));
+  }
+
+  const handle = ptyManager.spawn(stageLogId, {
+    command: 'claude',
+    cwd: worktreePath,
+    args,
+    cols,
+    rows,
+  });
+
+  return executePtySession({
+    handle,
+    prompt,
+    worktreePath,
+    timeout,
+    quiescenceMs,
+    onOutput: onOutput ?? (() => {}),
+  }).finally(() => {
+    ptyManager?.kill(stageLogId);
+  });
+}
+
+export function getPtyManager(): PtyManager | null {
+  return ptyManager;
+}
