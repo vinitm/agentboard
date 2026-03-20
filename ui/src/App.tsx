@@ -19,6 +19,8 @@ import { useConnectionStatus } from './hooks/useSocket';
 import { api, setApiErrorHandler } from './api/client';
 import type { Project } from './types';
 
+const DesignSystem = React.lazy(() => import('./components/DesignSystem').then(m => ({ default: m.DesignSystem })));
+
 const AppContent: React.FC = () => {
   const [projectId, setProjectId] = useState<string>('');
   const [projects, setProjects] = useState<Project[]>([]);
@@ -85,6 +87,7 @@ const AppContent: React.FC = () => {
       '/activity': 'Activity — Agentboard',
       '/learnings': 'Learnings — Agentboard',
       '/costs': 'Costs — Agentboard',
+      '/design-system': 'Design System — Agentboard',
     };
     document.title = titles[location.pathname] || 'Agentboard';
   }, [location.pathname]);
@@ -95,6 +98,7 @@ const AppContent: React.FC = () => {
     if (location.pathname === '/activity') return 'Activity';
     if (location.pathname === '/learnings') return 'Learnings';
     if (location.pathname === '/costs') return 'Costs';
+    if (location.pathname === '/design-system') return 'Design System';
     if (location.pathname.startsWith('/tasks/')) return 'Task Details';
     return 'Tasks';
   };
@@ -172,6 +176,7 @@ const AppContent: React.FC = () => {
                 <Route path="/activity" element={<ActivityFeed projectId={projectId} tasks={tasks} />} />
                 <Route path="/learnings" element={<Learnings projectId={projectId} />} />
                 <Route path="/costs" element={<CostDashboard projectId={projectId} />} />
+                <Route path="/design-system" element={<React.Suspense fallback={<div className="p-6 text-text-secondary">Loading...</div>}><DesignSystem /></React.Suspense>} />
                 <Route path="*" element={
                   <div className="flex flex-col items-center justify-center flex-1 py-20 animate-fade-in">
                     <div className="w-16 h-16 rounded-2xl bg-bg-tertiary border border-border-default flex items-center justify-center mb-4">
