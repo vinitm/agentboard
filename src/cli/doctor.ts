@@ -1,6 +1,9 @@
 import { execSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
+
+const esmRequire = createRequire(import.meta.url);
 import chalk from 'chalk';
 import {
   GLOBAL_DIR,
@@ -50,6 +53,18 @@ export default async function doctor(): Promise<void> {
       label: 'claude CLI is installed',
       critical: false,
       test: () => commandExists('claude --version'),
+    },
+    {
+      label: 'node-pty is installed (required for PTY terminal mode)',
+      critical: false,
+      test: () => {
+        try {
+          esmRequire('node-pty');
+          return true;
+        } catch {
+          return false;
+        }
+      },
     },
 
     // ── Global state (~/.agentboard/) ──────────────────────────────────
