@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../api/client';
 import { CopyButton } from './CopyButton';
 import { LogRenderer } from './LogRenderer.js';
+import { XTermStage } from './XTermStage.js';
 import type { StageLog, StageLogStatus } from '../types';
 
 const STAGE_LABELS: Record<string, string> = {
@@ -148,35 +149,45 @@ export const StageRow: React.FC<Props> = ({ stageLog, taskId, isActive, isExpand
               <p className="text-xs text-text-secondary">{stageLog.summary}</p>
             </div>
           )}
-          <div className="relative">
-            {displayContent && (
-              <div className="absolute top-2 right-2 z-10 flex gap-1.5">
-                <CopyButton text={displayContent} />
-              </div>
-            )}
-            <div
-              ref={contentRef}
-              onScroll={handleScroll}
-              className="font-mono text-xs text-text-primary leading-relaxed p-3 max-h-[400px] overflow-y-auto"
-            >
-              {loadingLogs ? (
-                <div className="text-text-tertiary">Loading logs...</div>
-              ) : displayContent ? (
-                <LogRenderer text={displayContent} />
-              ) : (
-                <div className="text-text-tertiary">No log content available</div>
+          {stageLog.terminalMode === 'pty' ? (
+            <XTermStage
+              taskId={taskId}
+              stage={stageLog.stage}
+              stageLogId={stageLog.id}
+              isExpanded={isExpanded}
+              isRunning={stageLog.status === 'running'}
+            />
+          ) : (
+            <div className="relative">
+              {displayContent && (
+                <div className="absolute top-2 right-2 z-10 flex gap-1.5">
+                  <CopyButton text={displayContent} />
+                </div>
               )}
-              <div ref={bottomRef} />
-            </div>
-            {userScrolledUp && isActive && (
-              <button
-                onClick={scrollToBottom}
-                className="absolute bottom-3 right-3 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent-blue text-white hover:bg-accent-blue-hover transition-colors shadow-lg"
+              <div
+                ref={contentRef}
+                onScroll={handleScroll}
+                className="font-mono text-xs text-text-primary leading-relaxed p-3 max-h-[400px] overflow-y-auto"
               >
-                Follow live ↓
-              </button>
-            )}
-          </div>
+                {loadingLogs ? (
+                  <div className="text-text-tertiary">Loading logs...</div>
+                ) : displayContent ? (
+                  <LogRenderer text={displayContent} />
+                ) : (
+                  <div className="text-text-tertiary">No log content available</div>
+                )}
+                <div ref={bottomRef} />
+              </div>
+              {userScrolledUp && isActive && (
+                <button
+                  onClick={scrollToBottom}
+                  className="absolute bottom-3 right-3 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent-blue text-white hover:bg-accent-blue-hover transition-colors shadow-lg"
+                >
+                  Follow live ↓
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
