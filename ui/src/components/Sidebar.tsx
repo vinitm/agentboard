@@ -56,11 +56,18 @@ const ChevronRightIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const DesignSystemIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+    <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a3 3 0 106 0V4a2 2 0 00-2-2H4zm1 14a1 1 0 100-2 1 1 0 000 2zm5-1.757l4.9-4.9a2 2 0 000-2.828L13.485 5.1a2 2 0 00-2.828 0L10 5.757v8.486zM16 18H9.071l6-6H16a2 2 0 012 2v2a2 2 0 01-2 2z" clipRule="evenodd" />
+  </svg>
+);
+
 const navItems = [
   { to: '/', label: 'Board', Icon: BoardIcon },
   { to: '/activity', label: 'Activity', Icon: ActivityIcon },
   { to: '/learnings', label: 'Learnings', Icon: LearningsIcon },
   { to: '/costs', label: 'Costs', Icon: CostsIcon },
+  { to: '/design-system', label: 'Design System', Icon: DesignSystemIcon },
   { to: '/settings', label: 'Settings', Icon: SettingsIcon },
 ];
 
@@ -93,7 +100,7 @@ export const Sidebar: React.FC<Props> = ({
       <div className="hidden max-md:block fixed inset-0 bg-black/50 z-40" onClick={onToggleCollapse} />
     )}
     <aside
-      className={`flex flex-col bg-bg-secondary border-r border-border-default h-screen flex-shrink-0 transition-[width] duration-200 max-md:fixed max-md:z-50 max-md:transition-transform max-md:duration-200 ${
+      className={`glass-surface flex flex-col bg-bg-secondary border-r border-border-default h-screen flex-shrink-0 transition-[width] duration-200 max-md:fixed max-md:z-50 max-md:transition-transform max-md:duration-200 ${
         collapsed ? 'w-14 max-md:w-60 max-md:-translate-x-full' : 'w-60 max-md:translate-x-0'
       }`}
     >
@@ -153,7 +160,7 @@ export const Sidebar: React.FC<Props> = ({
       {/* Projects */}
       {!collapsed && (
         <div className="mt-6 px-2 animate-fade-in">
-          <div className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">
+          <div className="px-2.5 pb-1.5 text-[10px] font-heading font-semibold uppercase tracking-widest text-text-tertiary">
             Projects
           </div>
           {projects.map((p) => (

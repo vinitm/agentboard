@@ -133,7 +133,7 @@ export const TopBar: React.FC<Props> = ({
 
   return (
     <div className="flex-shrink-0">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-border-default bg-bg-primary">
+      <div className="glass-surface flex items-center justify-between px-5 py-3 border-b border-border-default bg-bg-primary">
         <div className="flex items-center gap-3">
           {onToggleSidebar && (
             <button onClick={onToggleSidebar} className="hidden max-md:flex items-center justify-center w-8 h-8 -ml-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors" aria-label="Toggle menu">
@@ -142,7 +142,7 @@ export const TopBar: React.FC<Props> = ({
               </svg>
             </button>
           )}
-          <h2 className="text-sm font-semibold text-white">{title}</h2>
+          <h2 className="text-sm font-heading font-semibold text-white">{title}</h2>
           {taskCount !== undefined && (
             <span className="text-[11px] text-text-tertiary bg-bg-tertiary px-2 py-0.5 rounded-full font-medium">
               {taskCount}

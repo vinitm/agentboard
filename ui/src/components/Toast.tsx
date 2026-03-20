@@ -48,7 +48,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             onOpenChange={(open) => {
               if (!open) removeToast(t.id);
             }}
-            className={`bg-bg-elevated border ${VARIANT_CLASSES[t.variant]} rounded-lg px-4 py-3 shadow-lg`}
+            className={`glass-surface border ${VARIANT_CLASSES[t.variant]} rounded-lg px-4 py-3 shadow-lg`}
           >
             <RadixToast.Title className="text-[13px] text-text-primary">
               {t.title}
