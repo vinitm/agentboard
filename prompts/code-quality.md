@@ -81,3 +81,11 @@ Respond with ONLY a JSON object (no markdown fences, no extra text):
 - **FAIL** (passed: false): One or more critical or important issues found.
 
 Be thorough but practical. Focus on real problems, not style preferences.
+
+## Result Reporting
+
+When you have completed this stage, write your results to `.agentboard/stage-result.json` in the worktree root with this exact JSON format (no markdown wrapping):
+
+{"passed": true, "summary": "one line description of what you did"}
+
+Set `passed` to `false` if the stage objective was not met. The `summary` should be a single sentence.

@@ -42,3 +42,11 @@ Or if rejecting:
 - Be strict but practical. Minor style issues are not grounds for rejection.
 - Focus on structural problems that would cause the autonomous implementation to fail.
 - Each issue should be specific and actionable — tell the planner exactly what to fix.
+
+## Result Reporting
+
+When you have completed this stage, write your results to `.agentboard/stage-result.json` in the worktree root with this exact JSON format (no markdown wrapping):
+
+{"passed": true, "summary": "one line description of what you did"}
+
+Set `passed` to `false` if the stage objective was not met. The `summary` should be a single sentence.

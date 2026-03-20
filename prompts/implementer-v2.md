@@ -47,3 +47,11 @@ Output the status block as fenced JSON at the end of your response:
 ```
 
 Choose the most accurate status. Do NOT report DONE if tests are failing. Do NOT guess when you should report NEEDS_CONTEXT or BLOCKED.
+
+## Result Reporting
+
+When you have completed this stage, write your results to `.agentboard/stage-result.json` in the worktree root with this exact JSON format (no markdown wrapping):
+
+{"passed": true, "summary": "one line description of what you did"}
+
+Set `passed` to `false` if the stage objective was not met. The `summary` should be a single sentence.

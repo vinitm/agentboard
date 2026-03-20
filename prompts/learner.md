@@ -52,3 +52,11 @@ You are a learning extraction agent for an autonomous coding pipeline. Your job 
 7. On the **last line** of your response, output exactly one JSON object:
    - If a skill was saved: `{"saved": true, "skillFile": "<relative-path>", "pattern": "<pattern-name>"}`
    - If no skill was needed: `{"saved": false, "reason": "<brief explanation>"}`
+
+## Result Reporting
+
+When you have completed this stage, write your results to `.agentboard/stage-result.json` in the worktree root with this exact JSON format (no markdown wrapping):
+
+{"passed": true, "summary": "one line description of what you did"}
+
+Set `passed` to `false` if the stage objective was not met. The `summary` should be a single sentence.

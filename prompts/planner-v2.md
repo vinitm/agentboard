@@ -64,3 +64,11 @@ Return a single JSON object with this exact structure:
 - Do NOT return questions. If there are ambiguities not covered in the spec, make a reasonable assumption based on the codebase context and document it in `assumptions`.
 - Keep steps focused: each should be completable in under 15 minutes of autonomous work.
 - If the task is trivially simple (single-line fix), you may have 1-2 steps without TDD instructions.
+
+## Result Reporting
+
+When you have completed this stage, write your results to `.agentboard/stage-result.json` in the worktree root with this exact JSON format (no markdown wrapping):
+
+{"passed": true, "summary": "one line description of what you did"}
+
+Set `passed` to `false` if the stage objective was not met. The `summary` should be a single sentence.
