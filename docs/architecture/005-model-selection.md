@@ -1,29 +1,46 @@
-# ADR-005: Stage-and-Risk-Driven Model Selection
+# ADR-005: Model Selection
 
 ## Status
-Accepted — stage-based model routing restored (sonnet for reviews/planning, opus for implementation, haiku for learning)
+Accepted — **updated 2026-03-17**: simplified to single-model (opus everywhere)
 
 ## Context
-Different pipeline stages have different quality/cost tradeoffs. Only four stages invoke Claude Code: spec-generator, planner, implementer, and review-panel. The checks stage runs shell commands and pr-creator runs `gh` CLI — neither uses an LLM.
+Different pipeline stages have different quality/cost tradeoffs. The original design used stage-based model routing (sonnet for reviews/planning, opus for implementation, haiku for learning).
+
+During the superpowers workflow rewrite (2026-03-17), model selection was simplified to opus everywhere for consistent quality. The cost savings from using sonnet for reviews were not worth the quality inconsistency.
 
 ## Decision
-`selectModel(stage, riskLevel, config)` in `src/worker/model-selector.ts` consults `config.modelDefaults` to look up the model alias for a given stage.
+`selectModel(stage, riskLevel, config)` in `src/worker/model-selector.ts` returns the model from `config.modelDefaults` for the given stage.
 
-- High-risk tasks escalate `review_panel` to Opus regardless of config
-- Implementation typically uses Opus for maximum code quality
-- Planning and standard-risk reviews respect the per-project config
+**Current defaults:**
+- All stages: **opus**
+- Exception: learner stage uses **haiku** (configurable via `config.modelDefaults.learning`)
 
-For the full stage-to-model mapping table, see [Agent Orchestration → Model Selection](agent-orchestration.md#model-selection).
+Per-project config can override any stage's model via `config.modelDefaults`.
+
+## History
+
+### Original (2026-03-16)
+- sonnet for reviews and planning (cost-effective for analysis tasks)
+- opus for implementation (maximum code quality)
+- High-risk tasks escalated review to opus regardless of config
+
+### Current (2026-03-17, superpowers rewrite)
+- opus everywhere for consistent quality
+- haiku for post-task learning (lightweight pattern extraction)
+- Rationale: simpler configuration, no quality variance between stages
+
+See [Decision Log entry 2026-03-17](../decisions.md) for full context.
 
 ## Consequences
 
 ### Positive
-- Per-project cost control via config
-- Risk-appropriate quality gates — high-risk tasks get the best model for reviews
-- Simple, predictable model selection logic
+- Consistent output quality across all stages
+- Simpler mental model (one model, one quality level)
+- Per-project config still allows overrides for cost control
 
 ### Negative
-- Implementation always using Opus means no cost savings on the most expensive stage
+- Higher cost per task (opus for reviews that sonnet could handle)
+- No automatic cost optimization for low-risk tasks
 
 ### Risks
-- Model names evolve — hardcoded model overrides need updating when new models are released
+- Model names evolve — config values need updating when new models are released

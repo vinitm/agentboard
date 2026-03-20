@@ -1,39 +1,31 @@
 # Architecture
 
-## System Architecture
+## Start Here
 
-**[Agent Orchestration](agent-orchestration.md)** — the single comprehensive architecture document covering:
-- System overview (UI → API → Worker → Executor → Worktrees)
-- Task state machine (14 states, subtask pipeline)
-- All 9 pipeline stages (spec-review → planning → per-subtask implementation → code-quality → final-review → PR creation → auto-merge → learner)
-- Claude Code executor (spawn model, streaming, token tracking)
-- Model selection (stage-to-model mapping)
-- Git worktree isolation
-- Context flow between stages (task packet)
-- Real-time Socket.IO event model
-- Task logging format
-- Recovery & crash handling
-- Worker memory
-- Database schema
-
-Start here for understanding how agentboard works.
+| Document | What it covers | When to read |
+|----------|---------------|--------------|
+| [Agent Orchestration](agent-orchestration.md) | System design, state machine, worker loop, DB schema | Understanding how the system works |
+| [Pipeline Stages](../pipeline-stages.md) | Per-stage contracts, tools, prompts, failure modes | Working on or debugging a specific stage |
+| [API Routes](../api-routes.md) | REST endpoints, Socket.IO events, request/response shapes | Building UI features or integrations |
+| [Source Map](../source-map.md) | Directory structure, entry points, key types | Orienting in the codebase |
 
 ## Architecture Decision Records
 
-ADRs capture the "why" behind key choices — context not inferable from code. Each links back to the relevant section of the orchestration doc for full detail.
+ADRs capture the "why" behind key choices — context not inferable from code.
 
 | ADR | Decision | Status |
 |-----|----------|--------|
-| [001-sqlite-wal](001-sqlite-wal.md) | Use SQLite with WAL mode as the sole persistence layer | Accepted |
+| [001-sqlite-wal](001-sqlite-wal.md) | SQLite with WAL mode as sole persistence layer | Accepted |
 | [002-polling-worker](002-polling-worker.md) | Poll-based worker loop with event-driven wake-up | Accepted |
-| [003-worktree-isolation](003-worktree-isolation.md) | Git worktrees for task isolation, shared by subtasks | Accepted |
+| [003-worktree-isolation](003-worktree-isolation.md) | Git worktrees for task isolation | Accepted |
 | [004-serial-subtasks](004-serial-subtasks.md) | Serial subtask execution with single parent PR | Accepted |
-| [005-model-selection](005-model-selection.md) | Stage-and-risk-driven model selection | Accepted |
-| [006-claude-code-executor](006-claude-code-executor.md) | Spawn Claude Code as child process in non-interactive mode | Accepted |
+| [005-model-selection](005-model-selection.md) | Model selection (originally stage-based, now opus everywhere) | Accepted (updated 2026-03-17) |
+| [006-claude-code-executor](006-claude-code-executor.md) | Claude Code as child process in non-interactive mode | Accepted |
 | [007-superpowers-workflow](007-superpowers-workflow.md) | Superpowers-inspired pipeline rewrite | Accepted |
+| [008-ruflo-integration](008-ruflo-integration.md) | Ruflo v3.5 integration for AI agent orchestration | Accepted |
 
 ## Related Documentation
 
+- [Decision Log](../decisions.md) — Quick-reference decision diary with links to ADRs
 - [Gotchas](../gotchas/) — Failure-backed troubleshooting by subsystem
-- [Browser Testing](../browser-testing.md) — Playwright + Lightpanda setup for UI testing
-- [Decision Log](../decisions.md) — Quick-reference decision diary (complements ADRs)
+- [Browser Testing](../browser-testing.md) — Playwright + Lightpanda setup
