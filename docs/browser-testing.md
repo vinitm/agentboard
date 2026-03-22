@@ -124,6 +124,54 @@ Review the updated PNGs in the `*-snapshots/` directories before committing.
 | `task-page.visual.spec.ts` | Task detail view, settings page |
 | `responsive.visual.spec.ts` | Mobile (375px), tablet (768px), wide (1920px) |
 
+## Task Lifecycle Tests
+
+End-to-end tests exercising the full task lifecycle from creation to deletion. Both functional and visual variants exist:
+
+| File | Runner | Tests | Purpose |
+|------|--------|-------|---------|
+| `task-lifecycle.spec.ts` | Lightpanda | ~48 | Fast functional DOM assertions |
+| `task-lifecycle.visual.spec.ts` | Chromium | ~57 | Visual regression + screenshots |
+
+### Test groups
+
+1. **Layout & Navigation** — Sidebar, TopBar, nav links, collapse/expand
+2. **Task Creation Dialog** — Chat phase, confirming phase, validation, phase transitions
+3. **Task Card Rendering** — Title, description, status badge, risk level, ARIA, priority
+4. **Task Detail Page** — Header, tabs, spec fields, action buttons, ConfirmDialog, sidebar
+5. **Task Operations** — Backlog/ready status, cancel, risk levels, priority sorting, delete
+6. **Filtering & Search** — Filter bar, status/risk filters, URL sync, search input
+7. **Real-time WebSocket** — Live task creation, cancel, status updates `[visual-only]`
+8. **Responsive** — Desktop/tablet/mobile viewports `[visual-only]`
+9. **Error States** — Non-existent task, invalid ID, console errors
+10. **Keyboard Navigation** — Enter/Space card activation, Escape dialog close `[visual-only]`
+11. **Edit Flow** — Edit button, title update
+
+### Running lifecycle tests
+
+```bash
+# Functional only (fast)
+npx playwright test browser-tests/task-lifecycle.spec.ts --project lightpanda
+
+# Visual only (screenshots)
+npx playwright test browser-tests/task-lifecycle.visual.spec.ts --project visual
+
+# Update visual baselines after UI changes
+npx playwright test browser-tests/task-lifecycle.visual.spec.ts --project visual --update-snapshots
+```
+
+### Visual-only convention
+
+Tests marked `[visual-only]` run only in the Chromium visual project. They rely on rendering, viewport, or WebSocket features that Lightpanda cannot support. In the functional file, these describe blocks are omitted entirely.
+
+### Test data conventions
+
+- All tests create their own tasks via API helpers at the top of each file
+- Tasks are tracked in `createdIds` arrays and deleted in `afterAll`
+- Task title: "Add player skill description field for team-making context"
+- Tasks with spec → `ready` status; without spec → `backlog` status
+- No AI/Claude dependency — specs are pre-filled JSON
+
 ## Prerequisites
 
 **Lightpanda:** The `@lightpanda/browser` npm package auto-downloads the binary. Docker fallback for unsupported platforms:
