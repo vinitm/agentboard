@@ -5,6 +5,7 @@ import type { Components } from 'react-markdown';
 interface Props {
   children: string;
   className?: string;
+  compact?: boolean;
 }
 
 const components: Components = {
@@ -77,8 +78,49 @@ const components: Components = {
   td({ children }) { return <td className="px-2 py-1.5 text-text-secondary border-b border-border-default">{children}</td>; },
 };
 
-export const Markdown: React.FC<Props> = ({ children, className = '' }) => (
-  <div className={`markdown-content ${className}`}>
-    <ReactMarkdown components={components}>{children}</ReactMarkdown>
+const compactComponents: Components = {
+  ...components,
+  h1({ children }) { return <h1 className="text-[13px] font-bold text-text-primary mt-2 mb-1">{children}</h1>; },
+  h2({ children }) { return <h2 className="text-[12px] font-bold text-text-primary mt-2 mb-0.5">{children}</h2>; },
+  h3({ children }) { return <h3 className="text-[12px] font-semibold text-text-primary mt-1.5 mb-0.5">{children}</h3>; },
+  h4({ children }) { return <h4 className="text-[11px] font-semibold text-text-primary mt-1 mb-0.5">{children}</h4>; },
+  p({ children }) { return <p className="text-[12px] text-text-secondary leading-relaxed mb-1 last:mb-0">{children}</p>; },
+  ul({ children }) { return <ul className="list-disc list-outside ml-3 mb-1 space-y-0">{children}</ul>; },
+  ol({ children }) { return <ol className="list-decimal list-outside ml-3 mb-1 space-y-0">{children}</ol>; },
+  li({ children }) { return <li className="text-[12px] text-text-secondary leading-relaxed">{children}</li>; },
+  pre({ children }) {
+    return (
+      <pre className="bg-bg-primary border border-border-default rounded p-2 my-1 overflow-x-auto text-[11px] leading-relaxed font-mono">
+        {children}
+      </pre>
+    );
+  },
+  code({ className, children, ...props }) {
+    const isBlock = className?.startsWith('language-');
+    if (isBlock) {
+      return (
+        <code className={`font-mono text-[11px] text-text-primary ${className || ''}`} {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code className="font-mono text-[11px] bg-bg-tertiary text-accent-blue px-1 py-0.5 rounded border border-border-default" {...props}>
+        {children}
+      </code>
+    );
+  },
+  blockquote({ children }) {
+    return (
+      <blockquote className="border-l-2 border-accent-blue/40 pl-2 my-1 text-text-tertiary italic text-[12px]">
+        {children}
+      </blockquote>
+    );
+  },
+};
+
+export const Markdown: React.FC<Props> = ({ children, className = '', compact = false }) => (
+  <div className={`markdown-content ${compact ? 'font-sans' : ''} ${className}`}>
+    <ReactMarkdown components={compact ? compactComponents : components}>{children}</ReactMarkdown>
   </div>
 );
