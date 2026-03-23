@@ -202,7 +202,18 @@ const AppContent: React.FC = () => {
         <TaskForm
           projectId={projectId}
           onSubmit={async (data) => {
-            await createTask(data);
+            if (data.existingTaskId) {
+              // Task was already created during chat — update it and promote to ready
+              await updateTask(data.existingTaskId, {
+                title: data.title,
+                description: data.description,
+                spec: data.spec,
+                riskLevel: data.riskLevel,
+                priority: data.priority,
+              });
+            } else {
+              await createTask(data);
+            }
             setShowNewTask(false);
           }}
           onCancel={() => setShowNewTask(false)}

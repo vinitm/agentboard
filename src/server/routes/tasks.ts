@@ -176,6 +176,8 @@ Task description: ${description.trim()}`;
     }
     const { title, description, riskLevel, priority, spec, blockedReason } =
       req.body as Omit<queries.UpdateTaskData, 'status'>;
+    // Auto-promote backlog → ready when a spec is provided
+    const shouldPromote = existing.status === 'backlog' && spec;
     const task = queries.updateTask(db, id, {
       title,
       description,
@@ -183,6 +185,7 @@ Task description: ${description.trim()}`;
       priority,
       spec,
       blockedReason,
+      ...(shouldPromote ? { status: 'ready' as const } : {}),
     });
     broadcast(io, 'task:updated', task);
     res.json(task);
