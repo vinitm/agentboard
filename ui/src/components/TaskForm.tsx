@@ -601,17 +601,18 @@ export const TaskForm: React.FC<Props> = ({ initial, projectId, onSubmit, onCanc
   );
 };
 
-/** Strip JSON block from displayed content so user doesn't see raw JSON */
+/** Strip only the spec-update JSON block from displayed content.
+ *  Preserves conversational code examples that happen to use ```json fences. */
 function stripJsonBlock(content: string): string {
-  // Remove ```json ... ``` blocks from the end of content
-  const fenceStart = content.lastIndexOf('```json');
-  if (fenceStart >= 0) {
-    return content.substring(0, fenceStart).trim();
-  }
-  // Also try ``` with a { on the next line
-  const altFenceStart = content.lastIndexOf('```\n{');
-  if (altFenceStart >= 0) {
-    return content.substring(0, altFenceStart).trim();
+  const fencePattern = /```(?:json)?\s*\n?([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = fencePattern.exec(content)) !== null) {
+    const inner = match[1];
+    if (inner.includes('specUpdates') || inner.includes('isComplete')) {
+      const before = content.substring(0, match.index).trim();
+      const after = content.substring(match.index + match[0].length).trim();
+      return [before, after].filter(Boolean).join('\n\n');
+    }
   }
   return content;
 }

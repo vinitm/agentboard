@@ -637,17 +637,36 @@ function parseSpecJson(spec: string | null): Record<string, string> {
 }
 
 function extractMessageText(fullOutput: string, parsedMessage: string): string {
-  const fenceStart = fullOutput.indexOf('```json');
-  const altFenceStart = fullOutput.indexOf('```\n{');
-  const cutPoint = fenceStart >= 0 ? fenceStart : altFenceStart;
-
-  if (cutPoint > 0) {
-    const textBefore = fullOutput.substring(0, cutPoint).trim();
-    if (textBefore.length > 0) return textBefore;
+  // Find and remove ONLY the spec-update JSON block (contains specUpdates/isComplete),
+  // preserving conversational code examples and text after the block.
+  const specBlockRange = findSpecJsonBlock(fullOutput);
+  if (specBlockRange) {
+    const before = fullOutput.substring(0, specBlockRange.start).trim();
+    const after = fullOutput.substring(specBlockRange.end).trim();
+    const combined = [before, after].filter(Boolean).join('\n\n');
+    if (combined.length > 0) return combined;
   }
 
   if (parsedMessage) return parsedMessage;
   return fullOutput.trim();
+}
+
+/**
+ * Locate the fenced JSON block that contains the spec-update schema
+ * (has "specUpdates" or "isComplete" keys). Returns the start/end
+ * offsets of the entire ``` ... ``` fence, or null if not found.
+ */
+function findSpecJsonBlock(text: string): { start: number; end: number } | null {
+  // Match all fenced code blocks (```json ... ``` or ``` { ... ```)
+  const fencePattern = /```(?:json)?\s*\n?([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = fencePattern.exec(text)) !== null) {
+    const inner = match[1];
+    if (inner.includes('specUpdates') || inner.includes('isComplete')) {
+      return { start: match.index, end: match.index + match[0].length };
+    }
+  }
+  return null;
 }
 
 /** Persist spec & meta updates from a parsed response */
