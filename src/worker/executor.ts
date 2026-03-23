@@ -49,13 +49,15 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
     let stderr = '';
     let timedOut = false;
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, timeout);
+    const timer = timeout > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, timeout)
+      : null;
 
     child.on('error', (err) => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       resolve({
         output: `Failed to spawn claude process: ${err.message}`,
         exitCode: 1,
@@ -83,7 +85,7 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
     });
 
     child.on('close', (code: number | null) => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       const duration = Date.now() - startTime;
       const timeoutSuffix = timedOut
         ? `\n[timeout] Process killed after ${Math.round(timeout / 1000)}s timeout`

@@ -60,6 +60,7 @@ async function runPlanReview(
     prompt,
     worktreePath,
     model,
+    timeout: 0,
     tools: getToolsForStage('planning'),
     onOutput,
   });
@@ -160,6 +161,7 @@ export async function runPlanning(
         prompt,
         worktreePath,
         model,
+        timeout: 0,
         tools: getToolsForStage('planning'),
         onOutput,
       });
