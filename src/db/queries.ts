@@ -322,18 +322,19 @@ export function createRun(
 ): Run {
   const id = uuidv4();
   const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO runs (id, task_id, stage, status, attempt, model_used, input, started_at)
-     VALUES (?, ?, ?, 'running', ?, ?, ?, ?)`
-  ).run(
-    id,
-    data.taskId,
-    data.stage,
-    data.attempt ?? 1,
-    data.modelUsed ?? null,
-    data.input ?? null,
-    now
-  );
+  if (data.attempt != null) {
+    db.prepare(
+      `INSERT INTO runs (id, task_id, stage, status, attempt, model_used, input, started_at)
+       VALUES (?, ?, ?, 'running', ?, ?, ?, ?)`
+    ).run(id, data.taskId, data.stage, data.attempt, data.modelUsed ?? null, data.input ?? null, now);
+  } else {
+    db.prepare(
+      `INSERT INTO runs (id, task_id, stage, status, attempt, model_used, input, started_at)
+       VALUES (?, ?, ?, 'running',
+         COALESCE((SELECT MAX(attempt) FROM runs WHERE task_id = ? AND stage = ?), 0) + 1,
+         ?, ?, ?)`
+    ).run(id, data.taskId, data.stage, data.taskId, data.stage, data.modelUsed ?? null, data.input ?? null, now);
+  }
   return getRunById(db, id)!;
 }
 
@@ -364,7 +365,7 @@ export function getLatestRunByTaskAndStage(
 ): Run | undefined {
   const row = db
     .prepare(
-      'SELECT * FROM runs WHERE task_id = ? AND stage = ? ORDER BY attempt DESC LIMIT 1'
+      'SELECT * FROM runs WHERE task_id = ? AND stage = ? ORDER BY attempt DESC, started_at DESC LIMIT 1'
     )
     .get(taskId, stage) as Record<string, unknown> | undefined;
   return row ? rowToRun(row) : undefined;

@@ -355,6 +355,55 @@ describe('runs', () => {
     expect(result).toBeUndefined();
   });
 
+  it('createRun auto-increments attempt for same task and stage', () => {
+    const project = makeProject(db);
+    const task = makeTask(db, project.id);
+    const r1 = queries.createRun(db, { taskId: task.id, stage: 'planning' });
+    const r2 = queries.createRun(db, { taskId: task.id, stage: 'planning' });
+    const r3 = queries.createRun(db, { taskId: task.id, stage: 'planning' });
+    expect(r1.attempt).toBe(1);
+    expect(r2.attempt).toBe(2);
+    expect(r3.attempt).toBe(3);
+  });
+
+  it('createRun starts attempt at 1 for different stage', () => {
+    const project = makeProject(db);
+    const task = makeTask(db, project.id);
+    const r1 = queries.createRun(db, { taskId: task.id, stage: 'planning' });
+    const r2 = queries.createRun(db, { taskId: task.id, stage: 'implementing' });
+    expect(r1.attempt).toBe(1);
+    expect(r2.attempt).toBe(1);
+  });
+
+  it('createRun explicit attempt overrides auto-increment', () => {
+    const project = makeProject(db);
+    const task = makeTask(db, project.id);
+    queries.createRun(db, { taskId: task.id, stage: 'planning' });
+    const r2 = queries.createRun(db, { taskId: task.id, stage: 'planning', attempt: 10 });
+    expect(r2.attempt).toBe(10);
+  });
+
+  it('getLatestRunByTaskAndStage uses started_at as tiebreaker', () => {
+    const project = makeProject(db);
+    const task = makeTask(db, project.id);
+    // Insert two runs with same attempt but different started_at
+    const id1 = 'aaaaaaaa-0000-0000-0000-000000000001';
+    const id2 = 'aaaaaaaa-0000-0000-0000-000000000002';
+    db.prepare(
+      `INSERT INTO runs (id, task_id, stage, status, attempt, started_at)
+       VALUES (?, ?, 'planning', 'failed', 1, '2026-01-01T00:00:00Z')`
+    ).run(id1, task.id);
+    db.prepare(
+      `INSERT INTO runs (id, task_id, stage, status, attempt, started_at)
+       VALUES (?, ?, 'planning', 'success', 1, '2026-01-01T01:00:00Z')`
+    ).run(id2, task.id);
+
+    const latest = queries.getLatestRunByTaskAndStage(db, task.id, 'planning');
+    expect(latest).toBeDefined();
+    expect(latest!.id).toBe(id2);
+    expect(latest!.status).toBe('success');
+  });
+
   it('updateRun updates fields', () => {
     const project = makeProject(db);
     const task = makeTask(db, project.id);
