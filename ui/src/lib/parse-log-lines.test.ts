@@ -180,3 +180,40 @@ describe('groupIntoBlocks', () => {
     }
   });
 });
+
+describe('parseLogText with Claude CLI JSON', () => {
+  it('extracts .result field from Claude CLI JSON output', () => {
+    const json = JSON.stringify({
+      type: 'result',
+      result: '## Analysis\n\nThe code looks good.\n- No issues found',
+      usage: { input_tokens: 100, output_tokens: 50 },
+    });
+    const lines = parseLogText(json);
+    // Should parse the extracted markdown, not the raw JSON
+    expect(lines.some(l => l.content.includes('## Analysis'))).toBe(true);
+    expect(lines.some(l => l.content.includes('"type"'))).toBe(false);
+  });
+
+  it('handles multiple concatenated JSON objects (one per line)', () => {
+    const json1 = JSON.stringify({ type: 'result', result: 'First result text' });
+    const json2 = JSON.stringify({ type: 'result', result: 'Second result text' });
+    const text = `${json1}\n${json2}`;
+    const lines = parseLogText(text);
+    expect(lines.some(l => l.content.includes('First result text'))).toBe(true);
+    expect(lines.some(l => l.content.includes('Second result text'))).toBe(true);
+  });
+
+  it('passes through non-JSON text unchanged', () => {
+    const text = '## Heading\n- item 1';
+    const lines = parseLogText(text);
+    expect(lines[0].type).toBe('content');
+    expect(lines[0].content).toBe('## Heading');
+  });
+
+  it('passes through JSON without result field unchanged', () => {
+    const json = JSON.stringify({ type: 'other', data: 'stuff' });
+    const lines = parseLogText(json);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].content).toBe(json);
+  });
+});

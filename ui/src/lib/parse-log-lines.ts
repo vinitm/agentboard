@@ -115,9 +115,54 @@ export function parseLogLine(raw: string): ParsedLogLine {
   return { type: 'content', timestamp: null, content: trimmed, metadata: {} };
 }
 
+/**
+ * Pre-process raw log text before line parsing.
+ *
+ * Stage log files may contain raw Claude CLI JSON output (from --output-format json)
+ * instead of the structured timestamp-based format. This happens because the onOutput
+ * callback in stage-runner captures raw stdout chunks which, in JSON mode, is the full
+ * JSON result object.
+ *
+ * This function detects JSON blobs and extracts the `.result` field (the actual
+ * Claude text output) so downstream parsing and markdown rendering work correctly.
+ * Multiple concatenated JSON objects are also handled (one per line).
+ */
+function extractFromJson(text: string): string {
+  const trimmed = text.trim();
+
+  // Quick check: does it look like JSON?
+  if (!trimmed.startsWith('{')) return text;
+
+  const results: string[] = [];
+
+  // Handle multiple concatenated JSON objects (one per line, as seen in planning logs)
+  for (const chunk of trimmed.split('\n')) {
+    const line = chunk.trim();
+    if (!line.startsWith('{')) {
+      results.push(chunk);
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (typeof parsed.result === 'string') {
+        results.push(parsed.result);
+      } else {
+        // Valid JSON but no result field — keep as-is
+        results.push(chunk);
+      }
+    } catch {
+      // Not valid JSON — keep as-is
+      results.push(chunk);
+    }
+  }
+
+  return results.join('\n');
+}
+
 export function parseLogText(text: string): readonly ParsedLogLine[] {
   if (!text) return [];
-  return text.split('\n').map(parseLogLine);
+  const processed = extractFromJson(text);
+  return processed.split('\n').map(parseLogLine);
 }
 
 export type LogBlock =
