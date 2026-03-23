@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseLogLine, parseLogText } from './parse-log-lines.js';
+import { parseLogLine, parseLogText, groupIntoBlocks } from './parse-log-lines.js';
 
 describe('parseLogLine', () => {
   it('parses separator lines', () => {
@@ -99,5 +99,84 @@ describe('parseLogText', () => {
 
   it('returns empty array for empty input', () => {
     expect(parseLogText('')).toHaveLength(0);
+  });
+});
+
+describe('groupIntoBlocks', () => {
+  it('groups consecutive content lines into a markdown block', () => {
+    const lines = parseLogText('## Heading\n- item 1\n- item 2');
+    const blocks = groupIntoBlocks(lines);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].kind).toBe('markdown');
+    if (blocks[0].kind === 'markdown') {
+      expect(blocks[0].text).toContain('## Heading');
+      expect(blocks[0].text).toContain('- item 1');
+    }
+  });
+
+  it('groups consecutive timestamp lines into a markdown block with first timestamp', () => {
+    const lines = parseLogText(
+      '[2026-03-18T10:30:00.000Z] ## Analysis\n[2026-03-18T10:30:01.000Z] The code looks good\n[2026-03-18T10:30:02.000Z] - No issues found'
+    );
+    const blocks = groupIntoBlocks(lines);
+    expect(blocks).toHaveLength(1);
+    if (blocks[0].kind === 'markdown') {
+      expect(blocks[0].timestamp).toBe('2026-03-18T10:30:00.000Z');
+      expect(blocks[0].text).toContain('## Analysis');
+    }
+  });
+
+  it('preserves structural lines as individual blocks', () => {
+    const text = [
+      '── STAGE: planning (run: abc, attempt: 1) ──────',
+      '[2026-03-18T10:30:00.000Z] [start] model=opus',
+      '## My Plan',
+      '- Step 1',
+      '[2026-03-18T10:31:00.000Z] [end] status=completed',
+    ].join('\n');
+    const lines = parseLogText(text);
+    const blocks = groupIntoBlocks(lines);
+
+    expect(blocks[0]).toEqual(expect.objectContaining({ kind: 'line' }));
+    if (blocks[0].kind === 'line') expect(blocks[0].line.type).toBe('stage');
+
+    expect(blocks[1]).toEqual(expect.objectContaining({ kind: 'line' }));
+    if (blocks[1].kind === 'line') expect(blocks[1].line.type).toBe('start');
+
+    expect(blocks[2]).toEqual(expect.objectContaining({ kind: 'markdown' }));
+
+    expect(blocks[3]).toEqual(expect.objectContaining({ kind: 'line' }));
+    if (blocks[3].kind === 'line') expect(blocks[3].line.type).toBe('end');
+  });
+
+  it('skips empty content blocks', () => {
+    const lines = parseLogText('\n\n');
+    const blocks = groupIntoBlocks(lines);
+    expect(blocks).toHaveLength(0);
+  });
+
+  it('handles mixed content and timestamp lines in one block', () => {
+    const lines = parseLogText(
+      '[2026-03-18T10:30:00.000Z] First line\nplain continuation\n[2026-03-18T10:30:01.000Z] Third line'
+    );
+    const blocks = groupIntoBlocks(lines);
+    expect(blocks).toHaveLength(1);
+    if (blocks[0].kind === 'markdown') {
+      expect(blocks[0].text).toContain('First line');
+      expect(blocks[0].text).toContain('plain continuation');
+      expect(blocks[0].text).toContain('Third line');
+    }
+  });
+
+  it('preserves indented code in plain content lines for markdown code blocks', () => {
+    const lines = parseLogText(
+      '[2026-03-18T10:30:00.000Z] Here is some code:\n    const x = 1;\n    const y = 2;'
+    );
+    const blocks = groupIntoBlocks(lines);
+    expect(blocks).toHaveLength(1);
+    if (blocks[0].kind === 'markdown') {
+      expect(blocks[0].text).toContain('    const x = 1;');
+      expect(blocks[0].text).toContain('    const y = 2;');
+    }
   });
 });
