@@ -7,7 +7,7 @@ paths:
 ---
 # TypeScript/JavaScript Security
 
-> This file extends [common/security.md](../common/security.md) with TypeScript/JavaScript specific content.
+> Extends [common/security.md](../common/security.md). See that file for shell command and DB query rules.
 
 ## Secret Management
 
@@ -17,24 +17,5 @@ const apiKey = "sk-proj-xxxxx"
 
 // ALWAYS: Environment variables
 const apiKey = process.env.API_KEY
-
-if (!apiKey) {
-  throw new Error('API_KEY not configured')
-}
+if (!apiKey) throw new Error('API_KEY not configured')
 ```
-
-## Shell Command Safety
-
-```typescript
-// NEVER: exec (vulnerable to command injection)
-import { exec } from 'child_process'
-exec(`git commit -m "${message}"`)
-
-// ALWAYS: execFile (arguments as array)
-import { execFile } from 'child_process'
-execFile('git', ['commit', '-m', message])
-```
-
-## Agent Support
-
-- Use **security-reviewer** agent for comprehensive security audits

@@ -1,5 +1,5 @@
 <!-- Context budget: this file + .claude/rules/**/*.md auto-load every session.
-     Target: <750 lines. Current: ~250 lines. Lean by design — links to detailed docs. -->
+     Target: <400 lines. Current: ~400 lines. No duplication, no linter's-job content. -->
 # Agentboard
 
 Kanban board orchestrating AI coding agents: spec → plan → review → implement → checks → code quality → final review → PR.
@@ -53,20 +53,13 @@ MCP browser tools (`browser_open`, `browser_snapshot`, etc.) use `agent-browser`
 ## Conventions
 
 - ES module imports with `.js` extensions (even for .ts files) — see [gotchas/imports.md](docs/gotchas/imports.md)
-- `console.log` with bracketed prefixes: `[worker]`, `[http]`, `[recovery]`
-- Prepared statements for all DB queries via `src/db/queries.ts`
 - snake_case DB columns → camelCase TypeScript via row-conversion functions
-- `execFile` (promisified) for shell commands, never `exec`
 - Prompt templates in `prompts/` as markdown with `{variable}` interpolation
 - Follow existing stage patterns in `src/worker/stages/`
 
 ## Testing
 
-- Co-locate: `foo.ts` → `foo.test.ts`, `Bar.tsx` → `Bar.test.tsx`
-- `createTestDb()` from `src/test/helpers.ts` for in-memory DB per test
-- `createTestRepo()` for tests needing real git repos (auto-cleaned)
-- `createTestApp()` for API route tests with supertest
-- Run `npm test` before committing
+See [Testing rules](.claude/rules/common/testing.md) for test helpers and conventions. Run `npm test` before committing.
 
 ## Architecture
 

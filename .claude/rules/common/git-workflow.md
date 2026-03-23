@@ -11,8 +11,6 @@ Types: feat, fix, refactor, docs, test, chore, perf, ci
 
 ## Agentboard Branch Convention
 
-- Never commit directly to master
-- Agentboard creates feature branches per task automatically
 - Branch naming: `agentboard/<task-id>-<slug>`
 - One PR per top-level task (subtasks share the parent's branch)
 

@@ -11,7 +11,6 @@ paths:
 
 - **Prepared statements only** — all DB queries go through `src/db/queries.ts` with parameterized queries
 - **`execFile` only** — never use `exec` for shell commands. `execFile` passes arguments as arrays, preventing command injection
-- **Single DB connection** — use `getDatabase()` singleton, never create new connections
 
 ## Secret Management
 
