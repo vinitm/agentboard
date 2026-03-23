@@ -6,6 +6,7 @@ import type { TaskStatus } from '../../types/index.js';
 import * as queries from '../../db/queries.js';
 import { broadcast } from '../ws.js';
 import { cleanupWorktree } from '../../worker/git.js';
+import { claudeBin } from '../../claude-bin.js';
 
 function parseTaskId(raw: string): number {
   const id = Number(raw);
@@ -70,7 +71,7 @@ Guidelines:
 
 Task description: ${description.trim()}`;
 
-    const child = spawn('claude', ['--print'], {
+    const child = spawn(claudeBin(), ['--print'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, CLAUDECODE: undefined },
     });
@@ -218,6 +219,27 @@ Task description: ${description.trim()}`;
     catch { return res.status(400).json({ error: 'Invalid task ID' }); }
 
     const task = queries.updateTask(db, id, { status: 'cancelled' });
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    broadcast(io, 'task:updated', task);
+    res.json(task);
+  });
+
+  // POST /api/tasks/:id/move — move task to a different column
+  router.post('/:id/move', (req, res) => {
+    let id: number;
+    try { id = parseTaskId(req.params.id); }
+    catch { return res.status(400).json({ error: 'Invalid task ID' }); }
+
+    const { column } = req.body as { column?: string };
+    const allowed: TaskStatus[] = ['backlog', 'ready', 'cancelled', 'done'];
+    if (!column || !allowed.includes(column as TaskStatus)) {
+      return res.status(400).json({ error: `Invalid column. Must be one of: ${allowed.join(', ')}` });
+    }
+
+    const existing = queries.getTaskById(db, id);
+    if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+    const task = queries.updateTask(db, id, { status: column as TaskStatus });
     if (!task) return res.status(404).json({ error: 'Task not found' });
     broadcast(io, 'task:updated', task);
     res.json(task);
@@ -405,7 +427,7 @@ Return ONLY valid JSON with no markdown fences:
       console.log(`[http] /api/tasks/chat WARNING: no projectPath resolved (projectId=${projectId ?? 'none'})`);
     }
 
-    const child = spawn('claude', ['--print'], spawnOpts);
+    const child = spawn(claudeBin(), ['--print'], spawnOpts);
 
     child.stdin.write(prompt);
     child.stdin.end();

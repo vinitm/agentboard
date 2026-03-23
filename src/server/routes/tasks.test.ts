@@ -198,6 +198,78 @@ describe('POST /api/tasks/:id/cancel', () => {
   });
 });
 
+describe('POST /api/tasks/:id/move', () => {
+  it('moves a task to a valid column', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Move Me', status: 'backlog' });
+
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/move`)
+      .send({ column: 'ready' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ready');
+  });
+
+  it('moves a task to done', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Finish Me', status: 'ready' });
+
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/move`)
+      .send({ column: 'done' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('done');
+  });
+
+  it('moves a task to cancelled', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Cancel Me', status: 'ready' });
+
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/move`)
+      .send({ column: 'cancelled' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('cancelled');
+  });
+
+  it('rejects invalid column', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Bad Move', status: 'backlog' });
+
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/move`)
+      .send({ column: 'implementing' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Invalid column');
+  });
+
+  it('rejects missing column', async () => {
+    const task = queries.createTask(db, { projectId, title: 'No Column', status: 'backlog' });
+
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/move`)
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for unknown task id', async () => {
+    const res = await request(app)
+      .post('/api/tasks/99999/move')
+      .send({ column: 'ready' });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 for invalid task id', async () => {
+    const res = await request(app)
+      .post('/api/tasks/abc/move')
+      .send({ column: 'ready' });
+
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('POST /api/tasks/:id/answer', () => {
   it('unblocks a blocked task (blocked → ready, clears blockedReason)', async () => {
     // Directly create a blocked task via queries
@@ -257,8 +329,8 @@ describe('AI endpoint spawn patterns', () => {
       'utf-8',
     );
 
-    // Should have 2 spawn('claude' calls (parse, chat)
-    const spawnCount = (routesSource.match(/spawn\('claude'/g) || []).length;
+    // Should have 2 spawn(claudeBin() calls (parse, chat)
+    const spawnCount = (routesSource.match(/spawn\(claudeBin\(\)/g) || []).length;
     expect(spawnCount).toBeGreaterThanOrEqual(2);
 
     // All should pipe prompts via stdin (matches executor.ts pattern — avoids -p hangs)

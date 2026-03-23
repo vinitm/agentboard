@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
 import type { RiskLevel } from '../../types/index.js';
 import * as queries from '../../db/queries.js';
+import { claudeBin } from '../../claude-bin.js';
 import { broadcast } from '../ws.js';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -142,7 +143,7 @@ export function createChatRoutes(db: Database.Database, io: Server): Router {
     };
 
     console.log(`[http] /api/tasks/${task.id}/chat/stream spawning claude (${isFirstMessage ? 'new session' : 'resume'}: ${sessionId})`);
-    const child = spawn('claude', args, spawnOpts);
+    const child = spawn(claudeBin(), args, spawnOpts);
 
     // Write prompt via stdin then close
     child.stdin.write(stdinContent);
@@ -466,7 +467,7 @@ function spawnFallbackSession(
 
   const fallbackState: StreamState = { fullText: '', streamedText: '', resumeFailed: false, resumeError: '' };
 
-  const child = spawn('claude', args, {
+  const child = spawn(claudeBin(), args, {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, CLAUDECODE: undefined },
     cwd: projectPath ?? undefined,
@@ -721,7 +722,7 @@ function spawnCorrectionFollowup(
 
   const corrState: StreamState = { fullText: '', streamedText: '', resumeFailed: false, resumeError: '' };
 
-  const child = spawn('claude', args, {
+  const child = spawn(claudeBin(), args, {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, CLAUDECODE: undefined },
     cwd: projectPath ?? undefined,

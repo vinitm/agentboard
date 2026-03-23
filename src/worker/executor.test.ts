@@ -6,6 +6,10 @@ vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
 }));
 
+vi.mock('../claude-bin.js', () => ({
+  claudeBin: () => 'claude',
+}));
+
 import { executeClaudeCode } from './executor.js';
 import { spawn } from 'node:child_process';
 

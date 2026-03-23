@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { claudeBin } from '../claude-bin.js';
 
 export interface ExecuteOptions {
   prompt: string;
@@ -39,7 +40,7 @@ export function executeClaudeCode(options: ExecuteOptions): Promise<ExecuteResul
       args.push('--tools', tools.join(','));
     }
 
-    const child = spawn('claude', args, {
+    const child = spawn(claudeBin(), args, {
       cwd: worktreePath,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
