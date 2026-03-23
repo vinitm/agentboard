@@ -19,6 +19,10 @@
         "PATH": "./node_modules/.bin:/home/user/Personal/agentboard/node_modules/.bin:${PATH}"
       },
       "autoStart": true
+    },
+    "playwright-test": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
     }
   }
 }
