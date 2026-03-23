@@ -119,3 +119,46 @@ export function parseLogText(text: string): readonly ParsedLogLine[] {
   if (!text) return [];
   return text.split('\n').map(parseLogLine);
 }
+
+export type LogBlock =
+  | { kind: 'line'; line: ParsedLogLine }
+  | { kind: 'markdown'; text: string; timestamp?: string };
+
+/**
+ * Groups consecutive 'content' and 'timestamp' lines into markdown blocks.
+ * All other line types (stage, event, start, end, error, separator, header, subtask)
+ * stay as individual structured lines.
+ *
+ * This is necessary because markdown elements (code blocks, lists)
+ * span multiple raw lines and must be parsed together.
+ */
+export function groupIntoBlocks(lines: readonly ParsedLogLine[]): readonly LogBlock[] {
+  const blocks: LogBlock[] = [];
+  let contentAccum: string[] = [];
+  let firstTimestamp: string | undefined;
+
+  function flushContent(): void {
+    if (contentAccum.length === 0) return;
+    const text = contentAccum.join('\n');
+    if (text.trim()) {
+      blocks.push({ kind: 'markdown', text, timestamp: firstTimestamp });
+    }
+    contentAccum = [];
+    firstTimestamp = undefined;
+  }
+
+  for (const line of lines) {
+    if (line.type === 'content' || line.type === 'timestamp') {
+      if (line.type === 'timestamp' && !firstTimestamp) {
+        firstTimestamp = line.timestamp ?? undefined;
+      }
+      contentAccum.push(line.content);
+    } else {
+      flushContent();
+      blocks.push({ kind: 'line', line });
+    }
+  }
+  flushContent();
+
+  return blocks;
+}

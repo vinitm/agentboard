@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { parseLogText, type ParsedLogLine, type LogLineType } from '../lib/parse-log-lines.js';
+import { parseLogText, groupIntoBlocks, type ParsedLogLine } from '../lib/parse-log-lines.js';
+import { Markdown } from './Markdown.js';
 
 interface Props {
   text: string;
@@ -13,13 +14,6 @@ function formatTimestamp(ts: string): string {
     return ts;
   }
 }
-
-const LINE_STYLES: Partial<Record<LogLineType, string>> = {
-  error: 'bg-red-500/10 text-red-400 rounded px-1.5 -mx-1.5',
-  start: 'text-text-tertiary',
-  end: 'text-text-tertiary',
-  separator: 'border-b border-border-default my-1',
-};
 
 function MetaBadge({ label, value }: { label: string; value: string }) {
   return (
@@ -115,17 +109,12 @@ const LogLine: React.FC<{ line: ParsedLogLine }> = ({ line }) => {
       );
 
     case 'timestamp':
-      return (
-        <div className="flex items-start gap-2 py-0">
-          <span className="text-[10px] font-mono text-text-quaternary w-16 flex-shrink-0">{formatTimestamp(line.timestamp!)}</span>
-          <span className="text-xs text-text-primary whitespace-pre-wrap break-words">{line.content}</span>
-        </div>
-      );
-
     case 'content':
+      // Should not reach here when using block-based rendering,
+      // but kept as fallback for safety
       if (!line.content.trim()) return <div className="h-1" />;
       return (
-        <div className="text-xs text-text-primary whitespace-pre-wrap break-words pl-[72px]">
+        <div className="text-xs text-text-primary whitespace-pre-wrap break-words">
           {line.content}
         </div>
       );
@@ -136,15 +125,31 @@ const LogLine: React.FC<{ line: ParsedLogLine }> = ({ line }) => {
 };
 
 export const LogRenderer: React.FC<Props> = ({ text }) => {
-  const lines = useMemo(() => parseLogText(text), [text]);
+  const blocks = useMemo(() => {
+    const lines = parseLogText(text);
+    return groupIntoBlocks(lines);
+  }, [text]);
 
-  if (lines.length === 0) return null;
+  if (blocks.length === 0) return null;
 
   return (
     <div className="space-y-0">
-      {lines.map((line, i) => (
-        <LogLine key={i} line={line} />
-      ))}
+      {blocks.map((block, i) =>
+        block.kind === 'markdown' ? (
+          <div key={i} className="flex items-start gap-2 py-0.5">
+            {block.timestamp && (
+              <span className="text-[10px] font-mono text-text-quaternary w-16 flex-shrink-0 pt-0.5">
+                {formatTimestamp(block.timestamp)}
+              </span>
+            )}
+            <div className="flex-1 min-w-0">
+              <Markdown compact>{block.text}</Markdown>
+            </div>
+          </div>
+        ) : (
+          <LogLine key={i} line={block.line} />
+        )
+      )}
     </div>
   );
 };
