@@ -25,7 +25,7 @@ const AppContent: React.FC = () => {
   const [projectId, setProjectId] = useState<string>('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [initError, setInitError] = useState('');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [showNewTask, setShowNewTask] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
@@ -43,6 +43,21 @@ const AppContent: React.FC = () => {
   const { tasks, loading, createTask, updateTask, deleteTask, answerTask, retryTask, reviewPlan } = useTasks(projectId);
 
   const runningCount = tasks.filter((t) => t.claimedBy).length;
+
+  // Apply filters to task list
+  const filteredTasks = React.useMemo(() => {
+    return tasks.filter((t) => {
+      if (filters.search) {
+        const q = filters.search.toLowerCase();
+        if (!t.title.toLowerCase().includes(q) && !(t.description ?? '').toLowerCase().includes(q)) return false;
+      }
+      if (filters.status && t.status !== filters.status) return false;
+      if (filters.risk && t.riskLevel !== filters.risk) return false;
+      if (filters.running === 'running' && !t.claimedBy) return false;
+      if (filters.running === 'idle' && t.claimedBy) return false;
+      return true;
+    });
+  }, [tasks, filters]);
 
   // Load projects
   useEffect(() => {
@@ -166,7 +181,7 @@ const AppContent: React.FC = () => {
                   path="/"
                   element={
                     <TaskGrid
-                      tasks={tasks}
+                      tasks={filteredTasks}
                       loading={loading}
                     />
                   }

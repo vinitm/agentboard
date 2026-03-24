@@ -102,7 +102,11 @@ export const TaskPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (taskId === undefined || isNaN(taskId)) return;
+    if (taskId === undefined || isNaN(taskId)) {
+      setError('Invalid task ID');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     Promise.all([
       api.get<Task>(`/api/tasks/${taskId}`),
