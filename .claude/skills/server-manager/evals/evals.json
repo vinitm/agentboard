@@ -1,0 +1,215 @@
+{
+  "skill_name": "server-manager",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Start the server",
+      "expected_output": "Builds project, checks port, starts server in subagent/background, verifies with curl",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Restart the server, I think it's stale",
+      "expected_output": "Kills existing process, rebuilds, starts fresh in subagent/background, verifies",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Take a screenshot of the homepage",
+      "expected_output": "Detects server needed, builds, starts in subagent, verifies, then takes screenshot",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Open the app in the browser and show me the settings page",
+      "expected_output": "Ensures server is running in subagent, navigates browser to settings page",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Take screenshots of every page and save them to screenshots/",
+      "expected_output": "Starts server in subagent, then systematically screenshots each route",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "Run the E2E tests",
+      "expected_output": "Builds, starts server in subagent, then runs E2E test suite",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "Check the end-to-end flow of creating a task in the browser",
+      "expected_output": "Starts server in subagent, opens browser, walks through task creation flow step by step",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "Verify the login flow works after my auth changes",
+      "expected_output": "Rebuilds with latest changes, starts server in subagent, tests login flow in browser",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "Check if the /api/tasks endpoint returns data",
+      "expected_output": "Ensures server running in subagent, curls the endpoint, shows response",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "Hit the /api/health endpoint and show me the response",
+      "expected_output": "Starts server in subagent if needed, curls health endpoint, displays result",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "Audit the UI/UX flow for a new user signing up",
+      "expected_output": "Starts server in subagent, opens browser, walks through signup flow noting UX issues",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "Walk through the app and find any broken links or UI issues",
+      "expected_output": "Starts server in subagent, systematically navigates pages looking for broken elements",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 13,
+      "prompt": "Check if the mobile layout looks right on the dashboard",
+      "expected_output": "Starts server in subagent, resizes browser to mobile viewport, screenshots dashboard",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 14,
+      "prompt": "The tests are failing with connection refused",
+      "expected_output": "Recognizes server is probably down, starts it in subagent, reruns tests",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 15,
+      "prompt": "I updated the database schema, can you check the settings page looks right?",
+      "expected_output": "Rebuilds to pick up schema changes, starts server in subagent, checks settings page",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 16,
+      "prompt": "Compare the current UI with this Figma design",
+      "expected_output": "Starts server in subagent, takes screenshot of current UI for comparison",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 17,
+      "prompt": "Fix the typo in the README",
+      "expected_output": "Edits README directly, no server needed",
+      "should_trigger": false,
+      "files": []
+    },
+    {
+      "id": 18,
+      "prompt": "Refactor the database query in queries.ts",
+      "expected_output": "Code refactoring only, no server needed",
+      "should_trigger": false,
+      "files": []
+    },
+    {
+      "id": 19,
+      "prompt": "What does the server-manager skill do?",
+      "expected_output": "Explains the skill, does not start a server",
+      "should_trigger": false,
+      "files": []
+    },
+    {
+      "id": 20,
+      "prompt": "Write unit tests for the utility functions",
+      "expected_output": "Writes and runs unit tests directly, no server needed",
+      "should_trigger": false,
+      "files": []
+    },
+    {
+      "id": 21,
+      "prompt": "Take a screenshot of the board — I just checked it manually and it's working fine",
+      "expected_output": "Checks port to confirm server is healthy, skips rebuild/restart since user confirmed it's working, proceeds to screenshot",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 22,
+      "prompt": "Spin up the dev environment and check the API responses",
+      "expected_output": "Detects docker-compose.yml if present, uses docker compose up -d, otherwise falls back to normal start flow in subagent",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 23,
+      "prompt": "I just pushed a big refactor, can you open the app and make sure nothing looks broken?",
+      "expected_output": "Rebuilds to pick up refactor changes, starts server in subagent, visually inspects key pages",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 24,
+      "prompt": "Test the WebSocket connection on the board page",
+      "expected_output": "Starts server in subagent (noting multi-port setup if applicable), opens browser, tests WebSocket connectivity",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 25,
+      "prompt": "Check localhost:3000 and tell me what you see",
+      "expected_output": "Checks if something is on port 3000, if not checks project config for actual port, starts server on correct port in subagent",
+      "should_trigger": true,
+      "files": []
+    },
+    {
+      "id": 26,
+      "prompt": "Add a new API route to handle user deletion",
+      "expected_output": "Writes the route code, no server needed — this is implementation, not testing",
+      "should_trigger": false,
+      "files": []
+    },
+    {
+      "id": 27,
+      "prompt": "Review the server startup logic in src/cli/up.ts",
+      "expected_output": "Reads and explains the code — mentions 'server' but is just code review, no server needed",
+      "should_trigger": false,
+      "files": []
+    },
+    {
+      "id": 28,
+      "prompt": "Run npm test",
+      "expected_output": "Runs unit tests directly — npm test is not E2E, no server needed",
+      "should_trigger": false,
+      "files": []
+    },
+    {
+      "id": 29,
+      "prompt": "Update the server port configuration in the config file",
+      "expected_output": "Edits config file — mentions 'server' and 'port' but is just a file edit, no server needed",
+      "should_trigger": false,
+      "files": []
+    },
+    {
+      "id": 30,
+      "prompt": "Debug why the server crashes on startup — look at the error in the logs",
+      "expected_output": "Reads log files and code to diagnose — mentions 'server' but is debugging, not starting one",
+      "should_trigger": false,
+      "files": []
+    }
+  ]
+}
