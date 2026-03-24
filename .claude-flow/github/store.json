@@ -27,7 +27,16 @@
       }
     }
   },
-  "prs": {},
+  "prs": {
+    "pr-1774269428616": {
+      "id": "pr-1774269428616",
+      "title": "refactor: optimize agent context files — 44% reduction",
+      "status": "merged",
+      "branch": "agentboard/context-file-optimization",
+      "baseBranch": "master",
+      "createdAt": "2026-03-23T12:37:08.616Z"
+    }
+  },
   "issues": {},
   "version": "3.0.0"
 }

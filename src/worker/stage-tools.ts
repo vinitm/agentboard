@@ -16,8 +16,8 @@ export type ToolPreset = 'read-only' | 'full-access';
 export type PermissionMode = 'acceptEdits' | 'bypassPermissions';
 
 const STAGE_PRESET_MAP: Record<string, ToolPreset> = {
-  spec_review: 'read-only',
-  planning: 'read-only',
+  spec_review: 'full-access',
+  planning: 'full-access',
   implementing: 'full-access',
   inline_fix: 'full-access',
   code_quality: 'read-only',

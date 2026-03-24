@@ -60,6 +60,12 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node -e 'require(\"better-sqlite3\")' 2>/dev/null || npm rebuild better-sqlite3 --silent 2>/dev/null",
+            "timeout": 30000,
+            "statusMessage": "Checking native modules..."
+          },
+          {
+            "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" session-restore",
             "timeout": 15000
           },
@@ -182,7 +188,8 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_FLOW_V3_ENABLED": "true",
-    "CLAUDE_FLOW_HOOKS_ENABLED": "true"
+    "CLAUDE_FLOW_HOOKS_ENABLED": "true",
+    "PATH": "/home/user/.nvm/versions/node/v22.22.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   },
   "claudeFlow": {
     "version": "3.0.0",

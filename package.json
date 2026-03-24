@@ -2,7 +2,11 @@
   "name": "agentboard",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "postinstall": "npm rebuild better-sqlite3 2>/dev/null || true",
     "build": "tsc && cd ui && npm run build",
     "build:server": "tsc",
     "build:ui": "cd ui && npm run build",
