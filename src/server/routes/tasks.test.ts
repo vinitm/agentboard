@@ -232,6 +232,19 @@ describe('POST /api/tasks/:id/move', () => {
     expect(res.body.status).toBe('cancelled');
   });
 
+  it('moves a task to blocked (request changes flow)', async () => {
+    const task = queries.createTask(db, { projectId, title: 'Request Changes', status: 'needs_human_review' });
+    // Set blocked reason first (as PRPanel does)
+    queries.updateTask(db, task.id, { blockedReason: 'Changes requested: fix header styling' });
+
+    const res = await request(app)
+      .post(`/api/tasks/${task.id}/move`)
+      .send({ column: 'blocked' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('blocked');
+  });
+
   it('rejects invalid column', async () => {
     const task = queries.createTask(db, { projectId, title: 'Bad Move', status: 'backlog' });
 
@@ -318,6 +331,41 @@ describe('POST /api/tasks/:id/answer', () => {
       .send({ answers: 'Some answer' });
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe('Request changes round-trip', () => {
+  it('sets blockedReason via PUT, moves to blocked via /move, then unblocks via /answer', async () => {
+    const task = queries.createTask(db, {
+      projectId,
+      title: 'Full Request Changes Flow',
+      status: 'needs_human_review',
+      spec: 'Test spec',
+    });
+
+    // Step 1: Set blocked reason (as PRPanel does)
+    const putRes = await request(app)
+      .put(`/api/tasks/${task.id}`)
+      .send({ blockedReason: 'Changes requested: fix header styling' });
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.blockedReason).toBe('Changes requested: fix header styling');
+    expect(putRes.body.status).toBe('needs_human_review');
+
+    // Step 2: Move to blocked (this was the bug — /move didn't allow 'blocked')
+    const moveRes = await request(app)
+      .post(`/api/tasks/${task.id}/move`)
+      .send({ column: 'blocked' });
+    expect(moveRes.status).toBe(200);
+    expect(moveRes.body.status).toBe('blocked');
+    expect(moveRes.body.blockedReason).toBe('Changes requested: fix header styling');
+
+    // Step 3: Answer to unblock
+    const answerRes = await request(app)
+      .post(`/api/tasks/${task.id}/answer`)
+      .send({ answers: 'Fixed the header styling' });
+    expect(answerRes.status).toBe(200);
+    expect(answerRes.body.status).toBe('ready');
+    expect(answerRes.body.blockedReason).toBeNull();
   });
 });
 

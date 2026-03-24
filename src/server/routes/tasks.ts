@@ -231,7 +231,7 @@ Task description: ${description.trim()}`;
     catch { return res.status(400).json({ error: 'Invalid task ID' }); }
 
     const { column } = req.body as { column?: string };
-    const allowed: TaskStatus[] = ['backlog', 'ready', 'cancelled', 'done'];
+    const allowed: TaskStatus[] = ['backlog', 'ready', 'blocked', 'cancelled', 'done'];
     if (!column || !allowed.includes(column as TaskStatus)) {
       return res.status(400).json({ error: `Invalid column. Must be one of: ${allowed.join(', ')}` });
     }
